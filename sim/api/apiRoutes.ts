@@ -10,6 +10,7 @@
  * @foundation V34-S9-FLOW-004-PP-04
  * @foundation V34-S11-FLOW-005-PP-03
  * @foundation V35-S0-BP-05
+ * @updated V35-S0-HOTFIX-PP-29 (Added missing mutation routes)
  */
 
 import { route, RouteDef } from "./apiRouter";
@@ -62,23 +63,27 @@ import {
 } from "./handlers/dispatchFlowHandlers";
 import {
   listEnterprises,
+  createEnterpriseHandler,
+  updateEnterpriseHandler,
   listPlants,
-  listLines,
-  listStations,
   createPlantHandler,
   updatePlantHandler,
+  listLines,
   createLineHandler,
   updateLineHandler,
+  listStations,
   createStationHandler,
   updateStationHandler,
-  updateEnterpriseHandler,
   listDeviceClassesHandler,
   createDeviceClassHandler,
   updateDeviceClassHandler,
   getEffectiveCapabilitiesHandler,
+  updateCapabilityFlagHandler,
   setCapabilityOverrideHandler,
   removeCapabilityOverrideHandler,
   listRegulatoryFrameworksHandler,
+  createRegulatoryFrameworkHandler,
+  updateRegulatoryFrameworkHandler,
   getEffectiveComplianceHandler,
   setComplianceBindingHandler,
   removeComplianceBindingHandler,
@@ -125,8 +130,9 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("GET", "EXACT", "/api/s0/device-classes", listDeviceClassesHandler),
 
   /**
-   * S0 Topology Mutations (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15 / PP-16 / PP-17)
+   * S0 Topology Mutations
    */
+  route("POST", "EXACT", "/api/s0/enterprises/create", createEnterpriseHandler),
   route("PATCH", "EXACT", "/api/s0/enterprises/update", updateEnterpriseHandler),
   route("POST", "EXACT", "/api/s0/plants/create", createPlantHandler),
   route("PATCH", "EXACT", "/api/s0/plants/update", updatePlantHandler),
@@ -138,13 +144,16 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("PATCH", "EXACT", "/api/s0/device-classes/update", updateDeviceClassHandler),
   
   route("GET", "EXACT", "/api/s0/capabilities/effective", getEffectiveCapabilitiesHandler),
+  route("PATCH", "EXACT", "/api/s0/capabilities/update", updateCapabilityFlagHandler),
   route("POST", "EXACT", "/api/s0/capabilities/override", setCapabilityOverrideHandler),
   route("DELETE", "EXACT", "/api/s0/capabilities/override", removeCapabilityOverrideHandler),
 
   /**
-   * S0 Compliance Routes (V35-S0-COMP-PP-18 / PP-19)
+   * S0 Compliance Routes
    */
   route("GET", "EXACT", "/api/s0/compliance/frameworks", listRegulatoryFrameworksHandler),
+  route("POST", "EXACT", "/api/s0/compliance/frameworks/create", createRegulatoryFrameworkHandler),
+  route("PATCH", "EXACT", "/api/s0/compliance/frameworks/update", updateRegulatoryFrameworkHandler),
   route("GET", "EXACT", "/api/s0/compliance/sop-profiles", listSopProfilesHandler),
   route("POST", "EXACT", "/api/s0/compliance/sop-profiles/create", createSopProfileHandler),
   route("PATCH", "EXACT", "/api/s0/compliance/sop-profiles/update", updateSopProfileHandler),
@@ -153,15 +162,16 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("DELETE", "EXACT", "/api/s0/compliance/bind", removeComplianceBindingHandler),
 
   /**
-   * S0 User Management (V35-S0-RBAC-PP-20 / PP-21)
+   * S0 User Management
    */
   route("GET", "EXACT", "/api/s0/users", listUsersHandler),
+  // Bug fix: use POST for create
   route("POST", "EXACT", "/api/s0/users/create", createUserHandler),
   route("PATCH", "EXACT", "/api/s0/users/update", updateUserHandler),
   route("GET", "EXACT", "/api/s0/users/permissions", getEffectiveUserPermissionsHandler),
 
   /**
-   * S0 Audit Logging (V35-S0-GOV-PP-22)
+   * S0 Audit Logging
    */
   route("GET", "EXACT", "/api/s0/audit", getAuditLogsHandler),
 
@@ -182,8 +192,7 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("POST", "EXACT", "/api/flows/batch/approve", approveBatchFlow),
   route("POST", "EXACT", "/api/flows/batch/start", startBatchFlow),
   route("POST", "EXACT", "/api/flows/batch/complete", completeBatchFlow),
-  route("POST", "EXACT", "/api/flows/batch/cancel", cancelDispatch),
-  // Bug fix: use EXACT for get
+  route("POST", "EXACT", "/api/flows/batch/cancel", cancelBatchFlow),
   route("GET", "EXACT", "/api/flows/batch/get", getBatchFlow),
   route("GET", "EXACT", "/api/flows/batch/list", listBatchFlows),
 
@@ -219,7 +228,6 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("POST", "EXACT", "/api/flows/dispatch/deliver", recordDelivery),
   route("POST", "EXACT", "/api/flows/dispatch/close", closeDispatch),
   route("POST", "EXACT", "/api/flows/dispatch/cancel", cancelDispatch),
-  // Bug fix: use EXACT for get
   route("GET", "EXACT", "/api/flows/dispatch/get", getDispatch),
   route("GET", "EXACT", "/api/flows/dispatch/list", listDispatch),
 ];

@@ -40,7 +40,9 @@ import {
   UserCheck,
   Shield,
   Search,
-  Settings2
+  Settings2,
+  Mail,
+  Fingerprint
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -49,7 +51,7 @@ import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents
 import { apiFetch } from '../services/apiHarness';
 import { resetS0UIState } from '../sim/api/s0/systemTopology.store';
 import type { Enterprise, Plant, Line, Station, DeviceClass } from '../domain/s0/systemTopology.types';
-import type { EffectiveFlag, CapabilityScope } from '../domain/s0/capability.types';
+import type { EffectiveFlag, CapabilityScope, CapabilityFlag } from '../domain/s0/capability.types';
 import type { RegulatoryFramework, EffectiveCompliance, ComplianceBinding, SOPProfile } from '../domain/s0/complianceContext.types';
 import type { AppUser, EffectivePermissions } from '../domain/s0/userManagement.types';
 
@@ -63,9 +65,6 @@ const ScopeBadge: React.FC<{ scope: string }> = ({ scope }) => (
   </span>
 );
 
-/**
- * V35-S0-HOTFIX-PP-26: Standardized Category Keys
- */
 type ManageCategory = 
   | 'ORG' 
   | 'PLANTS' 
@@ -84,43 +83,49 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const isSystemAdmin = activeUserRole === UserRole.SYSTEM_ADMIN;
   
   const [s0Context, setS0Context] = useState<S0Context>(getMockS0Context());
-  const [localEvents, setLocalEvents] = useState<AuditEvent[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
   
   const [activeCategory, setActiveCategory] = useState<ManageCategory>(null);
   const [activeTab, setActiveTab] = useState<'LIST' | 'DETAILS'>('LIST');
 
+  // Master Data State
   const [enterprises, setEnterprises] = useState<Enterprise[]>([]);
   const [activePlants, setActivePlants] = useState<Plant[]>([]);
   const [activeLines, setActiveLines] = useState<Line[]>([]);
   const [activeStations, setActiveStations] = useState<Station[]>([]);
   const [deviceClasses, setDeviceClasses] = useState<DeviceClass[]>([]);
+  const [allFrameworks, setAllFrameworks] = useState<RegulatoryFramework[]>([]);
+  const [allSops, setAllSops] = useState<SOPProfile[]>([]);
+  const [appUsers, setAppUsers] = useState<AppUser[]>([]);
 
+  // Selection Context
   const [selEntId, setSelEntId] = useState<string>('');
   const [selPlantId, setSelPlantId] = useState<string>('');
   const [selLineId, setSelLineId] = useState<string>('');
   const [selStationId, setSelStationId] = useState<string>('');
   
+  // Loading States
   const [isTopologyLoading, setIsTopologyLoading] = useState(true);
-
-  const [appUsers, setAppUsers] = useState<AppUser[]>([]);
-  const [editingUser, setEditingUser] = useState<Partial<AppUser> | null>(null);
-  const [effectivePerms, setEffectivePerms] = useState<EffectivePermissions | null>(null);
+  const [isEntitiesLoading, setIsEntitiesLoading] = useState(false);
+  const [isFormSubmitting, setIsFormSubmitting] = useState(false);
+  const [isFlagsLoading, setIsFlagsLoading] = useState(false);
+  const [isComplianceLoading, setIsComplianceLoading] = useState(false);
   const [isPermsLoading, setIsPermsLoading] = useState(false);
 
-  const [effectiveFlags, setEffectiveFlags] = useState<EffectiveFlag[]>([]);
-  const [isFlagsLoading, setIsFlagsLoading] = useState(false);
-
-  const [effectiveCompliance, setEffectiveCompliance] = useState<EffectiveCompliance | null>(null);
-  const [allFrameworks, setAllFrameworks] = useState<RegulatoryFramework[]>([]);
-  const [allSops, setAllSops] = useState<SOPProfile[]>([]);
-  const [isComplianceLoading, setIsComplianceLoading] = useState(false);
-  const [selBindingScope, setSelBindingScope] = useState<CapabilityScope>('ENTERPRISE');
-  const [selBindingScopeId, setSelBindingScopeId] = useState<string>('');
-
-  const [isEntitiesLoading, setIsEntitiesLoading] = useState(false);
+  // Form States (Editing Buffers)
+  const [editingEnterprise, setEditingEnterprise] = useState<Partial<Enterprise> | null>(null);
+  const [editingPlant, setEditingPlant] = useState<Partial<Plant> | null>(null);
+  const [editingLine, setEditingLine] = useState<Partial<Line> | null>(null);
+  const [editingStation, setEditingStation] = useState<Partial<Station> | null>(null);
+  const [editingDeviceClass, setEditingDeviceClass] = useState<Partial<DeviceClass> | null>(null);
   const [editingSop, setEditingSop] = useState<Partial<SOPProfile> | null>(null);
-  const [isFormSubmitting, setIsFormSubmitting] = useState(false);
+  const [editingUser, setEditingUser] = useState<Partial<AppUser> | null>(null);
+  const [editingFramework, setEditingFramework] = useState<Partial<RegulatoryFramework> | null>(null);
+  const [editingFlag, setEditingFlag] = useState<Partial<CapabilityFlag> | null>(null);
+  
+  const [effectiveFlags, setEffectiveFlags] = useState<EffectiveFlag[]>([]);
+  const [effectiveCompliance, setEffectiveCompliance] = useState<EffectiveCompliance | null>(null);
+  const [effectivePerms, setEffectivePerms] = useState<EffectivePermissions | null>(null);
 
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
@@ -128,29 +133,50 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     onConfirm: () => void;
   } | null>(null);
 
-  // V35-S0-STATE-RESET-PP-26A: Reset persisted UI state for clean preview
+  // V35-S0-STATE-RESET-PP-26A: Clean preview env
   useEffect(() => {
-    const s0Keys = [
-      "bpmos.s0.drawerState",
-      "bpmos.s0.selectedEntity",
-      "bpmos.s0.selectedNode",
-      "bpmos.s0.lastManageKey"
-    ];
-    // V35-S0-HOTFIX-PP-26: Validate stored category key
-    const stored = localStorage.getItem("bpmos.s0.drawerState");
-    if (stored) {
-       try {
-         const parsed = JSON.parse(stored);
-         const validKeys = ['ORG', 'PLANTS', 'LINES', 'STATIONS', 'USERS', 'SOP_PROFILES', 'REGULATORY', 'DEVICE_CLASSES', 'CAPABILITY_FLAGS'];
-         if (!validKeys.includes(parsed.entityKey)) {
-            localStorage.removeItem("bpmos.s0.drawerState");
-         }
-       } catch(e) { localStorage.removeItem("bpmos.s0.drawerState"); }
-    }
+    const s0Keys = ["bpmos.s0.drawerState", "bpmos.s0.selectedEntity", "bpmos.s0.selectedNode", "bpmos.s0.lastManageKey"];
     s0Keys.forEach(key => localStorage.removeItem(key));
     resetS0UIState();
   }, []);
 
+  // Registry Loading Controller
+  const loadRegistryData = async () => {
+    if (!activeCategory) return;
+    setIsEntitiesLoading(true);
+    try {
+      let endpoint = '';
+      if (activeCategory === 'PLANTS') endpoint = '/api/s0/plants';
+      else if (activeCategory === 'LINES') endpoint = `/api/s0/lines?plantId=${selPlantId}`;
+      else if (activeCategory === 'STATIONS') endpoint = `/api/s0/stations?lineId=${selLineId}`;
+      else if (activeCategory === 'ORG') endpoint = '/api/s0/enterprises';
+      else if (activeCategory === 'DEVICE_CLASSES') endpoint = '/api/s0/device-classes';
+      else if (activeCategory === 'SOP_PROFILES') endpoint = '/api/s0/compliance/sop-profiles';
+      else if (activeCategory === 'USERS') endpoint = '/api/s0/users';
+      else if (activeCategory === 'REGULATORY') endpoint = '/api/s0/compliance/frameworks';
+      else if (activeCategory === 'CAPABILITY_FLAGS') endpoint = '/api/s0/capabilities/effective?scope=GLOBAL&scopeId=GLOBAL';
+      
+      if (endpoint) {
+        const res = await apiFetch(endpoint);
+        const result = await res.json();
+        if (result.ok) {
+          if (activeCategory === 'PLANTS') setActivePlants(result.data);
+          if (activeCategory === 'LINES') setActiveLines(result.data);
+          if (activeCategory === 'STATIONS') setActiveStations(result.data);
+          if (activeCategory === 'ORG') setEnterprises(result.data);
+          if (activeCategory === 'DEVICE_CLASSES') setDeviceClasses(result.data);
+          if (activeCategory === 'SOP_PROFILES') setAllSops(result.data);
+          if (activeCategory === 'USERS') setAppUsers(result.data);
+          if (activeCategory === 'REGULATORY') setAllFrameworks(result.data);
+          if (activeCategory === 'CAPABILITY_FLAGS') setEffectiveFlags(result.data);
+        }
+      }
+    } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
+  };
+
+  useEffect(() => { loadRegistryData(); }, [activeCategory, selPlantId, selLineId, selEntId]);
+
+  // Topology Sync
   useEffect(() => {
     const init = async () => {
       setIsTopologyLoading(true);
@@ -174,12 +200,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         const data = await res.json();
         if (data.ok) {
           setActivePlants(data.data);
-          if (data.data.length > 0) {
-            const found = data.data.find((p: any) => p.id === selPlantId);
-            if (!found) setSelPlantId(data.data[0].id);
-          } else {
-            setSelPlantId('');
-          }
+          if (data.data.length > 0 && !data.data.find((p: any) => p.id === selPlantId)) setSelPlantId(data.data[0].id);
         }
       } catch (e) { console.error(e); }
     };
@@ -187,23 +208,14 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   }, [selEntId]);
 
   useEffect(() => {
-    if (!selPlantId) {
-      setActiveLines([]);
-      setSelLineId('');
-      return;
-    }
+    if (!selPlantId) { setActiveLines([]); setSelLineId(''); return; }
     const fetchLines = async () => {
       try {
         const res = await apiFetch(`/api/s0/lines?plantId=${selPlantId}`);
         const data = await res.json();
         if (data.ok) {
           setActiveLines(data.data);
-          if (data.data.length > 0) {
-            const found = data.data.find((l: any) => l.id === selLineId);
-            if (!found) setSelLineId(data.data[0].id);
-          } else {
-            setSelLineId('');
-          }
+          if (data.data.length > 0 && !data.data.find((l: any) => l.id === selLineId)) setSelLineId(data.data[0].id);
         }
       } catch (e) { console.error(e); }
     };
@@ -211,31 +223,21 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   }, [selPlantId]);
 
   useEffect(() => {
-    if (!selLineId) {
-      setActiveStations([]);
-      setSelStationId('');
-      return;
-    }
+    if (!selLineId) { setActiveStations([]); setSelStationId(''); return; }
     const fetchStations = async () => {
       try {
         const res = await apiFetch(`/api/s0/stations?lineId=${selLineId}`);
         const data = await res.json();
         if (data.ok) {
           setActiveStations(data.data);
-          if (data.data.length > 0) {
-            const found = data.data.find((s: any) => s.id === selStationId);
-            if (!found) setSelStationId(data.data[0].id);
-          } else {
-            setSelStationId('');
-          }
+          if (data.data.length > 0 && !data.data.find((s: any) => s.id === selStationId)) setSelStationId(data.data[0].id);
         }
-      } catch (e) { console.error(e); } finally {
-        setIsTopologyLoading(false);
-      }
+      } catch (e) { console.error(e); } finally { setIsTopologyLoading(false); }
     };
     fetchStations();
   }, [selLineId]);
 
+  // Effective state resolution for landing page cards
   useEffect(() => {
     const resolveScopedStates = async () => {
       let scope: CapabilityScope = 'GLOBAL';
@@ -264,105 +266,43 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     resolveScopedStates();
   }, [selEntId, selPlantId, selLineId, selStationId]);
 
-  useEffect(() => {
-    setLocalEvents(getAuditEvents().filter(e => e.stageId === 'S0'));
-  }, []);
-
-  useEffect(() => {
-    if (!activeCategory) return;
-    const loadRegistryData = async () => {
-      setIsEntitiesLoading(true);
-      try {
-        let endpoint = '';
-        if (activeCategory === 'PLANTS') endpoint = '/api/s0/plants';
-        else if (activeCategory === 'LINES') endpoint = `/api/s0/lines?plantId=${selPlantId}`;
-        else if (activeCategory === 'STATIONS') endpoint = `/api/s0/stations?lineId=${selLineId}`;
-        else if (activeCategory === 'ORG') endpoint = '/api/s0/enterprises';
-        else if (activeCategory === 'DEVICE_CLASSES') endpoint = '/api/s0/device-classes';
-        else if (activeCategory === 'SOP_PROFILES') endpoint = '/api/s0/compliance/sop-profiles';
-        else if (activeCategory === 'USERS') endpoint = '/api/s0/users';
-        else if (activeCategory === 'REGULATORY') {
-          const [fRes, sRes] = await Promise.all([
-            apiFetch('/api/s0/compliance/frameworks'),
-            apiFetch('/api/s0/compliance/sop-profiles')
-          ]);
-          const fData = await fRes.json();
-          const sData = await sRes.json();
-          if (fData.ok) setAllFrameworks(fData.data);
-          if (sData.ok) setAllSops(sData.data);
-          setSelBindingScope('ENTERPRISE');
-          setSelBindingScopeId(selEntId);
-          setIsEntitiesLoading(false);
-          return;
-        }
-        if (endpoint) {
-          const res = await apiFetch(endpoint);
-          const result = await res.json();
-          if (result.ok) {
-            if (activeCategory === 'PLANTS') setActivePlants(result.data);
-            if (activeCategory === 'LINES') setActiveLines(result.data);
-            if (activeCategory === 'STATIONS') setActiveStations(result.data);
-            if (activeCategory === 'ORG') setEnterprises(result.data);
-            if (activeCategory === 'DEVICE_CLASSES') setDeviceClasses(result.data);
-            if (activeCategory === 'SOP_PROFILES') setAllSops(result.data);
-            if (activeCategory === 'USERS') setAppUsers(result.data);
-          }
-        }
-      } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
-    };
-    loadRegistryData();
-  }, [activeCategory, selPlantId, selLineId, selEntId]);
-
-  useEffect(() => {
-    if (activeCategory === 'USERS' && activeTab === 'DETAILS' && editingUser?.id) {
-      const resolvePerms = async () => {
-        let scope: CapabilityScope = 'GLOBAL';
-        let scopeId = 'GLOBAL';
-        if (selStationId) { scope = 'STATION'; scopeId = selStationId; }
-        else if (selLineId) { scope = 'LINE'; scopeId = selLineId; }
-        else if (selPlantId) { scope = 'PLANT'; scopeId = selPlantId; }
-        else if (selEntId) { scope = 'ENTERPRISE'; scopeId = selEntId; }
-        setIsPermsLoading(true);
-        try {
-          const res = await apiFetch(`/api/s0/users/permissions?userId=${editingUser.id}&scope=${scope}&scopeId=${scopeId}`);
-          const data = await res.json();
-          if (data.ok) setEffectivePerms(data.data);
-        } catch (e) { console.error(e); } finally { setIsPermsLoading(false); }
-      };
-      resolvePerms();
-    } else { setEffectivePerms(null); }
-  }, [activeCategory, activeTab, editingUser?.id, selEntId, selPlantId, selLineId, selStationId]);
+  // Generic Submit Wrapper
+  const handleEntitySubmit = async (type: string, payload: any, id?: string) => {
+    setIsFormSubmitting(true);
+    try {
+      const isEdit = !!id;
+      const baseUrl = `/api/s0/${type}`;
+      const url = isEdit ? `${baseUrl}/update` : `${baseUrl}/create`;
+      const res = await apiFetch(url, {
+        method: isEdit ? 'PATCH' : 'POST',
+        body: JSON.stringify(isEdit ? { id, updates: payload } : payload)
+      });
+      const data = await res.json();
+      if (data.ok) {
+        emitAuditEvent({ stageId: 'S0', actionId: `MANAGE_${type.toUpperCase().replace('/', '_')}`, actorRole: activeUserRole, message: `${isEdit ? 'Updated' : 'Created'} ${type}: ${payload.displayName || payload.username || payload.name || id}` });
+        setActiveTab('LIST');
+        loadRegistryData();
+      } else {
+        alert(`Failed to save: ${data.error?.message || 'Unknown error'}`);
+      }
+    } catch (e) { console.error(e); alert("Network failure."); } finally { setIsFormSubmitting(false); }
+  };
 
   const openManager = (cat: ManageCategory) => {
     setActiveCategory(cat);
     setActiveTab('LIST');
-    setEditingSop(null);
-    setEditingUser(null);
+    setEditingUser(null); 
+    setEditingSop(null); 
+    setEditingPlant(null); 
+    setEditingLine(null); 
+    setEditingStation(null); 
+    setEditingEnterprise(null); 
+    setEditingDeviceClass(null);
+    setEditingFramework(null);
+    setEditingFlag(null);
   };
 
   const closeManager = () => setActiveCategory(null);
-
-  const handleUserSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingUser || isFormSubmitting) return;
-    setIsFormSubmitting(true);
-    try {
-      const isEdit = !!editingUser.id;
-      const res = await apiFetch(isEdit ? '/api/s0/users/update' : '/api/s0/users/create', {
-        method: isEdit ? 'PATCH' : 'POST',
-        body: JSON.stringify(isEdit ? { id: editingUser.id, updates: editingUser } : editingUser)
-      });
-      const data = await res.json();
-      if (data.ok) {
-        emitAuditEvent({ stageId: 'S0', actionId: 'MANAGE_USERS', actorRole: activeUserRole, message: `${isEdit ? 'Updated' : 'Created'} User: ${editingUser.username}` });
-        setEditingUser(null);
-        setActiveTab('LIST');
-        const refreshRes = await apiFetch('/api/s0/users');
-        const refreshData = await refreshRes.json();
-        if (refreshData.ok) setAppUsers(refreshData.data);
-      }
-    } catch (e) { console.error(e); } finally { setIsFormSubmitting(false); }
-  };
 
   const toggleFlag = (flag: EffectiveFlag) => {
     if (!isSystemAdmin) return;
@@ -381,66 +321,18 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         try {
           if (isReverting) { await apiFetch('/api/s0/capabilities/override', { method: 'DELETE', body: JSON.stringify({ flagId: flag.id, scope: targetScope, scopeId: targetId }) }); }
           else { await apiFetch('/api/s0/capabilities/override', { method: 'POST', body: JSON.stringify({ flagId: flag.id, scope: targetScope, scopeId: targetId, value: !flag.effectiveValue }) }); }
+          loadRegistryData();
         } catch (e) { console.error(e); } finally { setIsSimulating(false); setConfirmAction(null); }
       }
     });
   };
 
-  const UserScopeSelection = () => {
-    const [selScope, setSelScope] = useState<CapabilityScope>('PLANT');
-    const [selScopeId, setSelScopeId] = useState('');
-    const getOptions = () => {
-      if (selScope === 'ENTERPRISE') return enterprises;
-      if (selScope === 'PLANT') return activePlants;
-      if (selScope === 'LINE') return activeLines;
-      if (selScope === 'STATION') return activeStations;
-      return [];
-    };
-    const addScope = () => {
-      if (!selScopeId) return;
-      const current = editingUser?.scopes || [];
-      if (current.find(s => s.scope === selScope && s.scopeId === selScopeId)) return;
-      setEditingUser(u => ({ ...u!, scopes: [...current, { scope: selScope, scopeId: selScopeId }] }));
-    };
-    const removeScope = (idx: number) => {
-      const current = [...(editingUser?.scopes || [])];
-      current.splice(idx, 1);
-      setEditingUser(u => ({ ...u!, scopes: current }));
-    };
-    return (
-      <div className="space-y-4 border-t border-slate-100 pt-6">
-        <h4 className="text-xs font-bold text-slate-800 uppercase tracking-widest">Access Scopes</h4>
-        <div className="flex gap-2 items-end">
-           <div className="flex-1 space-y-1">
-              <label className="text-[9px] font-bold text-slate-400">Level</label>
-              <select className="w-full border rounded p-2 text-xs outline-none bg-white" value={selScope} onChange={e => setSelScope(e.target.value as any)}>
-                 <option value="ENTERPRISE">Enterprise</option>
-                 <option value="PLANT">Plant</option>
-                 <option value="LINE">Line</option>
-                 <option value="STATION">Station</option>
-              </select>
-           </div>
-           <div className="flex-[2] space-y-1">
-              <label className="text-[9px] font-bold text-slate-400">Entity Instance</label>
-              <select className="w-full border rounded p-2 text-xs outline-none bg-white" value={selScopeId} onChange={e => setSelScopeId(e.target.value)}>
-                 <option value="">Select Target...</option>
-                 {getOptions().map((opt: any) => (<option key={opt.id} value={opt.id}>{opt.displayName}</option>))}
-              </select>
-           </div>
-           <button type="button" onClick={addScope} className="p-2 bg-slate-800 text-white rounded hover:bg-slate-700 transition-colors"><Plus size={18} /></button>
-        </div>
-        <div className="space-y-2">
-           {editingUser?.scopes?.map((s, i) => (
-             <div key={i} className="flex justify-between items-center p-2 bg-slate-50 border rounded text-xs">
-                <div className="flex items-center gap-2"><ScopeBadge scope={s.scope} /><span className="font-mono font-bold text-slate-700">{s.scopeId}</span></div>
-                <button type="button" onClick={() => removeScope(i)} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
-             </div>
-           ))}
-           {(!editingUser?.scopes || editingUser.scopes.length === 0) && (<div className="text-[10px] text-slate-400 italic">No specific scopes bound.</div>)}
-        </div>
-      </div>
-    );
-  };
+  const Field = ({ label, children }: { label: string, children: React.ReactNode }) => (
+    <div className="space-y-1.5">
+      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</label>
+      {children}
+    </div>
+  );
 
   const SelectorItem = ({ icon: Icon, label, value, options, onChange, onManage }: any) => (
     <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
@@ -487,6 +379,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           </div>
         </div>
 
+        {/* Restore Rich Topology Selector */}
         <div className="bg-white border border-industrial-border rounded-lg p-3 shadow-sm flex flex-wrap items-center gap-4 overflow-x-auto custom-scrollbar">
           <SelectorItem icon={Building2} label="Enterprise" value={selEntId} options={enterprises} onChange={setSelEntId} onManage={() => openManager('ORG')} />
           <SelectorItem icon={Factory} label="Plant" value={selPlantId} options={activePlants} onChange={setSelPlantId} onManage={() => openManager('PLANTS')} />
@@ -506,7 +399,9 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           <button onClick={() => onNavigate && onNavigate('sku_blueprint')} disabled={!isReadyForNext} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"><Cpu size={14} /> SKU Master (S1)</button>
         </div>
 
+        {/* Restore Full Dashboard Grid Layout */}
         <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${isSimulating ? 'opacity-70 pointer-events-none' : ''}`}>
+          
           <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
             <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
               <div className="flex items-center gap-2 text-slate-700"><Factory size={20} className="text-brand-600" /><h2 className="font-bold">Plant Capabilities</h2><ScopeBadge scope="PLANT" /></div>
@@ -534,10 +429,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               <div className="flex items-center gap-2 text-slate-700"><Zap size={20} className="text-brand-600" /><h2 className="font-bold">Capability Flags</h2><ScopeBadge scope="MIXED" /></div>
               <button onClick={() => openManager('CAPABILITY_FLAGS')} className="text-[10px] font-bold text-slate-400 uppercase">Manage</button>
             </div>
-            {isFlagsLoading ? <Loader2 className="mx-auto animate-spin" /> : (
+            {isFlagsLoading ? <div className="py-8 flex justify-center"><Loader2 className="animate-spin text-brand-500" /></div> : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {effectiveFlags.map(flag => (
-                  <div key={flag.id} className={`p-4 rounded-lg border ${flag.effectiveValue ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                  <div key={flag.id} className={`p-4 rounded-lg border ${flag.effectiveValue ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2"><span className="font-bold text-slate-800 text-sm">{flag.label}</span>{flag.isOverridden && <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 font-bold">OVERRIDDEN</span>}</div>
@@ -551,219 +446,285 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               </div>
             )}
           </div>
-        </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border md:col-span-1">
             <div className="flex justify-between mb-4 border-b pb-2">
               <div className="flex items-center gap-2 text-slate-700"><Globe size={20} className="text-brand-600" /><h2 className="font-bold">Compliance</h2><ScopeBadge scope={effectiveCompliance?.sourceScope || 'GLOBAL'} /></div>
               <button onClick={() => openManager('REGULATORY')} className="text-[10px] font-bold text-brand-600 uppercase">Manage</button>
             </div>
-            {isComplianceLoading ? <Loader2 className="mx-auto animate-spin" /> : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div><div className="text-[10px] font-bold text-slate-400 uppercase mb-3">Frameworks</div><div className="flex flex-wrap gap-2">{effectiveCompliance?.frameworks.map(fw => (<div key={fw.id} className="px-3 py-2 bg-blue-50 text-blue-800 rounded-lg border border-blue-100 flex flex-col"><span className="text-xs font-bold">{fw.name}</span></div>))}</div></div>
-                <div><div className="text-[10px] font-bold text-slate-400 uppercase mb-3">SOPs</div><div className="flex flex-wrap gap-2">{effectiveCompliance?.sopProfiles.map(sop => (<div key={sop.id} className="px-3 py-2 bg-purple-50 text-purple-800 rounded-lg border border-purple-100 flex flex-col"><span className="text-xs font-bold">{sop.name}</span></div>))}</div></div>
+            {isComplianceLoading ? <div className="py-4 flex justify-center"><Loader2 className="animate-spin text-brand-500" /></div> : (
+              <div className="space-y-4">
+                <div><div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Frameworks</div><div className="flex flex-wrap gap-2">{effectiveCompliance?.frameworks.map(fw => (<div key={fw.id} className="px-3 py-1 bg-blue-50 text-blue-800 rounded border border-blue-100 text-xs font-bold">{fw.name}</div>))}</div></div>
+                <div><div className="text-[10px] font-bold text-slate-400 uppercase mb-2">SOPs</div><div className="flex flex-wrap gap-2">{effectiveCompliance?.sopProfiles.map(sop => (<div key={sop.id} className="px-3 py-1 bg-purple-50 text-purple-800 rounded border border-purple-100 text-xs font-bold">{sop.name}</div>))}</div></div>
               </div>
             )}
-        </div>
+          </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
-            <div className="flex justify-between mb-4"><div className="flex items-center gap-2 text-slate-700"><Users size={20} className="text-brand-600" /><h2 className="font-bold">Users</h2><ScopeBadge scope="GLOBAL" /></div><button onClick={() => openManager('USERS')} className="text-[10px] font-bold text-slate-400 uppercase">Manage</button></div>
-            <table className="w-full text-xs text-left"><thead className="bg-slate-50 text-slate-500 border-b border-slate-200"><tr><th className="px-4 py-3 font-bold uppercase">User</th><th className="px-4 py-3 font-bold uppercase">Role</th><th className="px-4 py-3 font-bold uppercase text-right">Nodes</th></tr></thead><tbody className="divide-y divide-slate-100 text-slate-700">{appUsers.slice(0, 5).map(u => (<tr key={u.id} className="hover:bg-slate-50"><td className="px-4 py-3 font-bold">{u.username}</td><td className="px-4 py-3">{u.role}</td><td className="px-4 py-3 text-right">{u.scopes.length}</td></tr>))}</tbody></table>
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border md:col-span-1">
+            <div className="flex justify-between mb-4 border-b pb-2">
+              <div className="flex items-center gap-2 text-slate-700"><Users size={20} className="text-brand-600" /><h2 className="font-bold">User Matrix</h2><ScopeBadge scope="GLOBAL" /></div>
+              <button onClick={() => openManager('USERS')} className="text-[10px] font-bold text-slate-400 uppercase">Manage</button>
+            </div>
+            <div className="space-y-2">
+               {appUsers.slice(0, 4).map(u => (
+                 <div key={u.id} className="flex justify-between items-center text-xs py-1 border-b border-slate-50 last:border-0">
+                    <span className="font-bold text-slate-700">{u.username}</span>
+                    <span className="text-slate-400 font-mono text-[10px]">{u.role}</span>
+                 </div>
+               ))}
+               {appUsers.length === 0 && <div className="text-xs text-slate-400 italic py-2">Loading users...</div>}
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* S0 Management Drawer */}
       {activeCategory && (
         <div className="absolute inset-0 z-50 flex justify-end animate-in fade-in duration-200">
           <div onClick={closeManager} className="absolute inset-0 bg-slate-900/20 backdrop-blur-[1px]" />
           <div className="relative w-full max-w-xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-            <header className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between"><div className="flex items-center gap-3"><div className="p-2 bg-brand-600 text-white rounded-lg"><Settings size={20} /></div><div><h2 className="font-bold text-slate-800 uppercase tracking-tight">Manage {activeCategory}</h2></div></div><button onClick={closeManager} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X size={20} /></button></header>
-            <div className="flex border-b border-slate-200"><button onClick={() => setActiveTab('LIST')} className={`flex-1 py-3 text-xs font-bold uppercase ${activeTab === 'LIST' ? 'border-b-2 border-brand-600 text-brand-600 bg-white' : 'text-slate-400 bg-slate-50'}`}>List</button><button onClick={() => setActiveTab('DETAILS')} className={`flex-1 py-3 text-xs font-bold uppercase ${activeTab === 'DETAILS' ? 'border-b-2 border-brand-600 text-brand-600 bg-white' : 'text-slate-400 bg-slate-50'}`}>Details</button></div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
-               {isEntitiesLoading ? <Loader2 className="animate-spin mx-auto mt-12" /> : (
-                 <>
-                   {/** V35-S0-HOTFIX-PP-26: Entity-Specific Drawer Content **/}
-                   {isSystemAdmin ? (
-                      <>
-                        {activeCategory === 'USERS' && activeTab === 'LIST' && (
-                           <div className="space-y-4"><button onClick={() => { setEditingUser({ username: '', fullName: '', role: UserRole.OPERATOR, status: 'ACTIVE', scopes: [] }); setActiveTab('DETAILS'); }} className="text-brand-600 font-bold text-xs">+ NEW ACCOUNT</button><div className="divide-y border rounded-lg overflow-hidden">{appUsers.map(u => (<div key={u.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group"><div><div className="text-sm font-bold">{u.username}</div><div className="text-[10px]">{u.role}</div></div><button onClick={() => { setEditingUser(u); setActiveTab('DETAILS'); }} className="p-2 hover:bg-slate-200 rounded"><Edit2 size={14} /></button></div>))}</div></div>
-                        )}
-                        {activeCategory === 'USERS' && activeTab === 'DETAILS' && (
-                          <div className="space-y-6">
-                             <form onSubmit={handleUserSubmit} className="space-y-6">
-                                 <div className="text-sm font-bold text-slate-700 flex items-center gap-2"><UserCheck size={18} className="text-brand-600" /> {editingUser?.id ? 'Edit User' : 'Provision User'}</div>
-                                 <div className="space-y-4">
-                                 <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Username</label><input required type="text" className="w-full border rounded p-2.5 text-sm font-mono" value={editingUser?.username || ''} onChange={e => setEditingUser(u => ({ ...u!, username: e.target.value }))} /></div>
-                                 <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Display Name</label><input required type="text" className="w-full border rounded p-2.5 text-sm" value={editingUser?.fullName || ''} onChange={e => setEditingUser(u => ({ ...u!, fullName: e.target.value }))} /></div>
-                                 <div className="grid grid-cols-2 gap-4">
-                                     <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Role</label><select className="w-full border rounded p-2.5 text-xs outline-none bg-white" value={editingUser?.role} onChange={e => setEditingUser(u => ({ ...u!, role: e.target.value as any }))}>{Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}</select></div>
-                                     <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</label><select className="w-full border rounded p-2.5 text-xs outline-none bg-white" value={editingUser?.status} onChange={e => setEditingUser(u => ({ ...u!, status: e.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></div>
-                                 </div>
-                                 <UserScopeSelection />
-                                 </div>
-                                 <div className="pt-6 border-t flex gap-3"><button type="button" onClick={() => setActiveTab('LIST')} className="px-6 py-2.5 rounded text-xs font-bold text-slate-500 hover:bg-slate-100 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-1 py-2.5 bg-brand-600 text-white rounded font-bold text-xs uppercase shadow-sm hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} Save</button></div>
-                             </form>
-                             {editingUser?.id && (
-                                <div className="bg-slate-900 rounded-xl p-6 border border-slate-700 shadow-xl overflow-hidden relative">
-                                   <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><Shield size={64} className="text-white" /></div>
-                                   <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3"><div className="flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-400" /><h4 className="text-xs font-bold text-white uppercase tracking-widest">Effective Permissions</h4></div></div>
-                                   <div className="space-y-4">
-                                      <div className="flex items-center justify-between text-[10px] text-slate-400"><span>Target: <span className="text-emerald-400 font-bold">{selStationId || selLineId || selPlantId || selEntId || 'Global'}</span></span><span>Role: <span className="text-emerald-400 font-bold">{editingUser.role?.toUpperCase()}</span></span></div>
-                                      {isPermsLoading ? (<div className="py-4 flex flex-col items-center gap-2"><Loader2 size={16} className="animate-spin text-emerald-400" /><span className="text-[9px] text-slate-500 uppercase font-bold">Resolving...</span></div>) : effectivePerms ? (
-                                         <div className="space-y-1.5">{effectivePerms.allowedActions.length > 0 ? (effectivePerms.allowedActions.map(action => (<div key={action} className="flex items-center gap-2 text-[10px] text-slate-300 font-mono"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div><span>{action}</span></div>))) : (<div className="flex items-center gap-2 p-3 bg-red-950/30 border border-red-900/50 rounded-lg text-[10px] text-red-400 font-bold uppercase italic"><Ban size={12} /> Access Denied</div>)}</div>
-                                      ) : (<div className="text-[10px] text-slate-600 italic">Select context.</div>)}
-                                   </div>
-                                </div>
-                             )}
-                          </div>
-                        )}
-                        {activeCategory === 'ORG' && activeTab === 'LIST' && (
-                           <div className="space-y-4">
-                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Enterprise Ledger</h3>
-                              <div className="divide-y border rounded-lg">
-                                {enterprises.map(e => (
-                                   <div key={e.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
-                                      <div><div className="text-sm font-bold">{e.displayName}</div><div className="text-[10px] font-mono text-slate-400">{e.id}</div></div>
-                                      <button className="p-2 hover:bg-slate-100 rounded text-slate-400"><Edit2 size={14} /></button>
-                                   </div>
-                                ))}
-                              </div>
-                           </div>
-                        )}
-                        {activeCategory === 'PLANTS' && activeTab === 'LIST' && (
-                           <div className="space-y-4">
-                              <div className="flex justify-between items-center"><h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Manufacturing Facilities</h3><button className="text-[10px] font-bold text-brand-600 uppercase tracking-widest">+ Add Plant</button></div>
-                              <div className="divide-y border rounded-lg">
-                                {activePlants.map(p => (
-                                   <div key={p.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
-                                      <div><div className="text-sm font-bold">{p.displayName}</div><div className="text-[10px] font-mono text-slate-400">LOC: {p.code}</div></div>
-                                      <div className="flex items-center gap-2"><ScopeBadge scope="PLANT" /><button className="p-2 hover:bg-slate-100 rounded text-slate-400"><Edit2 size={14} /></button></div>
-                                   </div>
-                                ))}
-                              </div>
-                           </div>
-                        )}
-                        {activeCategory === 'LINES' && activeTab === 'LIST' && (
-                           <div className="space-y-4">
-                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Production Paths</h3>
-                              <div className="divide-y border rounded-lg">
-                                {activeLines.map(l => (
-                                   <div key={l.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
-                                      <div><div className="text-sm font-bold">{l.displayName}</div><div className="text-[10px] text-slate-400">{l.supportedSkuTypes.join(', ')}</div></div>
-                                      <button className="p-2 hover:bg-slate-100 rounded text-slate-400"><Edit2 size={14} /></button>
-                                   </div>
-                                ))}
-                              </div>
-                           </div>
-                        )}
-                        {activeCategory === 'STATIONS' && activeTab === 'LIST' && (
-                           <div className="space-y-4">
-                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Physical Workstations</h3>
-                              <div className="divide-y border rounded-lg">
-                                {activeStations.map(s => (
-                                   <div key={s.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
-                                      <div><div className="text-sm font-bold">{s.displayName}</div><div className="text-[10px] text-slate-400 uppercase tracking-widest">{s.stationType}</div></div>
-                                      <button className="p-2 hover:bg-slate-100 rounded text-slate-400"><Edit2 size={14} /></button>
-                                   </div>
-                                ))}
-                              </div>
-                           </div>
-                        )}
-                        {activeCategory === 'DEVICE_CLASSES' && activeTab === 'LIST' && (
-                           <div className="space-y-4">
-                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Device Catalog</h3>
-                              <div className="grid grid-cols-2 gap-4">
-                                {deviceClasses.map(dc => (
-                                   <div key={dc.id} className="p-4 border rounded-lg bg-slate-50">
-                                      <div className="text-xs font-bold text-slate-800">{dc.displayName}</div>
-                                      <div className="text-[9px] text-slate-500 uppercase mt-1">{dc.category}</div>
-                                      <div className="mt-2 flex flex-wrap gap-1">
-                                        {dc.supportedProtocols.map(p => <span key={p} className="text-[8px] bg-white border px-1 rounded font-mono">{p}</span>)}
-                                      </div>
-                                   </div>
-                                ))}
-                              </div>
-                           </div>
-                        )}
-                        {activeCategory === 'SOP_PROFILES' && activeTab === 'LIST' && (
-                           <div className="space-y-4">
-                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active SOP Ledger</h3>
-                              <div className="space-y-2">
-                                {allSops.map(sop => (
-                                   <div key={sop.id} className="p-4 bg-white border rounded-lg shadow-sm flex justify-between items-start">
-                                      <div>
-                                        <div className="text-sm font-bold text-slate-800">{sop.name}</div>
-                                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{sop.code} REV {sop.version}</div>
-                                      </div>
-                                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-100">LOCKED</span>
-                                   </div>
-                                ))}
-                              </div>
-                           </div>
-                        )}
-                        {activeCategory === 'CAPABILITY_FLAGS' && activeTab === 'LIST' && (
-                           <div className="space-y-4">
-                              <div className="p-4 bg-slate-50 border rounded-lg mb-6">
-                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Global Hierarchy Control</h3>
-                                <p className="text-[10px] text-slate-400 leading-relaxed italic">Changes here affect effective values across all downstream nodes unless explicitly overridden.</p>
-                              </div>
-                              <div className="space-y-3">
-                                {effectiveFlags.map(f => (
-                                   <div key={f.id} className="p-4 bg-white border rounded-lg flex justify-between items-center group">
-                                      <div className="flex-1 pr-8">
-                                        <div className="font-bold text-slate-800 text-sm">{f.label}</div>
-                                        <div className="text-[10px] text-slate-500 mt-0.5">{f.description}</div>
-                                      </div>
-                                      {f.effectiveValue ? <ToggleRight className="text-brand-600" size={28} /> : <ToggleLeft className="text-slate-300" size={28} />}
-                                   </div>
-                                ))}
-                              </div>
-                           </div>
-                        )}
-                        {activeCategory === 'REGULATORY' && activeTab === 'LIST' && (
-                           <div className="space-y-8">
-                              <div className="space-y-4">
-                                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Available Frameworks</h4>
-                                <div className="grid grid-cols-1 gap-3">
-                                  {allFrameworks.map(f => (
-                                     <div key={f.id} className="p-4 border rounded-lg bg-slate-50 flex items-center gap-4">
-                                        <div className="p-2 bg-white rounded border border-slate-200 text-brand-600"><Shield size={16} /></div>
-                                        <div><div className="text-sm font-bold text-slate-800">{f.name}</div><div className="text-[10px] text-slate-500">{f.jurisdiction} • {f.mandatory ? 'MANDATORY' : 'OPTIONAL'}</div></div>
-                                     </div>
-                                  ))}
-                                </div>
-                              </div>
-                           </div>
-                        )}
+            <header className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-brand-600 text-white rounded-lg"><Settings2 size={20} /></div>
+                <div><h2 className="font-bold text-slate-800 uppercase tracking-tight">Manage {activeCategory}</h2></div>
+              </div>
+              <button onClick={closeManager} className="p-2 hover:bg-slate-200 rounded-full text-slate-400"><X size={20} /></button>
+            </header>
+            
+            <div className="flex border-b border-slate-200">
+              <button onClick={() => setActiveTab('LIST')} className={`flex-1 py-3 text-xs font-bold uppercase ${activeTab === 'LIST' ? 'border-b-2 border-brand-600 text-brand-600 bg-white' : 'text-slate-400 bg-slate-50'}`}>Directory</button>
+              <button onClick={() => setActiveTab('DETAILS')} className={`flex-1 py-3 text-xs font-bold uppercase ${activeTab === 'DETAILS' ? 'border-b-2 border-brand-600 text-brand-600 bg-white' : 'text-slate-400 bg-slate-50'}`}>Form View</button>
+            </div>
 
-                        {/** Catch-all for unknown category in Admin view **/}
-                        {!['USERS', 'ORG', 'PLANTS', 'LINES', 'STATIONS', 'DEVICE_CLASSES', 'SOP_PROFILES', 'CAPABILITY_FLAGS', 'REGULATORY'].includes(activeCategory || '') && (
-                           <div className="h-full flex flex-col items-center justify-center text-slate-400 py-12">
-                              <Box size={48} className="mb-4 opacity-20" />
-                              <p className="text-sm font-bold uppercase tracking-tight">Configuration Registry</p>
-                              <p className="text-xs text-slate-400 mt-2 italic">Entity: {activeCategory || 'Unknown'}</p>
-                           </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50/30">
+               {isEntitiesLoading ? <div className="flex flex-col items-center mt-12 gap-3"><Loader2 className="animate-spin text-brand-600" /><span className="text-xs text-slate-400">Loading Registry...</span></div> : (
+                 <>
+                   {activeTab === 'LIST' && (
+                     <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                        <div className="flex justify-between items-center bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                           <div className="text-xs font-bold text-slate-500 uppercase">Registry Directory</div>
+                           {isSystemAdmin && (
+                            <button onClick={() => { 
+                                if (activeCategory === 'PLANTS') setEditingPlant({ displayName: '', code: '', status: 'ACTIVE', enterpriseId: selEntId });
+                                if (activeCategory === 'LINES') setEditingLine({ displayName: '', code: '', status: 'ACTIVE', plantId: selPlantId, supportedOperations: [], supportedSkuTypes: [] });
+                                if (activeCategory === 'STATIONS') setEditingStation({ displayName: '', code: '', status: 'ACTIVE', lineId: selLineId, stationType: 'ASSEMBLY', supportedOperations: [] });
+                                if (activeCategory === 'DEVICE_CLASSES') setEditingDeviceClass({ displayName: '', code: '', status: 'ACTIVE', category: 'OTHER', supportedProtocols: [] });
+                                if (activeCategory === 'USERS') setEditingUser({ username: '', fullName: '', email: '', role: UserRole.OPERATOR, status: 'ACTIVE', scopes: [] });
+                                if (activeCategory === 'ORG') setEditingEnterprise({ displayName: '', code: '', status: 'ACTIVE', timezone: 'UTC' });
+                                if (activeCategory === 'SOP_PROFILES') setEditingSop({ name: '', code: '', version: '1.0' });
+                                if (activeCategory === 'REGULATORY') setEditingFramework({ name: '', code: '', jurisdiction: 'INDIA', mandatory: true, status: 'DRAFT' });
+                                if (activeCategory === 'CAPABILITY_FLAGS') setEditingFlag({}); 
+                                setActiveTab('DETAILS');
+                            }} className="bg-brand-600 text-white px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 hover:bg-brand-700 shadow-sm"><Plus size={14} /> NEW ENTRY</button>
+                           )}
+                        </div>
+                        
+                        <div className="divide-y bg-white border rounded-xl overflow-hidden shadow-sm">
+                           {activeCategory === 'PLANTS' && activePlants.map(p => (
+                             <div key={p.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
+                               <div><div className="font-bold text-slate-800 text-sm">{p.displayName}</div><div className="text-[10px] font-mono text-slate-400">{p.code}</div></div>
+                               {isSystemAdmin && <button onClick={() => { setEditingPlant(p); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
+                             </div>
+                           ))}
+                           {activeCategory === 'LINES' && activeLines.map(l => (
+                             <div key={l.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
+                               <div><div className="font-bold text-slate-800 text-sm">{l.displayName}</div><div className="text-[10px] font-mono text-slate-400">{l.code}</div></div>
+                               {isSystemAdmin && <button onClick={() => { setEditingLine(l); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
+                             </div>
+                           ))}
+                           {activeCategory === 'STATIONS' && activeStations.map(s => (
+                             <div key={s.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
+                               <div><div className="font-bold text-slate-800 text-sm">{s.displayName}</div><div className="text-[10px] font-mono text-slate-400 uppercase">{s.stationType}</div></div>
+                               {isSystemAdmin && <button onClick={() => { setEditingStation(s); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
+                             </div>
+                           ))}
+                           {activeCategory === 'USERS' && appUsers.map(u => (
+                             <div key={u.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
+                               <div><div className="font-bold text-slate-800 text-sm">{u.username}</div><div className="text-[10px] font-mono text-slate-400 uppercase">{u.role}</div></div>
+                               {isSystemAdmin && <button onClick={() => { setEditingUser(u); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
+                             </div>
+                           ))}
+                           {activeCategory === 'ORG' && enterprises.map(e => (
+                             <div key={e.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
+                               <div><div className="font-bold text-slate-800 text-sm">{e.displayName}</div><div className="text-[10px] font-mono text-slate-400">{e.id}</div></div>
+                               {isSystemAdmin && <button onClick={() => { setEditingEnterprise(e); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
+                             </div>
+                           ))}
+                           {activeCategory === 'REGULATORY' && allFrameworks.map(f => (
+                             <div key={f.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
+                               <div><div className="font-bold text-slate-800 text-sm">{f.name}</div><div className="text-[10px] font-mono text-slate-400 uppercase">{f.jurisdiction}</div></div>
+                               {isSystemAdmin && <button onClick={() => { setEditingFramework(f); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
+                             </div>
+                           ))}
+                           {activeCategory === 'CAPABILITY_FLAGS' && effectiveFlags.map(f => (
+                             <div key={f.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
+                               <div><div className="font-bold text-slate-800 text-sm">{f.label}</div><div className="text-[10px] font-mono text-slate-400 uppercase">{f.category}</div></div>
+                               {isSystemAdmin && <button onClick={() => { setEditingFlag(f); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
+                             </div>
+                           ))}
+                           {activeCategory === 'SOP_PROFILES' && allSops.map(s => (
+                             <div key={s.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
+                               <div><div className="font-bold text-slate-800 text-sm">{s.name}</div><div className="text-[10px] font-mono text-slate-400 uppercase">V{s.version}</div></div>
+                               {isSystemAdmin && <button onClick={() => { setEditingSop(s); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
+                             </div>
+                           ))}
+                        </div>
+                     </div>
+                   )}
+
+                   {activeTab === 'DETAILS' && (
+                     <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm animate-in zoom-in-95 duration-200">
+                        {isSystemAdmin ? (
+                            <>
+                                {activeCategory === 'PLANTS' && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('plants', editingPlant, editingPlant?.id); }} className="space-y-6">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Factory size={18} className="text-brand-600" /> Plant Definition</h3>
+                                    <div className="space-y-4">
+                                    <Field label="Display Name"><input required className="w-full border rounded p-3 text-sm" value={editingPlant?.displayName || ''} onChange={ev => setEditingPlant(p => ({ ...p!, displayName: ev.target.value }))} /></Field>
+                                    <Field label="Plant Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingPlant?.code || ''} onChange={ev => setEditingPlant(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                    </div>
+                                    <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
+                                </form>
+                                )}
+                                {activeCategory === 'LINES' && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('lines', editingLine, editingLine?.id); }} className="space-y-6">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Layout size={18} className="text-brand-600" /> Production Line</h3>
+                                    <div className="space-y-4">
+                                    <Field label="Display Name"><input required className="w-full border rounded p-3 text-sm" value={editingLine?.displayName || ''} onChange={ev => setEditingLine(p => ({ ...p!, displayName: ev.target.value }))} /></Field>
+                                    <Field label="Line Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingLine?.code || ''} onChange={ev => setEditingLine(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                    </div>
+                                    <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
+                                </form>
+                                )}
+                                {activeCategory === 'STATIONS' && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('stations', editingStation, editingStation?.id); }} className="space-y-6">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Box size={18} className="text-brand-600" /> Workstation</h3>
+                                    <div className="space-y-4">
+                                    <Field label="Station Name"><input required className="w-full border rounded p-3 text-sm" value={editingStation?.displayName || ''} onChange={ev => setEditingStation(p => ({ ...p!, displayName: ev.target.value }))} /></Field>
+                                    <Field label="Station Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingStation?.code || ''} onChange={ev => setEditingStation(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                    </div>
+                                    <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
+                                </form>
+                                )}
+                                {activeCategory === 'ORG' && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('enterprises', editingEnterprise, editingEnterprise?.id); }} className="space-y-6">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Building2 size={18} className="text-brand-600" /> Enterprise Entity</h3>
+                                    <div className="space-y-4">
+                                    <Field label="Display Name"><input required className="w-full border rounded p-3 text-sm" value={editingEnterprise?.displayName || ''} onChange={ev => setEditingEnterprise(p => ({ ...p!, displayName: ev.target.value }))} /></Field>
+                                    <Field label="Org Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingEnterprise?.code || ''} onChange={ev => setEditingEnterprise(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                    <Field label="Timezone"><input className="w-full border rounded p-3 text-sm font-mono" value={editingEnterprise?.timezone || 'UTC'} onChange={ev => setEditingEnterprise(p => ({ ...p!, timezone: ev.target.value }))} /></Field>
+                                    <Field label="Status"><select className="w-full border rounded p-3 text-sm bg-white" value={editingEnterprise?.status} onChange={ev => setEditingEnterprise(p => ({ ...p!, status: ev.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option></select></Field>
+                                    </div>
+                                    <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
+                                </form>
+                                )}
+                                {activeCategory === 'USERS' && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('users', editingUser, editingUser?.id); }} className="space-y-6">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><UserCheck size={18} className="text-brand-600" /> User Profile</h3>
+                                    <div className="space-y-4">
+                                    <Field label="Full Name"><input required className="w-full border rounded p-3 text-sm" value={editingUser?.fullName || ''} onChange={ev => setEditingUser(p => ({ ...p!, fullName: ev.target.value }))} /></Field>
+                                    <Field label="Email"><input required type="email" className="w-full border rounded p-3 text-sm" value={editingUser?.email || ''} onChange={ev => setEditingUser(p => ({ ...p!, email: ev.target.value }))} /></Field>
+                                    <Field label="Username"><input required className="w-full border rounded p-3 text-sm font-mono" value={editingUser?.username || ''} onChange={ev => setEditingUser(p => ({ ...p!, username: ev.target.value }))} /></Field>
+                                    <Field label="Role"><select className="w-full border rounded p-3 text-sm bg-white" value={editingUser?.role} onChange={ev => setEditingUser(p => ({ ...p!, role: ev.target.value as any }))}>{Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}</select></Field>
+                                    <Field label="Status"><select className="w-full border rounded p-3 text-sm bg-white" value={editingUser?.status} onChange={ev => setEditingUser(p => ({ ...p!, status: ev.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></Field>
+                                    </div>
+                                    <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
+                                </form>
+                                )}
+                                {activeCategory === 'REGULATORY' && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('compliance/frameworks', editingFramework, editingFramework?.id); }} className="space-y-6">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Globe size={18} className="text-brand-600" /> Regulatory Framework</h3>
+                                    <div className="space-y-4">
+                                    <Field label="Standard Name"><input required className="w-full border rounded p-3 text-sm" value={editingFramework?.name || ''} onChange={ev => setEditingFramework(p => ({ ...p!, name: ev.target.value }))} /></Field>
+                                    <Field label="Legal Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingFramework?.code || ''} onChange={ev => setEditingFramework(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                    <Field label="Jurisdiction"><select className="w-full border rounded p-3 text-sm bg-white" value={editingFramework?.jurisdiction} onChange={ev => setEditingFramework(p => ({ ...p!, jurisdiction: ev.target.value }))}><option value="INDIA">INDIA</option><option value="EU">EU</option><option value="GLOBAL">GLOBAL</option></select></Field>
+                                    <Field label="Mandatory"><select className="w-full border rounded p-3 text-sm bg-white" value={String(editingFramework?.mandatory)} onChange={ev => setEditingFramework(p => ({ ...p!, mandatory: ev.target.value === 'true' }))}><option value="true">YES</option><option value="false">NO</option></select></Field>
+                                    <Field label="Status"><select className="w-full border rounded p-3 text-sm bg-white" value={editingFramework?.status} onChange={ev => setEditingFramework(p => ({ ...p!, status: ev.target.value as any }))}><option value="DRAFT">DRAFT</option><option value="ACTIVE">ACTIVE</option><option value="RETIRED">RETIRED</option></select></Field>
+                                    </div>
+                                    <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
+                                </form>
+                                )}
+                                {activeCategory === 'CAPABILITY_FLAGS' && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('capabilities', editingFlag, editingFlag?.id); }} className="space-y-6">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Zap size={18} className="text-brand-600" /> Feature Capability</h3>
+                                    <div className="space-y-4">
+                                    <Field label="Feature Label"><input required className="w-full border rounded p-3 text-sm" value={editingFlag?.label || ''} onChange={ev => setEditingFlag(p => ({ ...p!, label: ev.target.value }))} /></Field>
+                                    <Field label="Description"><textarea required className="w-full border rounded p-3 text-sm" rows={2} value={editingFlag?.description || ''} onChange={ev => setEditingFlag(p => ({ ...p!, description: ev.target.value }))}></textarea></Field>
+                                    <Field label="Default Value"><select className="w-full border rounded p-3 text-sm bg-white" value={String(editingFlag?.defaultValue)} onChange={ev => setEditingFlag(p => ({ ...p!, defaultValue: ev.target.value === 'true' }))}><option value="true">ENABLED</option><option value="false">DISABLED</option></select></Field>
+                                    </div>
+                                    <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
+                                </form>
+                                )}
+                                {activeCategory === 'DEVICE_CLASSES' && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('device-classes', editingDeviceClass, editingDeviceClass?.id); }} className="space-y-6">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><Zap size={18} className="text-brand-600" /> Device Class Definition</h3>
+                                    <div className="space-y-4">
+                                    <Field label="Class Name"><input required className="w-full border rounded p-3 text-sm" value={editingDeviceClass?.displayName || ''} onChange={ev => setEditingDeviceClass(p => ({ ...p!, displayName: ev.target.value }))} /></Field>
+                                    <Field label="Category"><select className="w-full border rounded p-3 text-sm bg-white" value={editingDeviceClass?.category} onChange={ev => setEditingDeviceClass(p => ({ ...p!, category: ev.target.value }))}><option value="SCANNER">SCANNER</option><option value="SCALE">SCALE</option><option value="TORQUE_TOOL">TORQUE TOOL</option><option value="PRINTER">PRINTER</option><option value="TESTER">TESTER</option></select></Field>
+                                    </div>
+                                    <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE CHANGES</button></div>
+                                </form>
+                                )}
+                                {activeCategory === 'SOP_PROFILES' && (
+                                <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('compliance/sop-profiles', editingSop, editingSop?.id); }} className="space-y-6">
+                                    <h3 className="font-bold text-slate-800 flex items-center gap-2"><BookOpen size={18} className="text-brand-600" /> SOP Profile Definition</h3>
+                                    <div className="space-y-4">
+                                        <Field label="Profile Name"><input required className="w-full border rounded p-3 text-sm" value={editingSop?.name || ''} onChange={ev => setEditingSop(p => ({ ...p!, name: ev.target.value }))} /></Field>
+                                        <Field label="SOP Code"><input required className="w-full border rounded p-3 text-sm font-mono" value={editingSop?.code || ''} onChange={ev => setEditingSop(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                        <Field label="Revision Version"><input required className="w-full border rounded p-3 text-sm font-mono" value={editingSop?.version || ''} onChange={ev => setEditingSop(p => ({ ...p!, version: ev.target.value }))} /></Field>
+                                    </div>
+                                    <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE CHANGES</button></div>
+                                </form>
+                                )}
+                            </>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-48">
+                                <Lock className="text-red-400 mb-2" />
+                                <p className="text-sm font-bold text-slate-700">Modification Restricted</p>
+                                <p className="text-[10px] text-slate-500">Only System Admin can modify registry entries.</p>
+                            </div>
                         )}
-                      </>
-                   ) : (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-500">
-                        <Lock size={48} className="text-red-400 mb-4" />
-                        <h3 className="text-xl font-bold">Access Restricted</h3>
-                        <p className="text-sm mt-1">Role <strong>{activeUserRole}</strong> is not authorized to manage {activeCategory}.</p>
-                      </div>
+                     </div>
                    )}
                  </>
                )}
             </div>
-            <footer className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center"><button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Close</button><div className="text-[10px] font-mono text-slate-400 flex items-center gap-1"><ShieldCheck size={12} /> V3.5-HOTFIX-26</div></footer>
+            <footer className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center"><button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Close</button><div className="text-[10px] font-mono text-slate-400 flex items-center gap-1"><ShieldCheck size={12} /> V3.5-HOTFIX-29</div></footer>
           </div>
         </div>
       )}
 
+      {/* Confirmation Dialog Overlay */}
       {confirmAction && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center animate-in fade-in duration-200">
-           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" /><div className="relative bg-white rounded-xl shadow-2xl border border-slate-200 p-8 max-w-md w-full animate-in zoom-in-95 duration-200"><div className="flex items-center gap-4 mb-6"><div className="p-3 bg-brand-50 text-brand-600 rounded-full"><ShieldCheck size={28} /></div><h3 className="text-xl font-bold text-slate-800">{confirmAction.title}</h3></div><p className="text-slate-600 mb-8 leading-relaxed">{confirmAction.message}</p><div className="flex gap-4"><button onClick={() => setConfirmAction(null)} className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-500 hover:bg-slate-50">CANCEL</button><button onClick={confirmAction.onConfirm} className="flex-1 py-3 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 shadow-md">CONFIRM</button></div></div>
+           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+           <div className="relative bg-white rounded-xl shadow-2xl border border-slate-200 p-8 max-w-md w-full animate-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-4 mb-6">
+                 <div className="p-3 bg-brand-50 text-brand-600 rounded-full">
+                    <ShieldCheck size={28} />
+                 </div>
+                 <h3 className="text-xl font-bold text-slate-800">{confirmAction.title}</h3>
+              </div>
+              <p className="text-slate-600 mb-8 leading-relaxed">{confirmAction.message}</p>
+              <div className="flex gap-4">
+                 <button 
+                   onClick={() => setConfirmAction(null)} 
+                   className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-500 hover:bg-slate-50"
+                 >
+                   CANCEL
+                 </button>
+                 <button 
+                   onClick={confirmAction.onConfirm} 
+                   className="flex-1 py-3 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 shadow-md"
+                 >
+                   CONFIRM
+                 </button>
+              </div>
+           </div>
         </div>
       )}
     </div>
   );
 };
+
+export default SystemSetup;

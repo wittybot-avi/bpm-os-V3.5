@@ -3,19 +3,7 @@
  * Simulated backend logic for system hierarchy retrieval and management.
  * @version V3.5
  * @governance S0-ARCH-BP-05
- * @updated V35-S0-CRUD-PP-11 (Plant Mutations)
- * @updated V35-S0-CRUD-PP-13 (Line Mutations)
- * @updated V35-S0-CRUD-PP-14 (Station Mutations)
- * @updated V35-S0-CRUD-PP-15 (Enterprise Mutations)
- * @updated V35-S0-CAP-PP-16 (Device Class Mutations)
- * @updated V35-S0-CAP-PP-17 (Capability Overrides)
- * @updated V35-S0-COMP-PP-18 (Regulatory Bindings)
- * @updated V35-S0-COMP-PP-19 (SOP Profile CRUD)
- * @updated V35-S0-RBAC-PP-20 (User Scopes)
- * @updated V35-S0-RBAC-PP-21 (Permission Preview)
- * @updated V35-S0-GOV-PP-22 (Audit Logging)
- * @updated V35-S0-GOV-PP-23 (Guardrails)
- * @updated V35-S0-HOTFIX-PP-25 (RBAC Permission Key)
+ * @updated V35-S0-HOTFIX-PP-29 (Full CRUD Handlers)
  */
 
 import { UserRole } from "../../../types";
@@ -26,17 +14,19 @@ import {
   getLines, 
   getStations,
   getDeviceClasses,
+  addEnterprise,
+  updateEnterprise,
   addPlant,
   updatePlant,
   addLine,
   updateLine,
   addStation,
   updateStation,
-  updateEnterprise,
   addDeviceClass,
   updateDeviceClass,
   getCapabilityFlags,
   getCapabilityOverrides,
+  updateCapabilityFlag,
   upsertOverride,
   removeOverride,
   getPlantById,
@@ -44,6 +34,8 @@ import {
   getStationById,
   getRegulatoryFrameworks,
   getComplianceBindings,
+  addRegulatoryFramework,
+  updateRegulatoryFramework,
   upsertComplianceBinding,
   removeComplianceBinding,
   getSopProfiles,
@@ -56,7 +48,7 @@ import {
   getS0AuditLogs
 } from "../s0/systemTopology.store";
 import type { Enterprise, Plant, Line, Station, DeviceClass, S0AuditEntry } from "../../../domain/s0/systemTopology.types";
-import type { CapabilityOverride, EffectiveFlag, CapabilityScope } from "../../../domain/s0/capability.types";
+import type { CapabilityOverride, EffectiveFlag, CapabilityScope, CapabilityFlag } from "../../../domain/s0/capability.types";
 import type { RegulatoryFramework, ComplianceBinding, EffectiveCompliance, SOPProfile } from "../../../domain/s0/complianceContext.types";
 import type { AppUser, EffectivePermissions } from "../../../domain/s0/userManagement.types";
 
@@ -103,17 +95,37 @@ export const listEnterprises: ApiHandler = async () => {
 };
 
 /**
+ * POST /api/s0/enterprises/create
+ */
+export const createEnterpriseHandler: ApiHandler = async (req) => {
+  const body = parseBody<Partial<Enterprise>>(req);
+  if (!body.code || !body.displayName) return err("BAD_REQUEST", "Code and display name are required");
+  const newEnt: Enterprise = {
+    id: `ENT-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
+    code: body.code,
+    displayName: body.displayName,
+    status: body.status || 'ACTIVE',
+    effectiveFrom: new Date().toISOString(),
+    plantIds: [],
+    timezone: body.timezone || 'UTC',
+    audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
+  };
+  addEnterprise(newEnt);
+  logS0({ entityType: 'ENTERPRISE', entityId: newEnt.id, action: 'CREATE', actor: 'API_USER' });
+  return ok(newEnt);
+};
+
+/**
  * PATCH /api/s0/enterprises/update
  */
 export const updateEnterpriseHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Enterprise> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Enterprise ID is required");
 
-  // V35-S0-GOV-PP-23: Block Suspend if child entities exist
   if (body.updates.status && body.updates.status !== 'ACTIVE') {
     const hasPlants = getPlants().some(p => p.enterpriseId === body.id);
     if (hasPlants) {
-      return err("PRECONDITION_FAILED", "Cannot suspend Enterprise with active Plants. Retain or move Plants first.");
+      return err("PRECONDITION_FAILED", "Cannot suspend Enterprise with active Plants.");
     }
   }
 
@@ -167,11 +179,10 @@ export const updatePlantHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Plant> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Plant ID is required");
 
-  // V35-S0-GOV-PP-23: Block Suspend if child entities exist
   if (body.updates.status && body.updates.status !== 'ACTIVE') {
     const hasLines = getLines().some(l => l.plantId === body.id);
     if (hasLines) {
-      return err("PRECONDITION_FAILED", "Cannot suspend Plant with existing production Lines. Retire or move Lines first.");
+      return err("PRECONDITION_FAILED", "Cannot suspend Plant with existing production Lines.");
     }
   }
 
@@ -229,11 +240,10 @@ export const updateLineHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Line> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Line ID is required");
 
-  // V35-S0-GOV-PP-23: Block Suspend if child entities exist
   if (body.updates.status && body.updates.status !== 'ACTIVE') {
     const hasStations = getStations().some(s => s.lineId === body.id);
     if (hasStations) {
-      return err("PRECONDITION_FAILED", "Cannot suspend Line with existing Workstations. Retire Stations first.");
+      return err("PRECONDITION_FAILED", "Cannot suspend Line with existing Workstations.");
     }
   }
 
@@ -345,6 +355,18 @@ export const updateDeviceClassHandler: ApiHandler = async (req) => {
 };
 
 /**
+ * PATCH /api/s0/capabilities/update
+ */
+export const updateCapabilityFlagHandler: ApiHandler = async (req) => {
+  const body = parseBody<{ id: string; updates: Partial<CapabilityFlag> }>(req);
+  if (!body.id) return err("BAD_REQUEST", "Flag ID is required");
+  const updated = updateCapabilityFlag(body.id, body.updates);
+  if (!updated) return err("NOT_FOUND", "Flag not found", 404);
+  logS0({ entityType: 'CAPABILITY', entityId: body.id, action: 'UPDATE', actor: 'API_USER' });
+  return ok(updated);
+};
+
+/**
  * GET /api/s0/capabilities/effective
  */
 export const getEffectiveCapabilitiesHandler: ApiHandler = async (req) => {
@@ -428,6 +450,39 @@ export const removeCapabilityOverrideHandler: ApiHandler = async (req) => {
  * GET /api/s0/compliance/frameworks
  */
 export const listRegulatoryFrameworksHandler: ApiHandler = async () => ok(getRegulatoryFrameworks());
+
+/**
+ * POST /api/s0/compliance/frameworks/create
+ */
+export const createRegulatoryFrameworkHandler: ApiHandler = async (req) => {
+  const body = parseBody<Partial<RegulatoryFramework>>(req);
+  if (!body.code || !body.name) return err("BAD_REQUEST", "Code and Name are required");
+  const newFw: RegulatoryFramework = {
+    id: `RF-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
+    code: body.code,
+    name: body.name,
+    jurisdiction: body.jurisdiction || 'INDIA',
+    mandatory: body.mandatory || false,
+    status: body.status || 'DRAFT',
+    description: body.description,
+    referenceId: body.referenceId || `REF-${Math.random().toString(10).slice(2, 8)}`
+  };
+  addRegulatoryFramework(newFw);
+  logS0({ entityType: 'COMPLIANCE', entityId: newFw.id, action: 'CREATE', actor: 'API_USER' });
+  return ok(newFw);
+};
+
+/**
+ * PATCH /api/s0/compliance/frameworks/update
+ */
+export const updateRegulatoryFrameworkHandler: ApiHandler = async (req) => {
+  const body = parseBody<{ id: string; updates: Partial<RegulatoryFramework> }>(req);
+  if (!body.id) return err("BAD_REQUEST", "Framework ID is required");
+  const updated = updateRegulatoryFramework(body.id, body.updates);
+  if (!updated) return err("NOT_FOUND", "Framework not found", 404);
+  logS0({ entityType: 'COMPLIANCE', entityId: body.id, action: 'UPDATE', actor: 'API_USER' });
+  return ok(updated);
+};
 
 /**
  * GET /api/s0/compliance/sop-profiles
@@ -534,6 +589,7 @@ export const createUserHandler: ApiHandler = async (req) => {
     id: `USR-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
     username: body.username,
     fullName: body.fullName,
+    email: body.email || "",
     role: body.role,
     status: body.status || 'ACTIVE',
     scopes: body.scopes || []

@@ -14,10 +14,13 @@ import type { CapabilityScope } from "./capability.types";
  */
 export interface RegulatoryFramework {
   readonly id: EntityId;
+  readonly code: string;         // Human readable identifier
   readonly name: string;
   readonly jurisdiction: string; // e.g., "INDIA", "EU", "GLOBAL"
   readonly mandatory: boolean;
+  readonly status: 'ACTIVE' | 'DRAFT' | 'RETIRED';
   readonly description?: string;
+  readonly referenceId?: string; // External legal reference
 }
 
 /**

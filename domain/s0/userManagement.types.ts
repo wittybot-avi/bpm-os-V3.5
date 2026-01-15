@@ -23,6 +23,7 @@ export interface AppUser {
   readonly id: EntityId;
   readonly username: string;
   readonly fullName: string;
+  readonly email?: string;
   readonly role: UserRole;
   readonly status: 'ACTIVE' | 'INACTIVE';
   readonly scopes: readonly UserScopeBinding[];

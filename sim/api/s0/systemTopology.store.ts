@@ -3,7 +3,7 @@
  * Simulated database for Enterprise, Plant, Line, and Station hierarchy.
  * @version V3.5
  * @governance S0-ARCH-BP-04
- * @updated V35-S0-HOTFIX-PP-26 (Seed Rehydration)
+ * @updated V35-S0-HOTFIX-PP-29 (Regulatory & Flag Mutators)
  */
 
 import { UserRole } from "../../../types";
@@ -29,21 +29,8 @@ let SOP_PROFILES: SOPProfile[] = [];
 let COMPLIANCE_BINDINGS: ComplianceBinding[] = [];
 let USERS: AppUser[] = [];
 let S0_AUDIT_LOGS: S0AuditEntry[] = [];
-
-const CAPABILITY_FLAGS: CapabilityFlag[] = [
-  { id: 'ENABLE_SERIALIZATION', label: 'Unit Serialization', description: 'Enable unique ID generation at S3.', defaultValue: true, category: 'TRACEABILITY' },
-  { id: 'ENABLE_IOT_BINDING', label: 'IoT Asset Binding', description: 'Link BMS telemetry to Battery ID at S10.', defaultValue: true, category: 'TRACEABILITY' },
-  { id: 'ENABLE_CELL_TRACE', label: 'Deep Cell Traceability', description: 'Track serials down to individual cell units.', defaultValue: false, category: 'TRACEABILITY' },
-  { id: 'ENABLE_DIGITAL_PASSPORT', label: 'Digital Passport (EU)', description: 'Generate carbon footprint & compliance schema.', defaultValue: true, category: 'REGULATORY' },
-  { id: 'STRICT_GATING', label: 'Strict Interlock Gating', description: 'Block stage transitions if gates are locked.', defaultValue: true, category: 'MANUFACTURING' }
-];
-
-const REGULATORY_FRAMEWORKS: RegulatoryFramework[] = [
-  { id: "RF-AIS-156", name: "AIS-156 AMD 3", jurisdiction: "INDIA", mandatory: true, description: "Safety requirements for traction batteries of L, M and N category vehicles." },
-  { id: "RF-EU-BP", name: "EU Battery Passport", jurisdiction: "EU", mandatory: true, description: "Digital record providing transparency on battery sustainability and circularity." },
-  { id: "RF-UN-383", name: "UN38.3 Certified", jurisdiction: "GLOBAL", mandatory: true, description: "Standard for testing lithium batteries for transport." },
-  { id: "RF-BATT-AADHAAR", name: "BATT-AADHAAR-V1", jurisdiction: "INDIA", mandatory: false, description: "Sovereign identity framework for battery tracking." }
-];
+let CAPABILITY_FLAGS: CapabilityFlag[] = [];
+let REGULATORY_FRAMEWORKS: RegulatoryFramework[] = [];
 
 /**
  * ensureS0Seed
@@ -54,18 +41,44 @@ export function ensureS0Seed() {
 
   console.info("[S0-STORE] Rehydrating Master Data seed...");
 
-  STATIONS = [
+  CAPABILITY_FLAGS = [
+    { id: 'ENABLE_SERIALIZATION', label: 'Unit Serialization', description: 'Enable unique ID generation at S3.', defaultValue: true, category: 'TRACEABILITY' },
+    { id: 'ENABLE_IOT_BINDING', label: 'IoT Asset Binding', description: 'Link BMS telemetry to Battery ID at S10.', defaultValue: true, category: 'TRACEABILITY' },
+    { id: 'ENABLE_CELL_TRACE', label: 'Deep Cell Traceability', description: 'Track serials down to individual cell units.', defaultValue: false, category: 'TRACEABILITY' },
+    { id: 'ENABLE_DIGITAL_PASSPORT', label: 'Digital Passport (EU)', description: 'Generate carbon footprint & compliance schema.', defaultValue: true, category: 'REGULATORY' },
+    { id: 'STRICT_GATING', label: 'Strict Interlock Gating', description: 'Block stage transitions if gates are locked.', defaultValue: true, category: 'MANUFACTURING' }
+  ];
+
+  REGULATORY_FRAMEWORKS = [
+    { id: "RF-AIS-156", code: "AIS-156", name: "AIS-156 AMD 3", jurisdiction: "INDIA", mandatory: true, status: 'ACTIVE', description: "Safety requirements for traction batteries of L, M and N category vehicles." },
+    { id: "RF-EU-BP", code: "EU-2023/1542", name: "EU Battery Passport", jurisdiction: "EU", mandatory: true, status: 'ACTIVE', description: "Digital record providing transparency on battery sustainability and circularity." },
+    { id: "RF-UN-383", code: "UN-38.3", name: "UN38.3 Certified", jurisdiction: "GLOBAL", mandatory: true, status: 'ACTIVE', description: "Standard for testing lithium batteries for transport." },
+    { id: "RF-BATT-AADHAAR", code: "BAT-AADHAAR-V1", name: "BATT-AADHAAR-V1", jurisdiction: "INDIA", mandatory: false, status: 'ACTIVE', description: "Sovereign identity framework for battery tracking." }
+  ];
+
+  ENTERPRISES = [
     {
-      id: "STN-A4",
-      code: "STN-A4-MOD-INS",
-      displayName: "Module Insertion Station",
+      id: "ENT-BPM-GLOBAL",
+      code: "BPM-OS-HQ",
+      displayName: "BPM Global Manufacturing",
       status: "ACTIVE",
       effectiveFrom: "2026-01-01T00:00:00Z",
       audit: INITIAL_AUDIT,
-      lineId: "LINE-A",
-      stationType: "ASSEMBLY",
-      supportedOperations: ["INSERT_MODULE", "TORQUE_FIX", "SCAN_SERIAL"],
-      deviceBindings: ["DEV-SCAN-01", "DEV-TORQ-01"]
+      plantIds: ["FAC-WB-01"],
+      timezone: "UTC"
+    }
+  ];
+
+  PLANTS = [
+    {
+      id: "FAC-WB-01",
+      code: "PL-KOL-01",
+      displayName: "Gigafactory 1 - Kolkata",
+      status: "ACTIVE",
+      effectiveFrom: "2026-01-01T00:00:00Z",
+      audit: INITIAL_AUDIT,
+      enterpriseId: "ENT-BPM-GLOBAL",
+      lineIds: ["LINE-A"]
     }
   ];
 
@@ -84,29 +97,18 @@ export function ensureS0Seed() {
     }
   ];
 
-  PLANTS = [
+  STATIONS = [
     {
-      id: "FAC-WB-01",
-      code: "PL-KOL-01",
-      displayName: "Gigafactory 1 - Kolkata",
+      id: "STN-A4",
+      code: "STN-A4-MOD-INS",
+      displayName: "Module Insertion Station",
       status: "ACTIVE",
       effectiveFrom: "2026-01-01T00:00:00Z",
       audit: INITIAL_AUDIT,
-      enterpriseId: "ENT-BPM-GLOBAL",
-      lineIds: ["LINE-A"]
-    }
-  ];
-
-  ENTERPRISES = [
-    {
-      id: "ENT-BPM-GLOBAL",
-      code: "BPM-OS-HQ",
-      displayName: "BPM Global Manufacturing",
-      status: "ACTIVE",
-      effectiveFrom: "2026-01-01T00:00:00Z",
-      audit: INITIAL_AUDIT,
-      plantIds: ["FAC-WB-01"],
-      timezone: "UTC"
+      lineId: "LINE-A",
+      stationType: "ASSEMBLY",
+      supportedOperations: ["INSERT_MODULE", "TORQUE_FIX", "SCAN_SERIAL"],
+      deviceBindings: ["DEV-SCAN-01", "DEV-TORQ-01"]
     }
   ];
 
@@ -140,9 +142,19 @@ export function ensureS0Seed() {
   USERS = [
     {
       id: "USR-001",
-      username: "admin.kol",
-      fullName: "Kolkata System Admin",
+      username: "admin.bpm",
+      fullName: "Global System Admin",
+      email: "admin@bpmos.internal",
       role: UserRole.SYSTEM_ADMIN,
+      status: 'ACTIVE',
+      scopes: []
+    },
+    {
+      id: "USR-002",
+      username: "operator.kol",
+      fullName: "Kolkata Operator 1",
+      email: "op1@kolkata.bpmos.internal",
+      role: UserRole.OPERATOR,
       status: 'ACTIVE',
       scopes: [{ scope: 'PLANT', scopeId: 'FAC-WB-01' }]
     }
@@ -157,9 +169,9 @@ export const getPlants = (): readonly Plant[] => { ensureS0Seed(); return Object
 export const getLines = (): readonly Line[] => { ensureS0Seed(); return Object.freeze([...LINES]); };
 export const getStations = (): readonly Station[] => { ensureS0Seed(); return Object.freeze([...STATIONS]); };
 export const getDeviceClasses = (): readonly DeviceClass[] => { ensureS0Seed(); return Object.freeze([...DEVICE_CLASSES]); };
-export const getCapabilityFlags = (): readonly CapabilityFlag[] => Object.freeze([...CAPABILITY_FLAGS]);
+export const getCapabilityFlags = (): readonly CapabilityFlag[] => { ensureS0Seed(); return Object.freeze([...CAPABILITY_FLAGS]); };
 export const getCapabilityOverrides = (): readonly CapabilityOverride[] => Object.freeze([...CAPABILITY_OVERRIDES]);
-export const getRegulatoryFrameworks = (): readonly RegulatoryFramework[] => Object.freeze([...REGULATORY_FRAMEWORKS]);
+export const getRegulatoryFrameworks = (): readonly RegulatoryFramework[] => { ensureS0Seed(); return Object.freeze([...REGULATORY_FRAMEWORKS]); };
 export const getSopProfiles = (): readonly SOPProfile[] => { ensureS0Seed(); return Object.freeze([...SOP_PROFILES]); };
 export const getComplianceBindings = (): readonly ComplianceBinding[] => { ensureS0Seed(); return Object.freeze([...COMPLIANCE_BINDINGS]); };
 export const getUsers = (): readonly AppUser[] => { ensureS0Seed(); return Object.freeze([...USERS]); };
@@ -174,13 +186,19 @@ export const getDeviceClassById = (id: string) => { ensureS0Seed(); return DEVIC
 /**
  * STORE MUTATORS
  */
-export const resetS0UIState = () => {
-  console.debug("[S0-STORE] In-memory UI state reset triggered.");
-};
-
 export const addS0AuditLog = (entry: S0AuditEntry) => {
   S0_AUDIT_LOGS = [entry, ...S0_AUDIT_LOGS].slice(0, 100);
   return entry;
+};
+
+export const addEnterprise = (ent: Enterprise) => {
+  ENTERPRISES = [...ENTERPRISES, ent];
+  return ent;
+};
+
+export const updateEnterprise = (id: string, updates: Partial<Enterprise>) => {
+  ENTERPRISES = ENTERPRISES.map(e => e.id === id ? { ...e, ...updates } : e);
+  return ENTERPRISES.find(e => e.id === id);
 };
 
 export const addPlant = (plant: Plant) => {
@@ -213,11 +231,6 @@ export const updateStation = (id: string, updates: Partial<Station>) => {
   return STATIONS.find(s => s.id === id);
 };
 
-export const updateEnterprise = (id: string, updates: Partial<Enterprise>) => {
-  ENTERPRISES = ENTERPRISES.map(e => e.id === id ? { ...e, ...updates } : e);
-  return ENTERPRISES.find(e => e.id === id);
-};
-
 export const addDeviceClass = (dc: DeviceClass) => {
   DEVICE_CLASSES = [...DEVICE_CLASSES, dc];
   return dc;
@@ -236,6 +249,21 @@ export const addSopProfile = (sop: SOPProfile) => {
 export const updateSopProfile = (id: string, updates: Partial<SOPProfile>) => {
   SOP_PROFILES = SOP_PROFILES.map(s => s.id === id ? { ...s, ...updates } : s);
   return SOP_PROFILES.find(s => s.id === id);
+};
+
+export const addRegulatoryFramework = (fw: RegulatoryFramework) => {
+  REGULATORY_FRAMEWORKS = [...REGULATORY_FRAMEWORKS, fw];
+  return fw;
+};
+
+export const updateRegulatoryFramework = (id: string, updates: Partial<RegulatoryFramework>) => {
+  REGULATORY_FRAMEWORKS = REGULATORY_FRAMEWORKS.map(f => f.id === id ? { ...f, ...updates } : f);
+  return REGULATORY_FRAMEWORKS.find(f => f.id === id);
+};
+
+export const updateCapabilityFlag = (id: string, updates: Partial<CapabilityFlag>) => {
+  CAPABILITY_FLAGS = CAPABILITY_FLAGS.map(f => f.id === id ? { ...f, ...updates } : f);
+  return CAPABILITY_FLAGS.find(f => f.id === id);
 };
 
 export const addUser = (user: AppUser) => {
@@ -288,6 +316,10 @@ export const removeComplianceBinding = (scope: string, scopeId: string) => {
   COMPLIANCE_BINDINGS = COMPLIANCE_BINDINGS.filter(
     b => !(b.scope === scope && b.scopeId === scopeId)
   );
+};
+
+export const resetS0UIState = () => {
+  console.debug("[S0-STORE] In-memory UI state reset triggered.");
 };
 
 ensureS0Seed();
