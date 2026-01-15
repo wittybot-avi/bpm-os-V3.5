@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-WIZ-SPEC-FIX-02** | Architecture | Step Splitting | **STABLE** | Formalized split between `BASE_SKU_METADATA` and dynamic `SKU_SPECIFICATIONS`. Consolidated technical input rendering into a single registry-driven step. | 2026-01-28 18:30 (IST) |
 | **V35-S1-WIZ-SPEC-FIX-01** | Architecture | Spec Registry | **STABLE** | Introduced `SKU_SPEC_REGISTRY` mapping SKU Types to technical sections. Prepared scaffolding for dynamic blueprint fields. No UI changes. | 2026-01-28 18:00 (IST) |
 | **V35-S1-WIZ-FIX-06** | UX Stabilization | Focused Wizard Paths | **STABLE** | Pruned redundant generic TECHNICAL step from all SKU paths. Merged missing capacity/cell count fields into type-specific steps. Ensured clean, focused wizard sequences per SKU type. | 2026-01-28 17:30 (IST) |
 | **V35-S1-WIZ-FIX-05** | Stabilization | Schema Completion | **STABLE** | Implemented minimal technical fields per SKU type (CELL, MODULE, PACK, BMS, IOT). Replaced scaffolds with functional inputs and updated contract. | 2026-01-28 17:00 (IST) |

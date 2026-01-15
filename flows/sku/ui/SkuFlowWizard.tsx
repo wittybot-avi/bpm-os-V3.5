@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-SPEC-FIX-01 (Specification Registry Integration)
+ * @updated V35-S1-WIZ-SPEC-FIX-02 (Step Splitting Architecture)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -196,25 +196,27 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
       if (!d.skuName) errors.skuName = 'SKU Name is required';
     }
 
-    if (step === 'TECH_CELL_SCAFFOLD') {
-      if (!d.chemistry) errors.chemistry = 'Chemistry required';
-      if (!d.nominalVoltage) errors.nominalVoltage = 'Voltage required';
-      if (!d.capacityAh) errors.capacityAh = 'Capacity required';
-    }
-    if (step === 'TECH_MODULE_SCAFFOLD') {
-      if (!d.cellTypeRef) errors.cellTypeRef = 'Cell Type Ref required';
-      if (!d.seriesConfig) errors.seriesConfig = 'Series config required';
-    }
-    if (step === 'TECH_PACK_SCAFFOLD') {
-      if (!d.nominalVoltage) errors.nominalVoltage = 'System voltage required';
-      if (!d.energyKwh) errors.energyKwh = 'Target energy required';
-    }
-    if (step === 'TECH_BMS_SCAFFOLD') {
-      if (!d.chemistry) errors.chemistry = 'Cell Chemistry required';
-      if (!d.voltageMax) errors.voltageMax = 'Max voltage required';
-    }
-    if (step === 'TECH_IOT_SCAFFOLD') {
-      if (!d.commsType) errors.commsType = 'Comms Type required';
+    if (step === 'SKU_SPECIFICATIONS') {
+      if (d.skuType === 'CELL') {
+        if (!d.chemistry) errors.chemistry = 'Chemistry required';
+        if (!d.nominalVoltage) errors.nominalVoltage = 'Voltage required';
+        if (!d.capacityAh) errors.capacityAh = 'Capacity required';
+      }
+      if (d.skuType === 'MODULE') {
+        if (!d.cellTypeRef) errors.cellTypeRef = 'Cell Type Ref required';
+        if (!d.seriesConfig) errors.seriesConfig = 'Series config required';
+      }
+      if (d.skuType === 'PACK') {
+        if (!d.nominalVoltage) errors.nominalVoltage = 'System voltage required';
+        if (!d.energyKwh) errors.energyKwh = 'Target energy required';
+      }
+      if (d.skuType === 'BMS') {
+        if (!d.chemistry) errors.chemistry = 'Cell Chemistry required';
+        if (!d.voltageMax) errors.voltageMax = 'Max voltage required';
+      }
+      if (d.skuType === 'IOT') {
+        if (!d.commsType) errors.commsType = 'Comms Type required';
+      }
     }
 
     setModel(m => ({ ...m, validationErrors: errors }));
@@ -223,12 +225,14 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
 
   const handleNextStep = () => {
     if (validateStep(model.step)) {
+      // Correct resolution using persisted isRevision and skuType from draft
       const next = getNextStepId(model.step, model.draft.isRevision, model.draft.skuType);
       setModel(m => ({ ...m, step: next }));
     }
   };
 
   const handlePrevStep = () => {
+    // Correct resolution using persisted isRevision and skuType from draft
     const prev = getPrevStepId(model.step, model.draft.isRevision, model.draft.skuType);
     setModel(m => ({ ...m, step: prev }));
   };
@@ -530,6 +534,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
               {model.step === "BASE_SKU_METADATA" && (
                 <FlowStep stepTitle="General Identifiers" stepHint="Establish basic SKU metadata and identification strings.">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto py-8">
+                    {/* stepType: BASE */}
                     <Field label="Canonical SKU Code" id="skuCode" error={model.validationErrors.skuCode}>
                       <input 
                         type="text" id="skuCode"
@@ -566,162 +571,162 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                 </FlowStep>
               )}
 
-              {model.step === "TECH_CELL_SCAFFOLD" && (
-                <FlowStep stepTitle="Cell Technical Blueprint" stepHint="Configure chemical and physical energy unit parameters.">
+              {model.step === "SKU_SPECIFICATIONS" && (
+                <FlowStep 
+                  stepTitle={resolveSpecSchema(model.draft.skuType)[0]?.sectionTitle || "SKU Technical Specification"} 
+                  stepHint="Establish immutable technical constants for this entity type."
+                >
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto py-8">
-                     <Field label="Cell Chemistry" id="chemistry" icon={FlaskConical} error={model.validationErrors.chemistry}>
-                        <select 
-                          id="chemistry"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
-                          value={model.draft.chemistry || ""}
-                          onChange={e => handleUpdateDraft('chemistry', e.target.value)}
-                        >
-                          <option value="">Select...</option>
-                          <option value="LFP">LFP (Lithium Iron Phosphate)</option>
-                          <option value="NMC">NMC (Nickel Manganese Cobalt)</option>
-                          <option value="LTO">LTO (Lithium Titanate)</option>
-                        </select>
-                     </Field>
-                     <Field label="Form Factor" id="formFactor" icon={BoxSelect}>
-                        <select 
-                          id="formFactor"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
-                          value={model.draft.formFactor || ""}
-                          onChange={e => handleUpdateDraft('formFactor', e.target.value)}
-                        >
-                          <option value="">Select...</option>
-                          <option value="Cylindrical">Cylindrical (e.g. 21700)</option>
-                          <option value="Prismatic">Prismatic</option>
-                          <option value="Pouch">Pouch</option>
-                        </select>
-                     </Field>
-                     <Field label="Nominal Voltage (V)" id="nominalVoltage" icon={Zap} error={model.validationErrors.nominalVoltage}>
-                        <input 
-                          type="number" step="0.01"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm"
-                          value={model.draft.nominalVoltage || ""}
-                          onChange={e => handleUpdateDraft('nominalVoltage', parseFloat(e.target.value))}
-                        />
-                     </Field>
-                     <Field label="Nominal Capacity (Ah)" id="capacityAh" icon={Battery} error={model.validationErrors.capacityAh}>
-                        <input 
-                          type="number" step="0.1"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-brand-500" 
-                          value={model.draft.capacityAh || ''} 
-                          onChange={e => handleUpdateDraft('capacityAh', parseFloat(e.target.value))} 
-                        />
-                    </Field>
-                  </div>
-                </FlowStep>
-              )}
+                    {/* V35-S1-WIZ-SPEC-FIX-02: Dynamic Spec Rendering Logic */}
+                    {model.draft.skuType === 'CELL' && (
+                      <>
+                        <Field label="Cell Chemistry" id="chemistry" icon={FlaskConical} error={model.validationErrors.chemistry}>
+                          <select 
+                            id="chemistry"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
+                            value={model.draft.chemistry || ""}
+                            onChange={e => handleUpdateDraft('chemistry', e.target.value)}
+                          >
+                            <option value="">Select...</option>
+                            <option value="LFP">LFP (Lithium Iron Phosphate)</option>
+                            <option value="NMC">NMC (Nickel Manganese Cobalt)</option>
+                            <option value="LTO">LTO (Lithium Titanate)</option>
+                          </select>
+                        </Field>
+                        <Field label="Form Factor" id="formFactor" icon={BoxSelect}>
+                          <select 
+                            id="formFactor"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
+                            value={model.draft.formFactor || ""}
+                            onChange={e => handleUpdateDraft('formFactor', e.target.value)}
+                          >
+                            <option value="">Select...</option>
+                            <option value="Cylindrical">Cylindrical (e.g. 21700)</option>
+                            <option value="Prismatic">Prismatic</option>
+                            <option value="Pouch">Pouch</option>
+                          </select>
+                        </Field>
+                        <Field label="Nominal Voltage (V)" id="nominalVoltage" icon={Zap} error={model.validationErrors.nominalVoltage}>
+                          <input 
+                            type="number" step="0.01"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm"
+                            value={model.draft.nominalVoltage || ""}
+                            onChange={e => handleUpdateDraft('nominalVoltage', parseFloat(e.target.value))}
+                          />
+                        </Field>
+                        <Field label="Nominal Capacity (Ah)" id="capacityAh" icon={Battery} error={model.validationErrors.capacityAh}>
+                          <input 
+                            type="number" step="0.1"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-brand-500" 
+                            value={model.draft.capacityAh || ''} 
+                            onChange={e => handleUpdateDraft('capacityAh', parseFloat(e.target.value))} 
+                          />
+                        </Field>
+                      </>
+                    )}
 
-              {model.step === "TECH_MODULE_SCAFFOLD" && (
-                <FlowStep stepTitle="Module Technical Blueprint" stepHint="Define grouped cell configuration and busbar specifications.">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto py-8">
-                     <Field label="Cell Type Reference" id="cellTypeRef" icon={Link2} error={model.validationErrors.cellTypeRef}>
-                        <input 
-                          type="text"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm font-mono"
-                          placeholder="Link to S1 Cell SKU Code"
-                          value={model.draft.cellTypeRef || ""}
-                          onChange={e => handleUpdateDraft('cellTypeRef', e.target.value)}
-                        />
-                     </Field>
-                     <Field label="Series Config (S)" id="seriesConfig" icon={Layers} error={model.validationErrors.seriesConfig}>
-                        <input 
-                          type="number"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm"
-                          value={model.draft.seriesConfig || ""}
-                          onChange={e => handleUpdateDraft('seriesConfig', parseInt(e.target.value))}
-                        />
-                     </Field>
-                     <Field label="Parallel Config (P)" id="parallelConfig" icon={Layers}>
-                        <input 
-                          type="number"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm"
-                          value={model.draft.parallelConfig || ""}
-                          onChange={e => handleUpdateDraft('parallelConfig', parseInt(e.target.value))}
-                        />
-                     </Field>
-                     <Field label="Total Cell Count" id="cellCount" icon={BoxSelect} error={model.validationErrors.cellCount}>
-                        <input 
-                          type="number" 
-                          disabled={model.role !== 'Maker'} 
-                          className="w-full border border-slate-300 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-brand-500" 
-                          value={model.draft.cellCount || ''} 
-                          onChange={e => handleUpdateDraft('cellCount', parseInt(e.target.value))} 
-                        />
-                    </Field>
-                  </div>
-                </FlowStep>
-              )}
+                    {model.draft.skuType === 'MODULE' && (
+                      <>
+                        <Field label="Cell Type Reference" id="cellTypeRef" icon={Link2} error={model.validationErrors.cellTypeRef}>
+                          <input 
+                            type="text"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm font-mono"
+                            placeholder="Link to S1 Cell SKU Code"
+                            value={model.draft.cellTypeRef || ""}
+                            onChange={e => handleUpdateDraft('cellTypeRef', e.target.value)}
+                          />
+                        </Field>
+                        <Field label="Series Config (S)" id="seriesConfig" icon={Layers} error={model.validationErrors.seriesConfig}>
+                          <input 
+                            type="number"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm"
+                            value={model.draft.seriesConfig || ""}
+                            onChange={e => handleUpdateDraft('seriesConfig', parseInt(e.target.value))}
+                          />
+                        </Field>
+                        <Field label="Parallel Config (P)" id="parallelConfig" icon={Layers}>
+                          <input 
+                            type="number"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm"
+                            value={model.draft.parallelConfig || ""}
+                            onChange={e => handleUpdateDraft('parallelConfig', parseInt(e.target.value))}
+                          />
+                        </Field>
+                        <Field label="Total Cell Count" id="cellCount" icon={BoxSelect} error={model.validationErrors.cellCount}>
+                          <input 
+                            type="number" 
+                            disabled={model.role !== 'Maker'} 
+                            className="w-full border border-slate-300 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-brand-500" 
+                            value={model.draft.cellCount || ''} 
+                            onChange={e => handleUpdateDraft('cellCount', parseInt(e.target.value))} 
+                          />
+                        </Field>
+                      </>
+                    )}
 
-              {model.step === "TECH_PACK_SCAFFOLD" && (
-                <FlowStep stepTitle="Pack Technical Blueprint" stepHint="Establish full integrated battery assembly constraints.">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto py-8">
-                     <Field label="System Nominal Voltage (V)" id="nominalVoltage" icon={Zap} error={model.validationErrors.nominalVoltage}>
-                        <input 
-                          type="number"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm"
-                          value={model.draft.nominalVoltage || ""}
-                          onChange={e => handleUpdateDraft('nominalVoltage', parseFloat(e.target.value))}
-                        />
-                     </Field>
-                     <Field label="Target Energy (kWh)" id="energyKwh" icon={Battery} error={model.validationErrors.energyKwh}>
-                        <input 
-                          type="number" step="0.1"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm"
-                          value={model.draft.energyKwh || ""}
-                          onChange={e => handleUpdateDraft('energyKwh', parseFloat(e.target.value))}
-                        />
-                     </Field>
-                     <Field label="Thermal Cooling Type" id="coolingType" icon={Wind}>
-                        <select 
-                          id="coolingType"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
-                          value={model.draft.coolingType || ""}
-                          onChange={e => handleUpdateDraft('coolingType', e.target.value)}
-                        >
-                          <option value="">Select...</option>
-                          <option value="Passive">Passive (Air)</option>
-                          <option value="Active_Air">Active Air</option>
-                          <option value="Liquid">Liquid Cooled</option>
-                          <option value="Phase_Change">Phase Change Material</option>
-                        </select>
-                     </Field>
-                  </div>
-                </FlowStep>
-              )}
+                    {model.draft.skuType === 'PACK' && (
+                      <>
+                        <Field label="System Nominal Voltage (V)" id="nominalVoltage" icon={Zap} error={model.validationErrors.nominalVoltage}>
+                          <input 
+                            type="number"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm"
+                            value={model.draft.nominalVoltage || ""}
+                            onChange={e => handleUpdateDraft('nominalVoltage', parseFloat(e.target.value))}
+                          />
+                        </Field>
+                        <Field label="Target Energy (kWh)" id="energyKwh" icon={Battery} error={model.validationErrors.energyKwh}>
+                          <input 
+                            type="number" step="0.1"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm"
+                            value={model.draft.energyKwh || ""}
+                            onChange={e => handleUpdateDraft('energyKwh', parseFloat(e.target.value))}
+                          />
+                        </Field>
+                        <Field label="Thermal Cooling Type" id="coolingType" icon={Wind}>
+                          <select 
+                            id="coolingType"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
+                            value={model.draft.coolingType || ""}
+                            onChange={e => handleUpdateDraft('coolingType', e.target.value)}
+                          >
+                            <option value="">Select...</option>
+                            <option value="Passive">Passive (Air)</option>
+                            <option value="Active_Air">Active Air</option>
+                            <option value="Liquid">Liquid Cooled</option>
+                            <option value="Phase_Change">Phase Change Material</option>
+                          </select>
+                        </Field>
+                      </>
+                    )}
 
-              {model.step === "TECH_BMS_SCAFFOLD" && (
-                <FlowStep stepTitle="BMS Technical Blueprint" stepHint="Configure controller hardware and communication protocols.">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto py-8">
-                     <Field label="Supported Cell Chemistry" id="chemistry" icon={FlaskConical} error={model.validationErrors.chemistry}>
-                        <select 
-                          id="chemistry"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
-                          value={model.draft.chemistry || ""}
-                          onChange={e => handleUpdateDraft('chemistry', e.target.value)}
-                        >
-                          <option value="">Select...</option>
-                          <option value="Multi">Multi-Chemistry</option>
-                          <option value="LFP">LFP Dedicated</option>
-                          <option value="NMC">NMC Dedicated</option>
-                        </select>
-                     </Field>
-                     <div className="grid grid-cols-2 gap-4">
-                        <Field label="Min Voltage (V)" id="voltageMin" icon={Zap}>
+                    {model.draft.skuType === 'BMS' && (
+                      <>
+                        <Field label="Supported Cell Chemistry" id="chemistry" icon={FlaskConical} error={model.validationErrors.chemistry}>
+                          <select 
+                            id="chemistry"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
+                            value={model.draft.chemistry || ""}
+                            onChange={e => handleUpdateDraft('chemistry', e.target.value)}
+                          >
+                            <option value="">Select...</option>
+                            <option value="Multi">Multi-Chemistry</option>
+                            <option value="LFP">LFP Dedicated</option>
+                            <option value="NMC">NMC Dedicated</option>
+                          </select>
+                        </Field>
+                        <div className="grid grid-cols-2 gap-4">
+                          <Field label="Min Voltage (V)" id="voltageMin" icon={Zap}>
                             <input 
                               type="number" step="0.1"
                               disabled={model.role !== 'Maker'}
@@ -729,8 +734,8 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                               value={model.draft.voltageMin || ""}
                               onChange={e => handleUpdateDraft('voltageMin', parseFloat(e.target.value))}
                             />
-                        </Field>
-                        <Field label="Max Voltage (V)" id="voltageMax" icon={Zap} error={model.validationErrors.voltageMax}>
+                          </Field>
+                          <Field label="Max Voltage (V)" id="voltageMax" icon={Zap} error={model.validationErrors.voltageMax}>
                             <input 
                               type="number" step="0.1"
                               disabled={model.role !== 'Maker'}
@@ -738,58 +743,58 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                               value={model.draft.voltageMax || ""}
                               onChange={e => handleUpdateDraft('voltageMax', parseFloat(e.target.value))}
                             />
+                          </Field>
+                        </div>
+                        <Field label="Comms Protocol" id="protocol" icon={Cable}>
+                          <select 
+                            id="protocol"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
+                            value={model.draft.protocol || ""}
+                            onChange={e => handleUpdateDraft('protocol', e.target.value)}
+                          >
+                            <option value="">Select...</option>
+                            <option value="CAN_2.0">CAN 2.0B</option>
+                            <option value="RS485">RS485 / Modbus</option>
+                            <option value="SMBus">SMBus / I2C</option>
+                          </select>
                         </Field>
-                     </div>
-                     <Field label="Comms Protocol" id="protocol" icon={Cable}>
-                        <select 
-                          id="protocol"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
-                          value={model.draft.protocol || ""}
-                          onChange={e => handleUpdateDraft('protocol', e.target.value)}
-                        >
-                          <option value="">Select...</option>
-                          <option value="CAN_2.0">CAN 2.0B</option>
-                          <option value="RS485">RS485 / Modbus</option>
-                          <option value="SMBus">SMBus / I2C</option>
-                        </select>
-                     </Field>
-                  </div>
-                </FlowStep>
-              )}
+                      </>
+                    )}
 
-              {model.step === "TECH_IOT_SCAFFOLD" && (
-                <FlowStep stepTitle="IoT Technical Blueprint" stepHint="Specify telemetry hardware and network baseline.">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto py-8">
-                     <Field label="Connectivity Type" id="commsType" icon={Radio} error={model.validationErrors.commsType}>
-                        <select 
-                          id="commsType"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
-                          value={model.draft.commsType || ""}
-                          onChange={e => handleUpdateDraft('commsType', e.target.value)}
-                        >
-                          <option value="">Select...</option>
-                          <option value="4G_LTE">4G LTE (Global)</option>
-                          <option value="5G_IOT">5G NB-IoT</option>
-                          <option value="LoRaWAN">LoRaWAN</option>
-                          <option value="WiFi">Industrial WiFi</option>
-                        </select>
-                     </Field>
-                     <Field label="Primary Power Source" id="powerSource" icon={Zap}>
-                        <select 
-                          id="powerSource"
-                          disabled={model.role !== 'Maker'}
-                          className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
-                          value={model.draft.powerSource || ""}
-                          onChange={e => handleUpdateDraft('powerSource', e.target.value)}
-                        >
-                          <option value="">Select...</option>
-                          <option value="Internal_Bat">Internal Backup Battery</option>
-                          <option value="Bus_Powered">Main Bus Powered</option>
-                          <option value="Hybrid">Hybrid Source</option>
-                        </select>
-                     </Field>
+                    {model.draft.skuType === 'IOT' && (
+                      <>
+                        <Field label="Connectivity Type" id="commsType" icon={Radio} error={model.validationErrors.commsType}>
+                          <select 
+                            id="commsType"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
+                            value={model.draft.commsType || ""}
+                            onChange={e => handleUpdateDraft('commsType', e.target.value)}
+                          >
+                            <option value="">Select...</option>
+                            <option value="4G_LTE">4G LTE (Global)</option>
+                            <option value="5G_IOT">5G NB-IoT</option>
+                            <option value="LoRaWAN">LoRaWAN</option>
+                            <option value="WiFi">Industrial WiFi</option>
+                          </select>
+                        </Field>
+                        <Field label="Primary Power Source" id="powerSource" icon={Zap}>
+                          <select 
+                            id="powerSource"
+                            disabled={model.role !== 'Maker'}
+                            className="w-full border border-slate-300 rounded p-3 text-sm bg-white"
+                            value={model.draft.powerSource || ""}
+                            onChange={e => handleUpdateDraft('powerSource', e.target.value)}
+                          >
+                            <option value="">Select...</option>
+                            <option value="Internal_Bat">Internal Backup Battery</option>
+                            <option value="Bus_Powered">Main Bus Powered</option>
+                            <option value="Hybrid">Hybrid Source</option>
+                          </select>
+                        </Field>
+                      </>
+                    )}
                   </div>
                 </FlowStep>
               )}
@@ -887,7 +892,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                 </button>
               )}
 
-              {(model.step === "BASE_SKU_METADATA" || model.step.startsWith("TECH_") || model.step === "TECHNICAL") && (
+              {(model.step === "BASE_SKU_METADATA" || model.step === "SKU_SPECIFICATIONS") && (
                 <>
                   <button onClick={handlePrevStep} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Back</button>
                   {model.role === 'Maker' && (

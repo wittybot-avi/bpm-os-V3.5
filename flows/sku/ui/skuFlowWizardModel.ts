@@ -2,7 +2,7 @@
  * SKU Flow Wizard Model
  * Defines local state shape for the FLOW-001 step-wizard.
  * @foundation V34-S1-FLOW-001-PP-03
- * @updated V35-S1-WIZ-FIX-06 (Step Pruning & UX Focus)
+ * @updated V35-S1-WIZ-SPEC-FIX-02 (Step Splitting Architecture)
  */
 
 import type { SkuDraft, SkuFlowState, SkuFlowRole } from "../skuFlowContract";
@@ -10,12 +10,7 @@ import type { SkuDraft, SkuFlowState, SkuFlowRole } from "../skuFlowContract";
 export type WizardStepId = 
   | "INIT" 
   | "BASE_SKU_METADATA" 
-  | "TECH_CELL_SCAFFOLD"
-  | "TECH_MODULE_SCAFFOLD"
-  | "TECH_PACK_SCAFFOLD"
-  | "TECH_BMS_SCAFFOLD"
-  | "TECH_IOT_SCAFFOLD"
-  | "TECHNICAL" 
+  | "SKU_SPECIFICATIONS"
   | "REVIEW" 
   | "APPROVE" 
   | "PUBLISH";
@@ -32,24 +27,24 @@ export interface WizardModel {
 /**
  * Path Resolution Registry
  * Determines valid step sequences based on Intent and SKU Type.
- * Pruned redundant TECHNICAL step to ensure focused UX per type.
+ * Architecture V3.5: Split into BASE metadata and dynamic SKU_SPECIFICATIONS.
  */
 export const WIZARD_STEP_REGISTRY: Record<string, Record<string, WizardStepId[]>> = {
   GREENFIELD: {
     DEFAULT: ["INIT", "BASE_SKU_METADATA", "REVIEW", "APPROVE", "PUBLISH"],
-    CELL:    ["INIT", "BASE_SKU_METADATA", "TECH_CELL_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
-    MODULE:  ["INIT", "BASE_SKU_METADATA", "TECH_MODULE_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
-    PACK:    ["INIT", "BASE_SKU_METADATA", "TECH_PACK_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
-    BMS:     ["INIT", "BASE_SKU_METADATA", "TECH_BMS_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
-    IOT:     ["INIT", "BASE_SKU_METADATA", "TECH_IOT_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    CELL:    ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
+    MODULE:  ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
+    PACK:    ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
+    BMS:     ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
+    IOT:     ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
   },
   REVISION: {
     DEFAULT: ["INIT", "BASE_SKU_METADATA", "REVIEW", "APPROVE", "PUBLISH"],
-    CELL:    ["INIT", "BASE_SKU_METADATA", "TECH_CELL_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
-    MODULE:  ["INIT", "BASE_SKU_METADATA", "TECH_MODULE_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
-    PACK:    ["INIT", "BASE_SKU_METADATA", "TECH_PACK_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
-    BMS:     ["INIT", "BASE_SKU_METADATA", "TECH_BMS_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
-    IOT:     ["INIT", "BASE_SKU_METADATA", "TECH_IOT_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    CELL:    ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
+    MODULE:  ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
+    PACK:    ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
+    BMS:     ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
+    IOT:     ["INIT", "BASE_SKU_METADATA", "SKU_SPECIFICATIONS", "REVIEW", "APPROVE", "PUBLISH"],
   }
 };
 
