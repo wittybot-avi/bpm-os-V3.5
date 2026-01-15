@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-UX-PP-02** | UX Convergence | SKU Flow Home Convergence | **STABLE** | Refactored S1 to prioritize SKU Flow instances. Unified creation path into a single primary CTA "Start SKU Flow Wizard". | 2026-01-28 11:30 (IST) |
 | **V35-S1-ARCH-BP-01** | Architecture | SKU Taxonomy & Blueprint Schema | **STABLE** | Introduced discriminated union for SKU types (CELL, MODULE, PACK, BMS, IOT). Defined revision models and approval lifecycle. | 2026-01-28 10:00 (IST) |
 | **V35-S0-DOC-PP-05** | Documentation | S0 Master Data Source of Truth | **STABLE** | Formally documented S0 definitional scope, prohibitions, and read-only contracts. Added to Registry. | 2026-01-28 07:30 (IST) |
 | **V35-S0-UX-PP-04** | UX / Capability | System Capability Flags | **STABLE** | Centralized feature toggles (Serialization, IoT, Deep Trace) with scoping (Global/Plant/Line) in S0. | 2026-01-28 07:00 (IST) |
