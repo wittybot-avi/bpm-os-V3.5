@@ -5,50 +5,40 @@
 **Date:** 2026-01-16 22:15 (IST)
 **Baseline:** V3.3 Core (Greenfield)
 
+---
+
+# V3.5 Phase-1: S0 Master Data Design Freeze
+
+**Patch ID:** V35-S0-BP-07
+**Status:** **FROZEN**
+**Date:** 2026-01-29 15:00 (IST)
+**Baseline:** V3.5
+
 ## 1. Declaration Statement
-The BPM-OS V3.3 Frontend is hereby declared **DESIGN FROZEN**. 
+The **S0 Hierarchy and Master Data Contract** for BPM-OS V3.5 is hereby declared **DESIGN FROZEN**. 
+The organizational topology, capability taxonomy, and compliance binding models are finalized and authoritative for the V3.5 architecture.
+
+## 2. Frozen Scope (S0 Phase-1)
+The following contracts and schemas are locked:
+
+*   **Organizational Topology (`systemTopology.types.ts`):** Canonical Enterprise–Plant–Line–Station hierarchy and identity models.
+*   **Capability Taxonomy (`capability.types.ts`):** Functional categories and scoping rules for feature flags.
+*   **Compliance Context (`complianceContext.types.ts`):** Regulatory framework and SOP profile binding contracts.
+*   **Simulation Infrastructure:** The in-memory store and read-only API handlers for the S0 namespace are stable.
+*   **UI Context Cues:** Breadcrumb and badge patterns in the S0 screen are locked.
+
+## 3. Downstream Requirements
+All downstream modules (S1–S17) must strictly reference the S0 hierarchy for:
+- Facility and Line ID lookups.
+- Capability flag checks for operational gating.
+- Regulatory jurisdiction verification.
+
+## 4. Integration Commitment
+The Option-B API routes (`/api/s0/*`) are now the mandatory interface for system hierarchy retrieval. No alternative data paths are permitted.
+
+---
+
+## Legacy V3.3 Declaration (Archived)
 The visual interface, user experience patterns, navigation structure, and client-side logic are considered complete for the purpose of the V3.3 baseline. No further UI feature development will occur in this phase.
 
 **Next Phase:** Backend Integration & Data Persistence.
-
-## 2. Frozen Scope (What is Done)
-The following artifacts and behaviors are locked and ready for API binding:
-
-*   **Navigation Architecture:** Sidebar hierarchy, route IDs (`NavView`), and contextual drill-downs (`ControlTower` -> `RunbookDetail`).
-*   **Operational Screens (S0–S17):** All 18 stages of the battery manufacturing lifecycle are implemented with:
-    *   Visual headers & status indicators.
-    *   `StageStateBanner` for readiness.
-    *   `PreconditionsPanel` for checks.
-    *   Action buttons with simulated latency & toast feedback.
-    *   "Next Recommended Action" guidance panels.
-*   **Role-Based Access Control (RBAC):**
-    *   Guard logic (`get*ActionState`) implemented for all stages.
-    *   UI masking (hiding/disabling) based on `UserContext`.
-    *   Role Switcher for testing/demo.
-*   **Governance & Visibility:**
-    *   Control Tower (Runbooks & Exceptions).
-    *   Dashboards (Role-specific views).
-    *   System Logs (Immutable audit trail visualization).
-*   **Documentation System:** In-app artifact loader.
-
-## 3. Known Exclusions (What is Missing/Mocked)
-The following are explicitly **OUT OF SCOPE** for the frontend and must be provided by the backend:
-
-*   **Data Persistence:** All data resets on page reload (except transient `sessionStorage` for Context Handoff).
-*   **Authentication:** The current "Role Switcher" is a dev-tool. Real JWT/OAuth flow is backend territory.
-*   **Complex Business Logic:**
-    *   Inventory allocation (FIFO/LIFO).
-    *   OEE Calculations.
-    *   Hardware Integration (Printer/Scanner/PLC).
-    *   Regulatory Validation (Schema checks).
-*   **Audit Trail Storage:** Logs are currently ephemeral arrays in memory.
-
-## 4. Transition Plan (Frontend → Backend)
-The "Vibe Coding" phase is complete. The codebase now transitions to "Integration Mode".
-
-1.  **Contract Fulfillment:** Backend engineers must implement APIs matching `SCREEN_DATA_CONTRACT.md`.
-2.  **Hook Implementation:** The scaffolded `useData` and `BaseProvider` (from V33-CORE-BP-40/41/42) will be fleshed out to replace local state with API calls.
-3.  **Removal of Simulation:** The `isSimulating` delays and `setTimeout` calls in components will be replaced by `await api.call()`.
-
-## 5. Do Not Break
-Any future changes to the frontend must strictly adhere to `V33_DO_NOT_BREAK_MANIFEST.md` to ensure the operational flow designed here remains intact during integration.
