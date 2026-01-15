@@ -2,12 +2,12 @@
  * SKU Flow Wizard Model
  * Defines local state shape for the FLOW-001 step-wizard.
  * @foundation V34-S1-FLOW-001-PP-03
- * @updated V35-S1-WIZ-FIX-01 (Step Registry & Path Resolution)
+ * @updated V35-S1-WIZ-FIX-02 (Internal Step Reclassification)
  */
 
 import type { SkuDraft, SkuFlowState, SkuFlowRole } from "../skuFlowContract";
 
-export type WizardStepId = "INIT" | "GENERAL" | "TECHNICAL" | "REVIEW" | "APPROVE" | "PUBLISH";
+export type WizardStepId = "INIT" | "BASE_SKU_METADATA" | "TECHNICAL" | "REVIEW" | "APPROVE" | "PUBLISH";
 
 export interface WizardModel {
   role: SkuFlowRole;
@@ -24,20 +24,20 @@ export interface WizardModel {
  */
 export const WIZARD_STEP_REGISTRY: Record<string, Record<string, WizardStepId[]>> = {
   GREENFIELD: {
-    DEFAULT: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    CELL: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    MODULE: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    PACK: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    BMS: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    IOT: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    DEFAULT: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    CELL: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    MODULE: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    PACK: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    BMS: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    IOT: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
   },
   REVISION: {
-    DEFAULT: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    CELL: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    MODULE: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    PACK: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    BMS: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    IOT: ["INIT", "GENERAL", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    DEFAULT: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    CELL: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    MODULE: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    PACK: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    BMS: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    IOT: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
   }
 };
 
@@ -96,7 +96,7 @@ export function resolveStepFromState(state: SkuFlowState): WizardStepId {
   switch (state) {
     case "Draft":
     case "Rejected":
-      return "GENERAL";
+      return "BASE_SKU_METADATA";
     case "Review":
       return "REVIEW";
     case "Approved":

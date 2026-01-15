@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-FIX-01 (Step Registry Integration)
+ * @updated V35-S1-WIZ-FIX-02 (Internal Step Reclassification)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -180,7 +180,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     const errors: Record<string, string> = {};
     const d = model.draft;
 
-    if (step === 'GENERAL') {
+    if (step === 'BASE_SKU_METADATA') {
       if (!d.skuCode) errors.skuCode = 'SKU Code is required';
       if (!d.skuName) errors.skuName = 'SKU Name is required';
     }
@@ -512,7 +512,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                 </FlowStep>
               )}
 
-              {model.step === "GENERAL" && (
+              {model.step === "BASE_SKU_METADATA" && (
                 <FlowStep stepTitle="General Identifiers" stepHint="Establish basic SKU metadata and identification strings.">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto py-8">
                     <Field label="Canonical SKU Code" id="skuCode" error={model.validationErrors.skuCode}>
@@ -677,7 +677,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                 </button>
               )}
 
-              {(model.step === "GENERAL" || model.step === "TECHNICAL") && (
+              {(model.step === "BASE_SKU_METADATA" || model.step === "TECHNICAL") && (
                 <>
                   <button onClick={handlePrevStep} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Back</button>
                   {model.role === 'Maker' && (
@@ -690,10 +690,10 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                         <Save size={18} /> Save Buffer
                       </button>
                       <button 
-                        onClick={() => model.step === 'GENERAL' ? handleNextStep() : handleSubmit()}
+                        onClick={() => model.step === 'BASE_SKU_METADATA' ? handleNextStep() : handleSubmit()}
                         className={`flex items-center justify-center gap-2 px-8 py-3 bg-brand-600 text-white rounded-lg font-bold text-sm hover:bg-brand-700 transition-all shadow-lg active:scale-95`}
                       >
-                        {model.step === 'GENERAL' ? 'Technical Blueprint' : 'Release to Review'} <ChevronRight size={18} />
+                        {model.step === 'BASE_SKU_METADATA' ? 'Technical Blueprint' : 'Release to Review'} <ChevronRight size={18} />
                       </button>
                     </>
                   )}

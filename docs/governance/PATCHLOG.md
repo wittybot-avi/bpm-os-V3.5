@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-WIZ-FIX-02** | Stabilization | Step Reclassification | **STABLE** | Internally reclassified "General Identifiers" as `BASE_SKU_METADATA` step. Enforced index mapping in registry for future modularity. No UI changes. | 2026-01-28 15:30 (IST) |
 | **V35-S1-WIZ-FIX-01** | Stabilization | Wizard Step Registry | **STABLE** | Introduced a central Step Registry for S1 Wizard. Resolved paths now depend on Intent (Greenfield/Revision) and SKU Type. Hardened navigation helpers. | 2026-01-28 15:00 (IST) |
 | **V35-S1-DOC-PP-08** | Documentation | S1 Master Data SoT | **STABLE** | Established S1 as authoritative Product Master Data source. Documented bindings to S2/S4 and enforced Wizard-only mutation path. | 2026-01-28 14:30 (IST) |
 | **V35-S1-WIZ-PP-07** | UX / RBAC | Refined Approval UX | **STABLE** | Enforced "One Primary Action" UI pattern. Added task directive bar to SKU Wizard. Restricted footer actions strictly to authorized roles per state. | 2026-01-28 14:00 (IST) |
@@ -15,7 +16,7 @@
 | **V35-S1-ARCH-BP-01** | Architecture | SKU Taxonomy & Blueprint Schema | **STABLE** | Introduced discriminated union for SKU types (CELL, MODULE, PACK, BMS, IOT). Defined revision models and approval lifecycle. | 2026-01-28 10:00 (IST) |
 | **V35-S0-DOC-PP-05** | Documentation | S0 Master Data Source of Truth | **STABLE** | Formally documented S0 definitional scope, prohibitions, and read-only contracts. Added to Registry. | 2026-01-28 07:30 (IST) |
 | **V35-S0-UX-PP-04** | UX / Capability | System Capability Flags | **STABLE** | Centralized feature toggles (Serialization, IoT, Deep Trace) with scoping (Global/Plant/Line) in S0. | 2026-01-28 07:00 (IST) |
-| **V35-S0-UX-PP-03** | UX Structure | Capability-Centric S0 Organization | **STABLE** | Reorganized System Setup around Plant, Line, Workstation, and Device capabilities. Removed operational instance references. | 2026-01-28 06:30 (IST) |
+| **V35-S0-UX-PP-03** | UX Structure | Capability-Centric S0Organization | **STABLE** | Reorganized System Setup around Plant, Line, Workstation, and Device capabilities. Removed operational instance references. | 2026-01-28 06:30 (IST) |
 | **V35-S0-UX-PP-02** | UX Convergence | S0 Master Data Alignment | **STABLE** | Neutralized S0 language. Replaced operational CTAs with "Provisioning" and "Definition" terminology. | 2026-01-28 06:00 (IST) |
 | **V35-S0-ARCH-BP-01** | Architecture | S0 Master Data Contract | **STABLE** | Formally codified S0 as Master Data layer. Added invariants and detailed entities. | 2026-01-28 05:30 (IST) |
 | **V35-MD-NAV-BP-01** | Foundation | Rename System Setup to Master Data | **STABLE** | Sidebar taxonomy update only. S0 and S1 screens grouped under new heading. | 2026-01-28 05:00 (IST) |
