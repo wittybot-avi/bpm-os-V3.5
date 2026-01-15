@@ -6,32 +6,28 @@ import {
   Settings, 
   Globe, 
   Users, 
-  Edit2,
-  Plus,
-  RefreshCw,
-  Lock,
-  History,
-  CheckCircle2,
-  Radar,
-  Cpu,
-  Layout,
-  Server,
-  Wrench,
-  Activity,
-  Zap,
-  ShieldCheck,
-  ToggleLeft,
-  ToggleRight,
-  Filter,
-  ChevronRight,
-  Building2
+  CheckCircle2, 
+  Radar, 
+  Cpu, 
+  Layout, 
+  Server, 
+  Wrench, 
+  Activity, 
+  Zap, 
+  ShieldCheck, 
+  ToggleLeft, 
+  ToggleRight, 
+  ChevronRight, 
+  Building2,
+  Loader2,
+  Box
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
-import { DisabledHint } from './DisabledHint';
-import { getMockS0Context, S0Context, SystemFeatureFlag } from '../stages/s0/s0Contract';
+import { getMockS0Context, S0Context } from '../stages/s0/s0Contract';
 import { getS0ActionState, S0ActionId } from '../stages/s0/s0Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
+import { apiFetch } from '../services/apiHarness';
 
 interface SystemSetupProps {
   onNavigate?: (view: NavView) => void;
@@ -51,9 +47,66 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [localEvents, setLocalEvents] = useState<AuditEvent[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
 
-  // Load events on mount
+  // Topology State (V35-S0-UI-PP-08)
+  const [topology, setTopology] = useState<{
+    enterprise?: any;
+    plant?: any;
+    line?: any;
+    station?: any;
+  }>({});
+  const [isTopologyLoading, setIsTopologyLoading] = useState(true);
+
+  // Load topology from Option-B API
+  const fetchTopology = async () => {
+    setIsTopologyLoading(true);
+    try {
+      // 1. Enterprises
+      const entRes = await apiFetch('/api/s0/enterprises');
+      const entData = await entRes.json();
+      const activeEnt = entData.data?.[0];
+
+      if (activeEnt) {
+        // 2. Plants
+        const plantRes = await apiFetch(`/api/s0/plants?enterpriseId=${activeEnt.id}`);
+        const plantData = await plantRes.json();
+        const activePlant = plantData.data?.[0];
+
+        if (activePlant) {
+          // 3. Lines
+          const lineRes = await apiFetch(`/api/s0/lines?plantId=${activePlant.id}`);
+          const lineData = await lineRes.json();
+          const activeLine = lineData.data?.[0];
+
+          if (activeLine) {
+            // 4. Stations
+            const stRes = await apiFetch(`/api/s0/stations?lineId=${activeLine.id}`);
+            const stData = await stRes.json();
+            const activeStation = stData.data?.[0];
+
+            setTopology({
+              enterprise: activeEnt,
+              plant: activePlant,
+              line: activeLine,
+              station: activeStation
+            });
+          } else {
+            setTopology({ enterprise: activeEnt, plant: activePlant });
+          }
+        } else {
+          setTopology({ enterprise: activeEnt });
+        }
+      }
+    } catch (e) {
+      console.error("Failed to fetch topology context:", e);
+    } finally {
+      setIsTopologyLoading(false);
+    }
+  };
+
+  // Load events and topology on mount
   useEffect(() => {
     setLocalEvents(getAuditEvents().filter(e => e.stageId === 'S0'));
+    fetchTopology();
   }, []);
 
   // Helper to resolve action state for UI
@@ -137,18 +190,6 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
              <Settings className="text-brand-600" size={24} />
              System Configuration (S0)
            </h1>
-           
-           {/* READ-ONLY HIERARCHY BREADCRUMB */}
-           <nav className="flex items-center gap-2 mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 w-fit px-2 py-1 rounded border border-slate-100">
-              <Building2 size={10} className="text-slate-300" />
-              <span>BPM Global Manufacturing</span>
-              <ChevronRight size={10} className="text-slate-200" />
-              <Factory size={10} className="text-slate-300" />
-              <span>{s0Context.plant.name} - Kolkata</span>
-              <ChevronRight size={10} className="text-slate-200" />
-              <Layout size={10} className="text-brand-400" />
-              <span className="text-brand-600">All Nodes</span>
-           </nav>
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="bg-slate-100 text-slate-600 px-3 py-1 rounded text-[10px] font-bold border border-slate-200 uppercase tracking-widest">
@@ -158,6 +199,48 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             <Server size={10} /> Node State: {s0Context.status}
           </div>
         </div>
+      </div>
+
+      {/* DYNAMIC TOPOLOGY CONTEXT BAR (V35-S0-UI-PP-08) */}
+      <div className="bg-white border border-industrial-border rounded-lg p-3 shadow-sm flex flex-wrap items-center gap-6 overflow-x-auto custom-scrollbar">
+         <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
+            <Building2 size={16} className="text-slate-400" />
+            <div>
+               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Enterprise</div>
+               <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.enterprise?.displayName || 'N/A'}</div>
+            </div>
+         </div>
+         
+         <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
+            <Factory size={16} className="text-slate-400" />
+            <div>
+               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Plant</div>
+               <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.plant?.displayName || 'N/A'}</div>
+            </div>
+         </div>
+
+         <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
+            <Layout size={16} className="text-slate-400" />
+            <div>
+               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Active Line</div>
+               <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.line?.displayName || 'N/A'}</div>
+            </div>
+         </div>
+
+         <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
+            <Box size={16} className="text-brand-500" />
+            <div>
+               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Primary Station</div>
+               <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.station?.displayName || 'N/A'}</div>
+            </div>
+         </div>
+
+         {isTopologyLoading && (
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-400 ml-auto pr-2">
+               <Loader2 size={14} className="animate-spin text-brand-500" />
+               <span>Syncing Topology...</span>
+            </div>
+         )}
       </div>
 
       <StageStateBanner stageId="S0" />

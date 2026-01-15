@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-UI-PP-08** | UI Wiring | S0 Topology | **STABLE** | S0 binds to topology API (read-only context bar). Dynamic fetching of Enterprise, Plant, Line, and Station data via Option-B API. | 2026-01-29 16:00 (IST) |
 | **V35-S0-BP-07** | Governance | S0 Design Freeze | **STABLE** | S0 hierarchy design freeze (V3.5 Phase-1). Authoritative contract for organizational topology and master data established. | 2026-01-29 15:00 (IST) |
 | **V35-S0-BP-06** | UX-Context | Hierarchy UX | **STABLE** | Hierarchy-aware context cues in S0 UI. Added read-only breadcrumbs (Enterprise > Plant > Line) and scope badges (PLANT, LINE, STATION) to tiles. | 2026-01-29 14:00 (IST) |
 | **V35-S0-BP-05** | Foundation | S0 Topology API | **STABLE** | Read-only API routes for S0 topology hierarchy (Enterprise, Plant, Line, Station). Option-B compliant. | 2026-01-29 13:00 (IST) |
