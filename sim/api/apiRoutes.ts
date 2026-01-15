@@ -9,6 +9,7 @@
  * @foundation V34-S3-FLOW-003-PP-04
  * @foundation V34-S9-FLOW-004-PP-04
  * @foundation V34-S11-FLOW-005-PP-03
+ * @foundation V35-S0-BP-05
  */
 
 import { route, RouteDef } from "./apiRouter";
@@ -59,6 +60,12 @@ import {
   getDispatch,
   listDispatch
 } from "./handlers/dispatchFlowHandlers";
+import {
+  listEnterprises,
+  listPlants,
+  listLines,
+  listStations
+} from "./handlers/s0TopologyHandlers";
 
 export const SIM_API_ROUTES: RouteDef[] = [
   /**
@@ -82,6 +89,14 @@ export const SIM_API_ROUTES: RouteDef[] = [
    * Returns the list of planned MES Pilot flows.
    */
   route("GET", "EXACT", "/api/flows/registry", getFlowRegistry),
+
+  /**
+   * S0 Topology Hierarchy - Read Only
+   */
+  route("GET", "EXACT", "/api/s0/enterprises", listEnterprises),
+  route("GET", "EXACT", "/api/s0/plants", listPlants),
+  route("GET", "EXACT", "/api/s0/lines", listLines),
+  route("GET", "EXACT", "/api/s0/stations", listStations),
 
   /**
    * SKU Flow (FLOW-001) - Live Simulated Handlers

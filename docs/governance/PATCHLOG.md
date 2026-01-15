@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-BP-05** | Foundation | S0 Topology API | **STABLE** | Read-only API routes for S0 topology hierarchy (Enterprise, Plant, Line, Station). Option-B compliant. | 2026-01-29 13:00 (IST) |
 | **V35-S0-BP-04** | Foundation | S0 Store | **STABLE** | In-memory topology store for S0 hierarchy. Seeded with singleton path (ENT -> PL -> LN -> STN). Read-only accessors provided. | 2026-01-29 12:00 (IST) |
 | **V35-S0-BP-03** | Foundation | Compliance Taxonomy | **STABLE** | Regulatory & SOP context contracts for S0. Modeled frameworks, SOP profiles, and hierarchical bindings. Types only. | 2026-01-29 11:00 (IST) |
 | **V35-S0-BP-02** | Foundation | Capability Taxonomy | **STABLE** | Capability scope & authorization taxonomy for S0. Defined categories and flags for hierarchical system control. Types only. | 2026-01-29 10:00 (IST) |
