@@ -25,7 +25,15 @@ import {
   Plus,
   List,
   FileText,
-  Lock
+  Lock,
+  Edit2,
+  Trash2,
+  AlertTriangle,
+  Ban,
+  Timer,
+  // Fix: Added missing Info and Save icons from lucide-react
+  Info,
+  Save
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -33,6 +41,7 @@ import { getMockS0Context, S0Context } from '../stages/s0/s0Contract';
 import { getS0ActionState, S0ActionId } from '../stages/s0/s0Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
 import { apiFetch } from '../services/apiHarness';
+import type { Plant } from '../domain/s0/systemTopology.types';
 
 interface SystemSetupProps {
   onNavigate?: (view: NavView) => void;
@@ -57,6 +66,12 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   // Drawer State
   const [activeCategory, setActiveCategory] = useState<ManageCategory>(null);
   const [activeTab, setActiveTab] = useState<'LIST' | 'DETAILS'>('LIST');
+
+  // Plant CRUD State
+  const [plants, setPlants] = useState<Plant[]>([]);
+  const [isPlantsLoading, setIsPlantsLoading] = useState(false);
+  const [editingPlant, setEditingPlant] = useState<Partial<Plant> | null>(null);
+  const [isFormSubmitting, setIsFormSubmitting] = useState(false);
 
   // Topology State
   const [topology, setTopology] = useState<{
@@ -109,13 +124,34 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     }
   };
 
+  const fetchPlants = async () => {
+    setIsPlantsLoading(true);
+    try {
+      const res = await apiFetch('/api/s0/plants');
+      const result = await res.json();
+      if (result.ok) {
+        setPlants(result.data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch plants", e);
+    } finally {
+      setIsPlantsLoading(false);
+    }
+  };
+
   useEffect(() => {
     setLocalEvents(getAuditEvents().filter(e => e.stageId === 'S0'));
     fetchTopology();
   }, []);
 
+  useEffect(() => {
+    if (activeCategory === 'ORGANIZATION') {
+      fetchPlants();
+    }
+  }, [activeCategory]);
+
   // Handlers
-  const handleEditPlant = () => {
+  const handleEditPlantTile = () => {
     setIsSimulating(true);
     setTimeout(() => {
       const now = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' }) + ' IST';
@@ -160,10 +196,74 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const openManager = (cat: ManageCategory) => {
     setActiveCategory(cat);
     setActiveTab('LIST');
+    setEditingPlant(null);
   };
 
   const closeManager = () => {
     setActiveCategory(null);
+    setEditingPlant(null);
+  };
+
+  const handleCreateOrUpdatePlant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPlant || isFormSubmitting) return;
+    setIsFormSubmitting(true);
+
+    try {
+      const isEdit = !!editingPlant.id;
+      const endpoint = isEdit ? '/api/s0/plants/update' : '/api/s0/plants/create';
+      const method = isEdit ? 'PATCH' : 'POST';
+      const body = isEdit ? { id: editingPlant.id, updates: editingPlant } : editingPlant;
+
+      const res = await apiFetch(endpoint, {
+        method,
+        body: JSON.stringify(body)
+      });
+      const result = await res.json();
+      
+      if (result.ok) {
+        emitAuditEvent({
+          stageId: 'S0',
+          actionId: 'EDIT_PLANT_DETAILS',
+          actorRole: role,
+          message: `${isEdit ? 'Updated' : 'Created'} plant: ${result.data.displayName}`
+        });
+        setEditingPlant(null);
+        setActiveTab('LIST');
+        fetchPlants();
+        fetchTopology(); // Refresh the context bar
+      }
+    } catch (err) {
+      console.error("Plant save failure", err);
+    } finally {
+      setIsFormSubmitting(false);
+    }
+  };
+
+  const handleSuspendPlant = async (id: string) => {
+    if (isFormSubmitting) return;
+    setIsFormSubmitting(true);
+    try {
+      const res = await apiFetch('/api/s0/plants/update', {
+        method: 'PATCH',
+        body: JSON.stringify({ id, updates: { status: 'SUSPENDED' } })
+      });
+      const result = await res.json();
+      if (result.ok) {
+        emitAuditEvent({
+          stageId: 'S0',
+          actionId: 'EDIT_PLANT_DETAILS',
+          actorRole: role,
+          message: `Suspended plant: ${result.data.displayName}`
+        });
+        fetchPlants();
+        fetchTopology();
+      }
+    } catch (e) {
+      console.error("Suspend failed", e);
+    } finally {
+      setIsFormSubmitting(false);
+    }
   };
 
   const hasAccess = role === UserRole.SYSTEM_ADMIN || role === UserRole.MANAGEMENT || role === UserRole.COMPLIANCE;
@@ -283,7 +383,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                 </div>
               </div>
               <div className="flex gap-3">
-                <button onClick={handleEditPlant} className="text-[10px] font-bold text-brand-600 hover:text-brand-800">PROVISION</button>
+                <button onClick={handleEditPlantTile} className="text-[10px] font-bold text-brand-600 hover:text-brand-800">PROVISION</button>
                 <button onClick={() => openManager('ORGANIZATION')} className="text-[10px] font-bold text-slate-400 hover:text-brand-600 uppercase">Manage</button>
               </div>
             </div>
@@ -472,7 +572,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <div className="flex items-center gap-3">
                   <div className="p-2 bg-brand-600 text-white rounded-lg"><Settings size={20} /></div>
                   <div>
-                    <h2 className="font-bold text-slate-800">Manage {activeCategory}</h2>
+                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory}</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Master Data Management</p>
                   </div>
                </div>
@@ -482,44 +582,176 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             {/* Tabs */}
             <div className="flex border-b border-slate-200 shrink-0">
                <button 
-                 onClick={() => setActiveTab('LIST')}
+                 onClick={() => { setActiveTab('LIST'); setEditingPlant(null); }}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'LIST' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50'}`}
                >
                  <List size={14} /> Repository List
                </button>
                <button 
-                 disabled
-                 className="flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 border-transparent text-slate-300 cursor-not-allowed bg-slate-50/50"
+                 onClick={() => setActiveTab('DETAILS')}
+                 disabled={activeCategory !== 'ORGANIZATION'}
+                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'DETAILS' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed'}`}
                >
                  <FileText size={14} /> Definition Details
                </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center">
-               <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center text-slate-300 mb-4">
-                  <Lock size={32} />
-               </div>
-               <h3 className="text-lg font-bold text-slate-700 uppercase tracking-tight">Management Framework Scoped</h3>
-               <p className="text-sm text-slate-500 max-w-sm mt-2 leading-relaxed">
-                  The management interface for <strong>{activeCategory}</strong> is wired to the V3.5 Foundation. Entity CRUD forms are coming in the next incremental patch.
-               </p>
-               <div className="mt-8 grid grid-cols-2 gap-4 w-full max-w-xs">
-                  <div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center">
-                     <Plus size={20} className="text-slate-300 mb-1" />
-                     <span className="text-[10px] font-bold text-slate-400 uppercase">Add Entry</span>
-                  </div>
-                  <div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center">
-                     <Settings size={20} className="text-slate-300 mb-1" />
-                     <span className="text-[10px] font-bold text-slate-400 uppercase">Configuration</span>
-                  </div>
-               </div>
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+               {activeCategory === 'ORGANIZATION' ? (
+                 <>
+                   {activeTab === 'LIST' ? (
+                     <div className="p-0">
+                       <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active Entities</span>
+                          <button 
+                            onClick={() => { setEditingPlant({ displayName: '', code: '', status: 'ACTIVE' }); setActiveTab('DETAILS'); }}
+                            className="flex items-center gap-1 text-[10px] font-bold text-brand-600 hover:text-brand-800"
+                          >
+                            <Plus size={12} /> ADD NEW PLANT
+                          </button>
+                       </div>
+                       {isPlantsLoading ? (
+                         <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-3">
+                           <Loader2 size={24} className="animate-spin" />
+                           <span className="text-xs font-bold uppercase">Fetching Registry...</span>
+                         </div>
+                       ) : (
+                         <div className="divide-y divide-slate-100">
+                           {plants.map(p => (
+                             <div key={p.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center group">
+                                <div className="flex items-center gap-3">
+                                   <div className={`w-2 h-2 rounded-full ${p.status === 'ACTIVE' ? 'bg-green-50' : 'bg-amber-500'}`} />
+                                   <div>
+                                      <div className="text-sm font-bold text-slate-800">{p.displayName}</div>
+                                      <div className="text-[10px] font-mono text-slate-400 uppercase tracking-tighter">Code: {p.code} • ID: {p.id}</div>
+                                   </div>
+                                </div>
+                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                   <button 
+                                      onClick={() => { setEditingPlant(p); setActiveTab('DETAILS'); }}
+                                      className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors"
+                                      title="Edit Definition"
+                                   >
+                                      <Edit2 size={14} />
+                                   </button>
+                                   {p.status === 'ACTIVE' && (
+                                     <button 
+                                        onClick={() => handleSuspendPlant(p.id)}
+                                        className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                        title="Suspend Capability"
+                                     >
+                                        <Ban size={14} />
+                                     </button>
+                                   )}
+                                </div>
+                             </div>
+                           ))}
+                         </div>
+                       )}
+                     </div>
+                   ) : (
+                     <form onSubmit={handleCreateOrUpdatePlant} className="p-6 space-y-6">
+                        <div className="flex items-center gap-3 mb-2">
+                           <div className="p-2 bg-brand-50 rounded text-brand-600"><Factory size={18} /></div>
+                           <h3 className="font-bold text-slate-700">{editingPlant?.id ? 'Edit Plant Definition' : 'Add New Plant Entity'}</h3>
+                        </div>
+
+                        <div className="space-y-4">
+                           <div className="space-y-1.5">
+                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Plant Display Name</label>
+                              <input 
+                                required
+                                type="text"
+                                className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none"
+                                placeholder="e.g. Gigafactory 2 - Mumbai"
+                                value={editingPlant?.displayName || ''}
+                                onChange={e => setEditingPlant(p => ({ ...p!, displayName: e.target.value }))}
+                              />
+                           </div>
+
+                           <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-1.5">
+                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Plant Code</label>
+                                 <input 
+                                    required
+                                    type="text"
+                                    className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none font-mono uppercase"
+                                    placeholder="PL-MUM-01"
+                                    value={editingPlant?.code || ''}
+                                    onChange={e => setEditingPlant(p => ({ ...p!, code: e.target.value }))}
+                                 />
+                              </div>
+                              <div className="space-y-1.5">
+                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Initial Status</label>
+                                 <select 
+                                    className="w-full border border-slate-300 rounded p-2.5 text-sm outline-none bg-white"
+                                    value={editingPlant?.status || 'ACTIVE'}
+                                    onChange={e => setEditingPlant(p => ({ ...p!, status: e.target.value as any }))}
+                                 >
+                                    <option value="ACTIVE">ACTIVE</option>
+                                    <option value="SUSPENDED">SUSPENDED</option>
+                                 </select>
+                              </div>
+                           </div>
+
+                           <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex gap-3 mt-4">
+                              {/* Fix: Info icon is now imported */}
+                              <Info size={18} className="text-slate-400 shrink-0" />
+                              <p className="text-[11px] text-slate-600 leading-relaxed">
+                                Creating a new plant establishes a root node for manufacturing topology. Once active, lines can be provisioned within this facility.
+                              </p>
+                           </div>
+                        </div>
+
+                        <div className="pt-6 flex gap-3">
+                           <button 
+                              type="button"
+                              onClick={() => { setEditingPlant(null); setActiveTab('LIST'); }}
+                              className="px-6 py-2.5 rounded text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
+                           >
+                              CANCEL
+                           </button>
+                           <button 
+                              type="submit"
+                              disabled={isFormSubmitting}
+                              className="flex-1 bg-brand-600 hover:bg-brand-700 text-white rounded font-bold text-sm py-2.5 shadow-sm transition-all flex items-center justify-center gap-2"
+                           >
+                              {/* Fix: Save icon is now imported */}
+                              {isFormSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                              {editingPlant?.id ? 'UPDATE DEFINITION' : 'CREATE PLANT ENTITY'}
+                           </button>
+                        </div>
+                     </form>
+                   )}
+                 </>
+               ) : (
+                 <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center">
+                    <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center text-slate-300 mb-4">
+                        <Lock size={32} />
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-700 uppercase tracking-tight">Management Framework Scoped</h3>
+                    <p className="text-sm text-slate-500 max-w-sm mt-2 leading-relaxed">
+                        The management interface for <strong>{activeCategory}</strong> is wired to the V3.5 Foundation. Entity CRUD forms are coming in the next incremental patch.
+                    </p>
+                    <div className="mt-8 grid grid-cols-2 gap-4 w-full max-w-xs">
+                        <div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center">
+                            <Plus size={20} className="text-slate-300 mb-1" />
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Add Entry</span>
+                        </div>
+                        <div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center">
+                            <Settings size={20} className="text-slate-300 mb-1" />
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Configuration</span>
+                        </div>
+                    </div>
+                 </div>
+               )}
             </div>
 
             <footer className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center shrink-0">
                <button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider">Close Panel</button>
                <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
                   <ShieldCheck size={12} />
-                  READ_ONLY_SCAFFOLD_V1
+                  {activeCategory === 'ORGANIZATION' ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
                </div>
             </footer>
           </div>

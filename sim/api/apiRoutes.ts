@@ -64,7 +64,9 @@ import {
   listEnterprises,
   listPlants,
   listLines,
-  listStations
+  listStations,
+  createPlantHandler,
+  updatePlantHandler
 } from "./handlers/s0TopologyHandlers";
 
 export const SIM_API_ROUTES: RouteDef[] = [
@@ -97,6 +99,12 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("GET", "EXACT", "/api/s0/plants", listPlants),
   route("GET", "EXACT", "/api/s0/lines", listLines),
   route("GET", "EXACT", "/api/s0/stations", listStations),
+
+  /**
+   * S0 Topology Mutations (V35-S0-CRUD-PP-11)
+   */
+  route("POST", "EXACT", "/api/s0/plants/create", createPlantHandler),
+  route("PATCH", "EXACT", "/api/s0/plants/update", updatePlantHandler),
 
   /**
    * SKU Flow (FLOW-001) - Live Simulated Handlers

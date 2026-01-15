@@ -42,7 +42,7 @@ const LINES: Line[] = [
   }
 ];
 
-const PLANTS: Plant[] = [
+let PLANTS: Plant[] = [
   {
     id: "FAC-WB-01",
     code: "PL-KOL-01",
@@ -80,3 +80,17 @@ export const getEnterpriseById = (id: string) => ENTERPRISES.find(e => e.id === 
 export const getPlantById = (id: string) => PLANTS.find(p => p.id === id);
 export const getLineById = (id: string) => LINES.find(l => l.id === id);
 export const getStationById = (id: string) => STATIONS.find(s => s.id === id);
+
+/**
+ * STORE MUTATORS (V35-S0-CRUD-PP-11)
+ */
+
+export const addPlant = (plant: Plant) => {
+  PLANTS = [...PLANTS, plant];
+  return plant;
+};
+
+export const updatePlant = (id: string, updates: Partial<Plant>) => {
+  PLANTS = PLANTS.map(p => p.id === id ? { ...p, ...updates } : p);
+  return PLANTS.find(p => p.id === id);
+};

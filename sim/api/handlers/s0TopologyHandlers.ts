@@ -1,22 +1,38 @@
 /**
  * S0 Topology API Handlers
- * Simulated backend logic for system hierarchy retrieval.
+ * Simulated backend logic for system hierarchy retrieval and management.
  * @version V3.5
  * @governance S0-ARCH-BP-05
+ * @updated V35-S0-CRUD-PP-11 (Plant Mutations)
  */
 
-import type { ApiHandler, ApiResponse } from "../apiTypes";
+import type { ApiHandler, ApiResponse, ApiRequest } from "../apiTypes";
 import { 
   getEnterprises, 
   getPlants, 
   getLines, 
-  getStations 
+  getStations,
+  addPlant,
+  updatePlant
 } from "../s0/systemTopology.store";
+import type { Plant } from "../../../domain/s0/systemTopology.types";
 
 const ok = (data: any): ApiResponse => ({
   status: 200,
   body: { ok: true, data }
 });
+
+const err = (code: string, message: string, status = 400): ApiResponse => ({
+  status,
+  body: { ok: false, error: { code, message } }
+});
+
+function parseBody<T>(req: ApiRequest): T {
+  if (typeof req.body === "string") {
+    return JSON.parse(req.body);
+  }
+  return req.body as T;
+}
 
 /**
  * GET /api/s0/enterprises
@@ -37,6 +53,44 @@ export const listPlants: ApiHandler = async (req) => {
   }
   
   return ok(plants);
+};
+
+/**
+ * POST /api/s0/plants/create
+ */
+export const createPlantHandler: ApiHandler = async (req) => {
+  const body = parseBody<Partial<Plant>>(req);
+  if (!body.code || !body.displayName) return err("BAD_REQUEST", "Plant code and display name are required");
+
+  const newPlant: Plant = {
+    id: `FAC-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
+    code: body.code,
+    displayName: body.displayName,
+    status: body.status || 'ACTIVE',
+    enterpriseId: body.enterpriseId || 'ENT-BPM-GLOBAL',
+    effectiveFrom: new Date().toISOString(),
+    lineIds: [],
+    audit: {
+      createdBy: "API_USER",
+      createdAt: new Date().toISOString()
+    }
+  };
+
+  addPlant(newPlant);
+  return ok(newPlant);
+};
+
+/**
+ * PATCH /api/s0/plants/update
+ */
+export const updatePlantHandler: ApiHandler = async (req) => {
+  const body = parseBody<{ id: string; updates: Partial<Plant> }>(req);
+  if (!body.id) return err("BAD_REQUEST", "Plant ID is required");
+
+  const updated = updatePlant(body.id, body.updates);
+  if (!updated) return err("NOT_FOUND", "Plant not found", 404);
+
+  return ok(updated);
 };
 
 /**
