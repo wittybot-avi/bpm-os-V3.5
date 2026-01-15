@@ -9,6 +9,7 @@
  * @updated V35-S0-CRUD-PP-15 (Enterprise Mutations)
  * @updated V35-S0-CAP-PP-16 (Device Class Mutations)
  * @updated V35-S0-CAP-PP-17 (Capability Overrides)
+ * @updated V35-S0-COMP-PP-18 (Regulatory Bindings)
  */
 
 import type { ApiHandler, ApiResponse, ApiRequest } from "../apiTypes";
@@ -32,10 +33,15 @@ import {
   upsertOverride,
   removeOverride,
   getPlantById,
-  getLineById
+  getLineById,
+  getRegulatoryFrameworks,
+  getComplianceBindings,
+  upsertComplianceBinding,
+  removeComplianceBinding
 } from "../s0/systemTopology.store";
 import type { Enterprise, Plant, Line, Station, DeviceClass } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityOverride, EffectiveFlag, CapabilityScope } from "../../../domain/s0/capability.types";
+import type { RegulatoryFramework, ComplianceBinding, EffectiveCompliance } from "../../../domain/s0/complianceContext.types";
 
 const ok = (data: any): ApiResponse => ({
   status: 200,
@@ -377,5 +383,78 @@ export const removeCapabilityOverrideHandler: ApiHandler = async (req) => {
   if (!flagId || !scope || !scopeId) return err("BAD_REQUEST", "Ids are required");
 
   removeOverride(flagId, scope, scopeId);
+  return ok({ success: true });
+};
+
+/**
+ * GET /api/s0/compliance/frameworks
+ */
+export const listRegulatoryFrameworksHandler: ApiHandler = async () => {
+  return ok(getRegulatoryFrameworks());
+};
+
+/**
+ * GET /api/s0/compliance/effective
+ */
+export const getEffectiveComplianceHandler: ApiHandler = async (req) => {
+  const scope = req.query?.["scope"] as CapabilityScope;
+  const scopeId = req.query?.["scopeId"];
+
+  if (!scope || !scopeId) return err("BAD_REQUEST", "Scope and scopeId are required");
+
+  const frameworks = getRegulatoryFrameworks();
+  const bindings = getComplianceBindings();
+
+  // Resolution Logic: Exact scope or fallback to parent
+  let activeBinding = bindings.find(b => b.scope === scope && b.scopeId === scopeId);
+  let isOverridden = !!activeBinding;
+
+  if (!activeBinding && scope === 'PLANT') {
+    const plant = getPlantById(scopeId);
+    if (plant) {
+      activeBinding = bindings.find(b => b.scope === 'ENTERPRISE' && b.scopeId === plant.enterpriseId);
+    }
+  }
+
+  if (!activeBinding) {
+    return ok({
+      frameworks: [],
+      sourceScope: 'GLOBAL',
+      sourceId: 'GLOBAL',
+      isOverridden: false
+    });
+  }
+
+  const resolvedFrameworks = frameworks.filter(f => activeBinding?.regulatoryFrameworkIds.includes(f.id));
+
+  const result: EffectiveCompliance = {
+    frameworks: resolvedFrameworks,
+    sourceScope: activeBinding.scope,
+    sourceId: activeBinding.scopeId,
+    isOverridden
+  };
+
+  return ok(result);
+};
+
+/**
+ * POST /api/s0/compliance/bind
+ */
+export const setComplianceBindingHandler: ApiHandler = async (req) => {
+  const body = parseBody<ComplianceBinding>(req);
+  if (!body.scope || !body.scopeId) return err("BAD_REQUEST", "scope and scopeId are required");
+
+  upsertComplianceBinding(body);
+  return ok(body);
+};
+
+/**
+ * DELETE /api/s0/compliance/bind
+ */
+export const removeComplianceBindingHandler: ApiHandler = async (req) => {
+  const { scope, scopeId } = parseBody<{ scope: string; scopeId: string }>(req);
+  if (!scope || !scopeId) return err("BAD_REQUEST", "scope and scopeId are required");
+
+  removeComplianceBinding(scope, scopeId);
   return ok({ success: true });
 };

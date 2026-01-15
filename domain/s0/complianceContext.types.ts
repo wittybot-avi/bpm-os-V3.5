@@ -17,6 +17,7 @@ export interface RegulatoryFramework {
   readonly name: string;
   readonly jurisdiction: string; // e.g., "INDIA", "EU", "GLOBAL"
   readonly mandatory: boolean;
+  readonly description?: string;
 }
 
 /**
@@ -39,4 +40,14 @@ export interface ComplianceBinding {
   readonly scopeId: EntityId; // Reference to EnterpriseId, PlantId, LineId, or StationId
   readonly regulatoryFrameworkIds: readonly EntityId[];
   readonly sopProfileIds: readonly EntityId[];
+}
+
+/**
+ * Resolved view of compliance requirements for a specific node.
+ */
+export interface EffectiveCompliance {
+  readonly frameworks: readonly RegulatoryFramework[];
+  readonly sourceScope: CapabilityScope;
+  readonly sourceId: EntityId;
+  readonly isOverridden: boolean;
 }

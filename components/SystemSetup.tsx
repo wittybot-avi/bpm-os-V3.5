@@ -37,7 +37,9 @@ import {
   Edit3,
   History,
   RotateCcw,
-  MapPin
+  MapPin,
+  Scale,
+  CheckSquare
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -47,6 +49,7 @@ import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents
 import { apiFetch } from '../services/apiHarness';
 import type { Enterprise, Plant, Line, Station, DeviceClass } from '../domain/s0/systemTopology.types';
 import type { EffectiveFlag, CapabilityScope } from '../domain/s0/capability.types';
+import type { RegulatoryFramework, EffectiveCompliance, ComplianceBinding } from '../domain/s0/complianceContext.types';
 
 interface SystemSetupProps {
   onNavigate?: (view: NavView) => void;
@@ -89,6 +92,14 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   // Scoped Capabilities State
   const [effectiveFlags, setEffectiveFlags] = useState<EffectiveFlag[]>([]);
   const [isFlagsLoading, setIsFlagsLoading] = useState(false);
+
+  // Regulatory State (V35-S0-COMP-PP-18)
+  const [effectiveCompliance, setEffectiveCompliance] = useState<EffectiveCompliance | null>(null);
+  const [allFrameworks, setAllFrameworks] = useState<RegulatoryFramework[]>([]);
+  const [isComplianceLoading, setIsComplianceLoading] = useState(false);
+  const [selBindingScope, setSelBindingScope] = useState<CapabilityScope>('ENTERPRISE');
+  const [selBindingScopeId, setSelBindingScopeId] = useState<string>('');
+  const [activeBinding, setActiveBinding] = useState<ComplianceBinding | null>(null);
 
   // CRUD State
   const [plants, setPlants] = useState<Plant[]>([]);
@@ -227,6 +238,30 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     fetchEffectiveCapabilities();
   }, [selEntId, selPlantId, selLineId, selStationId]);
 
+  // 6. Regulatory Resolution (V35-S0-COMP-PP-18)
+  useEffect(() => {
+    const fetchEffectiveCompliance = async () => {
+      let scope: CapabilityScope = 'ENTERPRISE';
+      let scopeId = selEntId;
+
+      if (selPlantId) { scope = 'PLANT'; scopeId = selPlantId; }
+
+      if (!scopeId) return;
+
+      setIsComplianceLoading(true);
+      try {
+        const res = await apiFetch(`/api/s0/compliance/effective?scope=${scope}&scopeId=${scopeId}`);
+        const data = await res.json();
+        if (data.ok) {
+          setEffectiveCompliance(data.data);
+        }
+      } catch (e) { console.error(e); } finally {
+        setIsComplianceLoading(false);
+      }
+    };
+    fetchEffectiveCompliance();
+  }, [selEntId, selPlantId]);
+
   // Sync audit events
   useEffect(() => {
     setLocalEvents(getAuditEvents().filter(e => e.stageId === 'S0'));
@@ -286,8 +321,44 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
        };
        loadDeviceClasses();
+    } else if (activeCategory === 'REGULATORY') {
+       const loadRegulatoryData = async () => {
+          setIsEntitiesLoading(true);
+          try {
+             const resF = await apiFetch('/api/s0/compliance/frameworks');
+             const dataF = await resF.json();
+             if (dataF.ok) setAllFrameworks(dataF.data);
+
+             setSelBindingScope('ENTERPRISE');
+             setSelBindingScopeId(selEntId);
+          } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
+       };
+       loadRegulatoryData();
     }
-  }, [activeCategory, selPlantId, selLineId]);
+  }, [activeCategory, selPlantId, selLineId, selEntId]);
+
+  // Fetch specific binding when scope changes in drawer
+  useEffect(() => {
+    if (activeCategory === 'REGULATORY' && selBindingScope && selBindingScopeId) {
+      const fetchBinding = async () => {
+        try {
+          const res = await apiFetch(`/api/s0/compliance/effective?scope=${selBindingScope}&scopeId=${selBindingScopeId}`);
+          const data = await res.json();
+          if (data.ok && data.data.isOverridden) {
+             setActiveBinding({
+               scope: selBindingScope,
+               scopeId: selBindingScopeId,
+               regulatoryFrameworkIds: data.data.frameworks.map((f: any) => f.id),
+               sopProfileIds: []
+             });
+          } else {
+             setActiveBinding(null);
+          }
+        } catch (e) { console.error(e); }
+      };
+      fetchBinding();
+    }
+  }, [activeCategory, selBindingScope, selBindingScopeId]);
 
   // Handlers
   const handleEditPlantTile = () => {
@@ -676,6 +747,68 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     }
   };
 
+  // Regulatory Handlers (V35-S0-COMP-PP-18)
+  const toggleFrameworkBinding = async (frameworkId: string) => {
+    if (role !== UserRole.SYSTEM_ADMIN && role !== UserRole.COMPLIANCE) return;
+    
+    setIsFormSubmitting(true);
+    try {
+      const currentIds = activeBinding?.regulatoryFrameworkIds || [];
+      const isBound = currentIds.includes(frameworkId);
+      
+      const nextIds = isBound 
+        ? currentIds.filter(id => id !== frameworkId)
+        : [...currentIds, frameworkId];
+
+      if (nextIds.length === 0 && selBindingScope === 'PLANT') {
+        // Revert to enterprise by deleting plant binding
+        await apiFetch('/api/s0/compliance/bind', {
+          method: 'DELETE',
+          body: JSON.stringify({ scope: selBindingScope, scopeId: selBindingScopeId })
+        });
+      } else {
+        await apiFetch('/api/s0/compliance/bind', {
+          method: 'POST',
+          body: JSON.stringify({ 
+            scope: selBindingScope, 
+            scopeId: selBindingScopeId, 
+            regulatoryFrameworkIds: nextIds,
+            sopProfileIds: [] 
+          })
+        });
+      }
+
+      // Refresh
+      const res = await apiFetch(`/api/s0/compliance/effective?scope=${selBindingScope}&scopeId=${selBindingScopeId}`);
+      const data = await res.json();
+      if (data.ok && data.data.isOverridden) {
+         setActiveBinding({
+           scope: selBindingScope,
+           scopeId: selBindingScopeId,
+           regulatoryFrameworkIds: data.data.frameworks.map((f: any) => f.id),
+           sopProfileIds: []
+         });
+      } else {
+         setActiveBinding(null);
+      }
+
+      // Sync Main screen view if relevant
+      if ((selBindingScope === 'ENTERPRISE' && selBindingScopeId === selEntId) || 
+          (selBindingScope === 'PLANT' && selBindingScopeId === selPlantId)) {
+        const resEff = await apiFetch(`/api/s0/compliance/effective?scope=${selPlantId ? 'PLANT' : 'ENTERPRISE'}&scopeId=${selPlantId || selEntId}`);
+        const dataEff = await resEff.json();
+        if (dataEff.ok) setEffectiveCompliance(dataEff.data);
+      }
+
+      emitAuditEvent({
+        stageId: 'S0',
+        actionId: 'UPDATE_REGULATIONS',
+        actorRole: role,
+        message: `Updated regulatory framework binding for ${selBindingScope} ${selBindingScopeId}`
+      });
+    } catch (e) { console.error(e); } finally { setIsFormSubmitting(false); }
+  };
+
   const hasAccess = role === UserRole.SYSTEM_ADMIN || role === UserRole.MANAGEMENT || role === UserRole.COMPLIANCE;
 
   if (!hasAccess) {
@@ -982,38 +1115,62 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               <button onClick={() => openManager('DEVICES')} className="text-[10px] font-bold text-brand-600 hover:text-brand-800 uppercase">Manage Classes</button>
             </div>
             <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar">
-               <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs font-bold text-slate-700"><span>BARCODE_SCANNER</span><span className="font-mono text-slate-400">USB / REST</span></div>
-               <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs font-bold text-slate-700"><span>DIGITAL_SCALE</span><span className="font-mono text-slate-400">MQTT</span></div>
+               {deviceClasses.slice(0, 3).map(dc => (
+                 <div key={dc.id} className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs font-bold text-slate-700">
+                   <span>{dc.code}</span>
+                   <span className="font-mono text-slate-400">{dc.supportedProtocols.join(' / ')}</span>
+                 </div>
+               ))}
+               {deviceClasses.length === 0 && <div className="text-xs text-slate-400 italic py-4">No device classes defined.</div>}
             </div>
           </div>
 
         </div>
         
-        {/* Regulatory */}
+        {/* Regulatory (V35-S0-COMP-PP-18) */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
               <div className="flex items-center gap-2 text-slate-700">
                 <Globe size={20} className="text-brand-600" />
                 <div className="flex items-center gap-2">
                   <h2 className="font-bold">Regulatory & Sovereignty Compliance</h2>
-                  <ScopeBadge scope="REGULATORY" />
+                  <ScopeBadge scope={effectiveCompliance?.sourceScope || 'GLOBAL'} />
                 </div>
               </div>
               <div className="flex gap-3">
                 <button onClick={handleSyncRegs} className="text-[10px] font-bold text-brand-600 uppercase">Sync Master</button>
-                <button onClick={() => openManager('REGULATORY')} className="text-[10px] font-bold text-slate-400 hover:text-brand-600 uppercase">Manage</button>
+                <button onClick={() => openManager('REGULATORY')} className="text-[10px] font-bold text-slate-400 hover:text-brand-600 uppercase">Manage Bindings</button>
               </div>
             </div>
-            <div className="flex flex-wrap gap-3">
-               <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Identity Sovereignty</span>
-                  <span className="text-sm font-bold text-slate-800">BATT-AADHAAR-V1</span>
-               </div>
-               <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Safety Standard</span>
-                  <span className="text-sm font-bold text-slate-800">AIS-156 AMD 3</span>
-               </div>
-            </div>
+
+            {isComplianceLoading ? (
+              <div className="py-8 flex items-center justify-center text-slate-400 gap-2">
+                <Loader2 size={16} className="animate-spin" />
+                <span className="text-xs font-bold uppercase tracking-widest">Resolving Compliance Context...</span>
+              </div>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-3">
+                   {effectiveCompliance?.frameworks.map(fw => (
+                     <div key={fw.id} className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px] relative group">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">{fw.jurisdiction} Authority</span>
+                        <span className="text-sm font-bold text-slate-800">{fw.name}</span>
+                        {fw.mandatory && <span className="absolute top-2 right-2 text-[8px] font-bold bg-red-50 text-red-600 px-1 rounded">MANDATORY</span>}
+                     </div>
+                   ))}
+                   {(!effectiveCompliance || effectiveCompliance.frameworks.length === 0) && (
+                     <div className="w-full text-center py-6 border border-dashed border-slate-200 rounded-lg text-xs text-slate-400 italic">
+                        No regulatory frameworks bound to this scope.
+                     </div>
+                   )}
+                </div>
+                {effectiveCompliance?.isOverridden && (
+                  <div className="mt-3 text-[10px] font-bold text-brand-600 flex items-center gap-1">
+                    <Info size={10} /> Local plant override active (Parent bindings ignored).
+                  </div>
+                )}
+              </>
+            )}
         </div>
 
         {/* User Capability Matrix */}
@@ -1054,7 +1211,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <div className="flex items-center gap-3">
                   <div className="p-2 bg-brand-600 text-white rounded-lg"><Settings size={20} /></div>
                   <div>
-                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory === 'LINES' ? 'Lines' : activeCategory === 'WORKSTATIONS' ? 'Stations' : activeCategory === 'ENTERPRISE' ? 'Enterprises' : activeCategory === 'DEVICES' ? 'Device Classes' : activeCategory}</h2>
+                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory === 'LINES' ? 'Lines' : activeCategory === 'WORKSTATIONS' ? 'Stations' : activeCategory === 'ENTERPRISE' ? 'Enterprises' : activeCategory === 'DEVICES' ? 'Device Classes' : activeCategory === 'REGULATORY' ? 'Regulatory Bindings' : activeCategory}</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Master Data Management</p>
                   </div>
                </div>
@@ -1071,7 +1228,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                </button>
                <button 
                  onClick={() => setActiveTab('DETAILS')}
-                 disabled={!['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE', 'DEVICES'].includes(activeCategory || '')}
+                 disabled={!['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE', 'DEVICES', 'REGULATORY'].includes(activeCategory || '')}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'DETAILS' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed'}`}
                >
                  <FileText size={14} /> Definition Details
@@ -1355,6 +1512,85 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                       </form>
                     )}
                   </>
+               ) : activeCategory === 'REGULATORY' ? (
+                 <>
+                   {activeTab === 'LIST' ? (
+                     <div className="p-0">
+                       <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                          <div className="flex flex-col">
+                            <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Regulatory Scope Selection</span>
+                          </div>
+                       </div>
+                       <div className="p-4 space-y-4">
+                          <div className="grid grid-cols-2 gap-4">
+                             <button 
+                               onClick={() => { setSelBindingScope('ENTERPRISE'); setSelBindingScopeId(selEntId); }}
+                               className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${selBindingScope === 'ENTERPRISE' ? 'border-brand-500 bg-brand-50 shadow-md ring-4 ring-brand-50' : 'border-slate-100 bg-white hover:border-slate-200'}`}
+                             >
+                                <Building2 size={24} className={selBindingScope === 'ENTERPRISE' ? 'text-brand-600' : 'text-slate-300'} />
+                                <div className="text-center">
+                                   <div className="text-xs font-bold text-slate-800">Enterprise Level</div>
+                                   <div className="text-[10px] text-slate-500">{enterprises.find(e => e.id === selEntId)?.displayName || 'Global'}</div>
+                                </div>
+                             </button>
+                             <button 
+                               disabled={!selPlantId}
+                               onClick={() => { setSelBindingScope('PLANT'); setSelBindingScopeId(selPlantId); }}
+                               className={`p-4 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${selBindingScope === 'PLANT' ? 'border-brand-500 bg-brand-50 shadow-md ring-4 ring-brand-50' : 'border-slate-100 bg-white hover:border-slate-200'} disabled:opacity-30`}
+                             >
+                                <Factory size={24} className={selBindingScope === 'PLANT' ? 'text-brand-600' : 'text-slate-300'} />
+                                <div className="text-center">
+                                   <div className="text-xs font-bold text-slate-800">Plant Override</div>
+                                   <div className="text-[10px] text-slate-500">{activePlants.find(p => p.id === selPlantId)?.displayName || 'Select Plant'}</div>
+                                </div>
+                             </button>
+                          </div>
+
+                          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden mt-6">
+                             <div className="bg-slate-50 p-3 border-b border-slate-200 flex justify-between items-center">
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Available Frameworks</span>
+                                {activeBinding && (
+                                  <span className="text-[9px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded flex items-center gap-1">
+                                    <Edit3 size={10} /> LOCAL BINDING ACTIVE
+                                  </span>
+                                )}
+                             </div>
+                             <div className="divide-y divide-slate-100">
+                                {allFrameworks.map(fw => {
+                                  const isSelected = activeBinding?.regulatoryFrameworkIds.includes(fw.id);
+                                  return (
+                                    <div key={fw.id} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                                       <div className="flex items-center gap-4">
+                                          <div className={`p-2 rounded ${fw.mandatory ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>
+                                            <ShieldCheck size={18} />
+                                          </div>
+                                          <div>
+                                             <div className="text-sm font-bold text-slate-800">{fw.name}</div>
+                                             <div className="text-[10px] text-slate-400 uppercase font-bold tracking-tight">{fw.jurisdiction} • {fw.mandatory ? 'Mandatory' : 'Optional'}</div>
+                                          </div>
+                                       </div>
+                                       <button 
+                                         onClick={() => toggleFrameworkBinding(fw.id)}
+                                         disabled={isFormSubmitting}
+                                         className={`p-2 rounded-full transition-all ${isSelected ? 'bg-brand-600 text-white shadow-lg scale-110' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'}`}
+                                       >
+                                          <CheckSquare size={18} />
+                                       </button>
+                                    </div>
+                                  );
+                                })}
+                             </div>
+                          </div>
+                       </div>
+                     </div>
+                   ) : (
+                     <div className="p-8 text-center flex flex-col items-center justify-center h-full">
+                        <Scale size={48} className="text-slate-200 mb-4" />
+                        <h3 className="text-lg font-bold text-slate-700 uppercase tracking-tight">Regulatory Meta-Data Details</h3>
+                        <p className="text-sm text-slate-500 max-w-sm mt-2 leading-relaxed">Management of base Framework definitions (Sovereignty jurisdictions and Mandatory flags) is currently handled via system provisioner scripts. Context-aware binding is available in the Repository List tab.</p>
+                     </div>
+                   )}
+                 </>
                ) : (
                  <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center">
                     <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center text-slate-300 mb-4"><Lock size={32} /></div>
@@ -1369,7 +1605,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider">Close Panel</button>
                <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
                   <ShieldCheck size={12} />
-                  {['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE', 'DEVICES'].includes(activeCategory || '') ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
+                  {['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE', 'DEVICES', 'REGULATORY'].includes(activeCategory || '') ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
                </div>
             </footer>
           </div>

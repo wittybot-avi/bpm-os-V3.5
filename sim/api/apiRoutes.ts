@@ -77,7 +77,11 @@ import {
   updateDeviceClassHandler,
   getEffectiveCapabilitiesHandler,
   setCapabilityOverrideHandler,
-  removeCapabilityOverrideHandler
+  removeCapabilityOverrideHandler,
+  listRegulatoryFrameworksHandler,
+  getEffectiveComplianceHandler,
+  setComplianceBindingHandler,
+  removeComplianceBindingHandler
 } from "./handlers/s0TopologyHandlers";
 
 export const SIM_API_ROUTES: RouteDef[] = [
@@ -128,6 +132,14 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("GET", "EXACT", "/api/s0/capabilities/effective", getEffectiveCapabilitiesHandler),
   route("POST", "EXACT", "/api/s0/capabilities/override", setCapabilityOverrideHandler),
   route("DELETE", "EXACT", "/api/s0/capabilities/override", removeCapabilityOverrideHandler),
+
+  /**
+   * S0 Compliance Routes (V35-S0-COMP-PP-18)
+   */
+  route("GET", "EXACT", "/api/s0/compliance/frameworks", listRegulatoryFrameworksHandler),
+  route("GET", "EXACT", "/api/s0/compliance/effective", getEffectiveComplianceHandler),
+  route("POST", "EXACT", "/api/s0/compliance/bind", setComplianceBindingHandler),
+  route("DELETE", "EXACT", "/api/s0/compliance/bind", removeComplianceBindingHandler),
 
   /**
    * SKU Flow (FLOW-001) - Live Simulated Handlers
@@ -183,6 +195,7 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("POST", "EXACT", "/api/flows/dispatch/deliver", recordDelivery),
   route("POST", "EXACT", "/api/flows/dispatch/close", closeDispatch),
   route("POST", "EXACT", "/api/flows/dispatch/cancel", cancelDispatch),
+  // Bug fix: use EXACT for get
   route("GET", "EXACT", "/api/flows/dispatch/get", getDispatch),
   route("GET", "EXACT", "/api/flows/dispatch/list", listDispatch),
 ];

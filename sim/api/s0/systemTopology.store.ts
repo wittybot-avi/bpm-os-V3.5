@@ -7,6 +7,7 @@
 
 import type { Enterprise, Plant, Line, Station, DeviceClass, TopologyAudit } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityFlag, CapabilityOverride } from "../../../domain/s0/capability.types";
+import type { RegulatoryFramework, ComplianceBinding } from "../../../domain/s0/complianceContext.types";
 
 const INITIAL_AUDIT: TopologyAudit = {
   createdBy: "SYSTEM_PROVISIONER",
@@ -102,9 +103,22 @@ const CAPABILITY_FLAGS: CapabilityFlag[] = [
   { id: 'STRICT_GATING', label: 'Strict Interlock Gating', description: 'Block stage transitions if gates are locked.', defaultValue: true, category: 'MANUFACTURING' }
 ];
 
-let CAPABILITY_OVERRIDES: CapabilityOverride[] = [
-  // Example: Disable serialization for a specific test station
-  // { flagId: 'ENABLE_SERIALIZATION', scope: 'STATION', scopeId: 'STN-DEBUG', value: false, updatedAt: '2026-01-01T00:00:00Z', updatedBy: 'SYSTEM' }
+let CAPABILITY_OVERRIDES: CapabilityOverride[] = [];
+
+let REGULATORY_FRAMEWORKS: RegulatoryFramework[] = [
+  { id: "RF-AIS-156", name: "AIS-156 AMD 3", jurisdiction: "INDIA", mandatory: true, description: "Safety requirements for traction batteries of L, M and N category vehicles." },
+  { id: "RF-EU-BP", name: "EU Battery Passport", jurisdiction: "EU", mandatory: true, description: "Digital record providing transparency on battery sustainability and circularity." },
+  { id: "RF-UN-383", name: "UN38.3 Certified", jurisdiction: "GLOBAL", mandatory: true, description: "Standard for testing lithium batteries for transport." },
+  { id: "RF-BATT-AADHAAR", name: "BATT-AADHAAR-V1", jurisdiction: "INDIA", mandatory: false, description: "Sovereign identity framework for battery tracking." }
+];
+
+let COMPLIANCE_BINDINGS: ComplianceBinding[] = [
+  {
+    scope: 'ENTERPRISE',
+    scopeId: 'ENT-BPM-GLOBAL',
+    regulatoryFrameworkIds: ["RF-AIS-156", "RF-UN-383"],
+    sopProfileIds: []
+  }
 ];
 
 /**
@@ -118,6 +132,8 @@ export const getStations = (): readonly Station[] => Object.freeze([...STATIONS]
 export const getDeviceClasses = (): readonly DeviceClass[] => Object.freeze([...DEVICE_CLASSES]);
 export const getCapabilityFlags = (): readonly CapabilityFlag[] => Object.freeze([...CAPABILITY_FLAGS]);
 export const getCapabilityOverrides = (): readonly CapabilityOverride[] => Object.freeze([...CAPABILITY_OVERRIDES]);
+export const getRegulatoryFrameworks = (): readonly RegulatoryFramework[] => Object.freeze([...REGULATORY_FRAMEWORKS]);
+export const getComplianceBindings = (): readonly ComplianceBinding[] => Object.freeze([...COMPLIANCE_BINDINGS]);
 
 export const getEnterpriseById = (id: string) => ENTERPRISES.find(e => e.id === id);
 export const getPlantById = (id: string) => PLANTS.find(p => p.id === id);
@@ -126,7 +142,7 @@ export const getStationById = (id: string) => STATIONS.find(s => s.id === id);
 export const getDeviceClassById = (id: string) => DEVICE_CLASSES.find(dc => dc.id === id);
 
 /**
- * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15 / PP-16 / PP-17)
+ * STORE MUTATORS
  */
 
 export const addPlant = (plant: Plant) => {
@@ -192,5 +208,26 @@ export const upsertOverride = (override: CapabilityOverride) => {
 export const removeOverride = (flagId: string, scope: string, scopeId: string) => {
   CAPABILITY_OVERRIDES = CAPABILITY_OVERRIDES.filter(
     o => !(o.flagId === flagId && o.scope === scope && o.scopeId === scopeId)
+  );
+};
+
+export const upsertComplianceBinding = (binding: ComplianceBinding) => {
+  const existingIndex = COMPLIANCE_BINDINGS.findIndex(
+    b => b.scope === binding.scope && b.scopeId === binding.scopeId
+  );
+
+  if (existingIndex > -1) {
+    const updated = [...COMPLIANCE_BINDINGS];
+    updated[existingIndex] = binding;
+    COMPLIANCE_BINDINGS = updated;
+  } else {
+    COMPLIANCE_BINDINGS = [...COMPLIANCE_BINDINGS, binding];
+  }
+  return binding;
+};
+
+export const removeComplianceBinding = (scope: string, scopeId: string) => {
+  COMPLIANCE_BINDINGS = COMPLIANCE_BINDINGS.filter(
+    b => !(b.scope === scope && b.scopeId === scopeId)
   );
 };

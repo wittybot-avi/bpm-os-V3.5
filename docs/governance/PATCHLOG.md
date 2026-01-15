@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-COMP-PP-18** | Compliance | Regulatory Context | **STABLE** | Implements hierarchical regulatory framework binding. Supports Enterprise-level defaults and Plant-level overrides for jurisdiction-specific compliance gating. | 2026-01-30 02:00 (IST) |
 | **V35-S0-CAP-PP-17** | Governance | Capability Overrides | **STABLE** | Implements hierarchical resolution for capability flags. Enables scoped overrides at Enterprise, Plant, Line, and Station levels with inheritance visualization. | 2026-01-30 01:00 (IST) |
 | **V35-S0-CAP-PP-16** | CRUD | Device Class CRUD | **STABLE** | Enables management of hardware Device Classes. Defines category and protocol mapping for station hardware binding. | 2026-01-29 23:59 (IST) |
 | **V35-S0-CRUD-PP-15** | CRUD | Enterprise Metadata | **STABLE** | Enables metadata CRUD for Enterprise entities (Name, Timezone, Status). Prepares system for multi-enterprise coordination. | 2026-01-29 23:00 (IST) |
