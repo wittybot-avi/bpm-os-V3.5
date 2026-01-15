@@ -11,6 +11,7 @@
  * @updated V35-S0-CAP-PP-17 (Capability Overrides)
  * @updated V35-S0-COMP-PP-18 (Regulatory Bindings)
  * @updated V35-S0-COMP-PP-19 (SOP Profile CRUD)
+ * @updated V35-S0-RBAC-PP-20 (User Scopes)
  */
 
 import type { ApiHandler, ApiResponse, ApiRequest } from "../apiTypes";
@@ -41,11 +42,15 @@ import {
   removeComplianceBinding,
   getSopProfiles,
   addSopProfile,
-  updateSopProfile
+  updateSopProfile,
+  getUsers,
+  addUser,
+  updateUser
 } from "../s0/systemTopology.store";
 import type { Enterprise, Plant, Line, Station, DeviceClass } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityOverride, EffectiveFlag, CapabilityScope } from "../../../domain/s0/capability.types";
 import type { RegulatoryFramework, ComplianceBinding, EffectiveCompliance, SOPProfile } from "../../../domain/s0/complianceContext.types";
+import type { AppUser } from "../../../domain/s0/userManagement.types";
 
 const ok = (data: any): ApiResponse => ({
   status: 200,
@@ -504,4 +509,44 @@ export const removeComplianceBindingHandler: ApiHandler = async (req) => {
 
   removeComplianceBinding(scope, scopeId);
   return ok({ success: true });
+};
+
+/**
+ * GET /api/s0/users
+ */
+export const listUsersHandler: ApiHandler = async () => {
+  return ok(getUsers());
+};
+
+/**
+ * POST /api/s0/users/create
+ */
+export const createUserHandler: ApiHandler = async (req) => {
+  const body = parseBody<Partial<AppUser>>(req);
+  if (!body.username || !body.fullName || !body.role) return err("BAD_REQUEST", "Username, Name and Role are required");
+
+  const newUser: AppUser = {
+    id: `USR-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
+    username: body.username,
+    fullName: body.fullName,
+    role: body.role,
+    status: body.status || 'ACTIVE',
+    scopes: body.scopes || []
+  };
+
+  addUser(newUser);
+  return ok(newUser);
+};
+
+/**
+ * PATCH /api/s0/users/update
+ */
+export const updateUserHandler: ApiHandler = async (req) => {
+  const body = parseBody<{ id: string; updates: Partial<AppUser> }>(req);
+  if (!body.id) return err("BAD_REQUEST", "User ID is required");
+
+  const updated = updateUser(body.id, body.updates);
+  if (!updated) return err("NOT_FOUND", "User not found", 404);
+
+  return ok(updated);
 };

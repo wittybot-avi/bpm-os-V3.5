@@ -84,7 +84,10 @@ import {
   removeComplianceBindingHandler,
   listSopProfilesHandler,
   createSopProfileHandler,
-  updateSopProfileHandler
+  updateSopProfileHandler,
+  listUsersHandler,
+  createUserHandler,
+  updateUserHandler
 } from "./handlers/s0TopologyHandlers";
 
 export const SIM_API_ROUTES: RouteDef[] = [
@@ -146,6 +149,13 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("GET", "EXACT", "/api/s0/compliance/effective", getEffectiveComplianceHandler),
   route("POST", "EXACT", "/api/s0/compliance/bind", setComplianceBindingHandler),
   route("DELETE", "EXACT", "/api/s0/compliance/bind", removeComplianceBindingHandler),
+
+  /**
+   * S0 User Management (V35-S0-RBAC-PP-20)
+   */
+  route("GET", "EXACT", "/api/s0/users", listUsersHandler),
+  route("POST", "EXACT", "/api/s0/users/create", createUserHandler),
+  route("PATCH", "EXACT", "/api/s0/users/update", updateUserHandler),
 
   /**
    * SKU Flow (FLOW-001) - Live Simulated Handlers

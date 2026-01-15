@@ -5,9 +5,11 @@
  * @governance S0-ARCH-BP-04
  */
 
+import { UserRole } from "../../../types";
 import type { Enterprise, Plant, Line, Station, DeviceClass, TopologyAudit } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityFlag, CapabilityOverride } from "../../../domain/s0/capability.types";
 import type { RegulatoryFramework, ComplianceBinding, SOPProfile } from "../../../domain/s0/complianceContext.types";
+import type { AppUser } from "../../../domain/s0/userManagement.types";
 
 const INITIAL_AUDIT: TopologyAudit = {
   createdBy: "SYSTEM_PROVISIONER",
@@ -126,6 +128,25 @@ let COMPLIANCE_BINDINGS: ComplianceBinding[] = [
   }
 ];
 
+let USERS: AppUser[] = [
+  {
+    id: "USR-001",
+    username: "admin.kol",
+    fullName: "Kolkata System Admin",
+    role: UserRole.SYSTEM_ADMIN,
+    status: 'ACTIVE',
+    scopes: [{ scope: 'PLANT', scopeId: 'FAC-WB-01' }]
+  },
+  {
+    id: "USR-002",
+    username: "op.line.a",
+    fullName: "Line A Operator",
+    role: UserRole.OPERATOR,
+    status: 'ACTIVE',
+    scopes: [{ scope: 'LINE', scopeId: 'LINE-A' }]
+  }
+];
+
 /**
  * STORE ACCESSORS (Read-Only)
  */
@@ -140,6 +161,7 @@ export const getCapabilityOverrides = (): readonly CapabilityOverride[] => Objec
 export const getRegulatoryFrameworks = (): readonly RegulatoryFramework[] => Object.freeze([...REGULATORY_FRAMEWORKS]);
 export const getSopProfiles = (): readonly SOPProfile[] => Object.freeze([...SOP_PROFILES]);
 export const getComplianceBindings = (): readonly ComplianceBinding[] => Object.freeze([...COMPLIANCE_BINDINGS]);
+export const getUsers = (): readonly AppUser[] => Object.freeze([...USERS]);
 
 export const getEnterpriseById = (id: string) => ENTERPRISES.find(e => e.id === id);
 export const getPlantById = (id: string) => PLANTS.find(p => p.id === id);
@@ -204,6 +226,16 @@ export const addSopProfile = (sop: SOPProfile) => {
 export const updateSopProfile = (id: string, updates: Partial<SOPProfile>) => {
   SOP_PROFILES = SOP_PROFILES.map(s => s.id === id ? { ...s, ...updates } : s);
   return SOP_PROFILES.find(s => s.id === id);
+};
+
+export const addUser = (user: AppUser) => {
+  USERS = [...USERS, user];
+  return user;
+};
+
+export const updateUser = (id: string, updates: Partial<AppUser>) => {
+  USERS = USERS.map(u => u.id === id ? { ...u, ...updates } : u);
+  return USERS.find(u => u.id === id);
 };
 
 export const upsertOverride = (override: CapabilityOverride) => {

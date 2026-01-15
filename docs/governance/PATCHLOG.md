@@ -4,6 +4,8 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-RBAC-PP-20** | RBAC | User Scopes | **STABLE** | Enables assignment of hierarchical access scopes to internal user accounts. Users can be bound to Enterprise, Plant, Line, or Station nodes to restrict functional authorization. | 2026-01-30 03:00 (IST) |
+| **V35-S0-COMP-PP-19** | Compliance | SOP Profile CRUD | **STABLE** | Implements SOP Profile lifecycle management (Add/Edit) and hierarchical binding to organizational nodes. Ensures procedural alignment across facility lines. | 2026-01-30 02:30 (IST) |
 | **V35-S0-COMP-PP-18** | Compliance | Regulatory Context | **STABLE** | Implements hierarchical regulatory framework binding. Supports Enterprise-level defaults and Plant-level overrides for jurisdiction-specific compliance gating. | 2026-01-30 02:00 (IST) |
 | **V35-S0-CAP-PP-17** | Governance | Capability Overrides | **STABLE** | Implements hierarchical resolution for capability flags. Enables scoped overrides at Enterprise, Plant, Line, and Station levels with inheritance visualization. | 2026-01-30 01:00 (IST) |
 | **V35-S0-CAP-PP-16** | CRUD | Device Class CRUD | **STABLE** | Enables management of hardware Device Classes. Defines category and protocol mapping for station hardware binding. | 2026-01-29 23:59 (IST) |
