@@ -42,6 +42,7 @@ export interface BaseTopologyEntity {
  */
 export interface Enterprise extends BaseTopologyEntity {
   readonly plantIds: readonly EntityId[];
+  readonly timezone?: string; // V35-S0-CRUD-PP-15
 }
 
 /**

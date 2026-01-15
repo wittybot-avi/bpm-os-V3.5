@@ -31,10 +31,10 @@ import {
   AlertTriangle,
   Ban,
   Timer,
-  // Fix: Added missing Info and Save icons from lucide-react
   Info,
   Save,
-  ChevronDown
+  ChevronDown,
+  Edit3
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -42,7 +42,7 @@ import { getMockS0Context, S0Context } from '../stages/s0/s0Contract';
 import { getS0ActionState, S0ActionId } from '../stages/s0/s0Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
 import { apiFetch } from '../services/apiHarness';
-import type { Plant, Line, Station } from '../domain/s0/systemTopology.types';
+import type { Enterprise, Plant, Line, Station } from '../domain/s0/systemTopology.types';
 
 interface SystemSetupProps {
   onNavigate?: (view: NavView) => void;
@@ -54,7 +54,7 @@ const ScopeBadge: React.FC<{ scope: string }> = ({ scope }) => (
   </span>
 );
 
-type ManageCategory = 'ORGANIZATION' | 'LINES' | 'WORKSTATIONS' | 'DEVICES' | 'REGULATORY' | 'USERS' | null;
+type ManageCategory = 'ORGANIZATION' | 'LINES' | 'WORKSTATIONS' | 'DEVICES' | 'REGULATORY' | 'USERS' | 'ENTERPRISE' | null;
 
 export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const { role } = useContext(UserContext);
@@ -69,10 +69,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'LIST' | 'DETAILS'>('LIST');
 
   // Topology Selection State (V35-S0-CRUD-PP-12)
-  const [enterprises, setEnterprises] = useState<any[]>([]);
-  const [activePlants, setActivePlants] = useState<any[]>([]);
-  const [activeLines, setActiveLines] = useState<any[]>([]);
-  const [activeStations, setActiveStations] = useState<any[]>([]);
+  const [enterprises, setEnterprises] = useState<Enterprise[]>([]);
+  const [activePlants, setActivePlants] = useState<Plant[]>([]);
+  const [activeLines, setActiveLines] = useState<Line[]>([]);
+  const [activeStations, setActiveStations] = useState<Station[]>([]);
 
   const [selEntId, setSelEntId] = useState<string>('');
   const [selPlantId, setSelPlantId] = useState<string>('');
@@ -87,6 +87,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [editingPlant, setEditingPlant] = useState<Partial<Plant> | null>(null);
   const [editingLine, setEditingLine] = useState<Partial<Line> | null>(null);
   const [editingStation, setEditingStation] = useState<Partial<Station> | null>(null);
+  const [editingEnterprise, setEditingEnterprise] = useState<Partial<Enterprise> | null>(null);
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
 
   // 1. Initial Load: Enterprises
@@ -220,6 +221,16 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
       };
       loadStations();
+    } else if (activeCategory === 'ENTERPRISE') {
+       const loadEnterprises = async () => {
+          setIsEntitiesLoading(true);
+          try {
+             const res = await apiFetch('/api/s0/enterprises');
+             const data = await res.json();
+             if (data.ok) setEnterprises(data.data);
+          } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
+       };
+       loadEnterprises();
     }
   }, [activeCategory, selPlantId, selLineId]);
 
@@ -272,6 +283,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     setEditingPlant(null);
     setEditingLine(null);
     setEditingStation(null);
+    setEditingEnterprise(null);
   };
 
   const closeManager = () => {
@@ -279,6 +291,36 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     setEditingPlant(null);
     setEditingLine(null);
     setEditingStation(null);
+    setEditingEnterprise(null);
+  };
+
+  // Enterprise CRUD (V35-S0-CRUD-PP-15)
+  const handleUpdateEnterprise = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEnterprise || !editingEnterprise.id || isFormSubmitting) return;
+    setIsFormSubmitting(true);
+
+    try {
+      const res = await apiFetch('/api/s0/enterprises/update', {
+        method: 'PATCH',
+        body: JSON.stringify({ id: editingEnterprise.id, updates: editingEnterprise })
+      });
+      const result = await res.json();
+      if (result.ok) {
+        emitAuditEvent({
+          stageId: 'S0',
+          actionId: 'UPDATE_ENTERPRISE',
+          actorRole: role,
+          message: `Updated Enterprise Metadata: ${result.data.displayName}`
+        });
+        setEditingEnterprise(null);
+        setActiveTab('LIST');
+        // Refresh local list and main context bar
+        const entRes = await apiFetch('/api/s0/enterprises');
+        const entData = await entRes.json();
+        if (entData.ok) setEnterprises(entData.data);
+      }
+    } catch (e) { console.error(e); } finally { setIsFormSubmitting(false); }
   };
 
   // Plant CRUD
@@ -485,11 +527,18 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
 
   const isReadyForNext = s0Context.status === 'READY';
 
-  const SelectorItem = ({ icon: Icon, label, value, options, onChange }: any) => (
+  const SelectorItem = ({ icon: Icon, label, value, options, onChange, onManage }: any) => (
     <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
       <Icon size={16} className="text-slate-400 shrink-0" />
       <div className="flex flex-col">
-        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">{label}</label>
+        <div className="flex items-center justify-between gap-2 leading-none mb-1">
+          <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{label}</label>
+          {onManage && (
+            <button onClick={onManage} className="text-brand-600 hover:text-brand-800 transition-colors">
+              <Edit3 size={10} />
+            </button>
+          )}
+        </div>
         <div className="relative">
           <select 
             value={value}
@@ -539,6 +588,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             value={selEntId} 
             options={enterprises} 
             onChange={setSelEntId} 
+            onManage={() => openManager('ENTERPRISE')}
           />
           <SelectorItem 
             icon={Factory} 
@@ -807,7 +857,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <div className="flex items-center gap-3">
                   <div className="p-2 bg-brand-600 text-white rounded-lg"><Settings size={20} /></div>
                   <div>
-                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory === 'LINES' ? 'Lines' : activeCategory === 'WORKSTATIONS' ? 'Stations' : activeCategory}</h2>
+                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory === 'LINES' ? 'Lines' : activeCategory === 'WORKSTATIONS' ? 'Stations' : activeCategory === 'ENTERPRISE' ? 'Enterprises' : activeCategory}</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Master Data Management</p>
                   </div>
                </div>
@@ -817,14 +867,14 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             {/* Tabs */}
             <div className="flex border-b border-slate-200 shrink-0">
                <button 
-                 onClick={() => { setActiveTab('LIST'); setEditingPlant(null); setEditingLine(null); setEditingStation(null); }}
+                 onClick={() => { setActiveTab('LIST'); setEditingPlant(null); setEditingLine(null); setEditingStation(null); setEditingEnterprise(null); }}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'LIST' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50'}`}
                >
                  <List size={14} /> Repository List
                </button>
                <button 
                  onClick={() => setActiveTab('DETAILS')}
-                 disabled={!['ORGANIZATION', 'LINES', 'WORKSTATIONS'].includes(activeCategory || '')}
+                 disabled={!['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE'].includes(activeCategory || '')}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'DETAILS' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed'}`}
                >
                  <FileText size={14} /> Definition Details
@@ -1008,6 +1058,52 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                      </form>
                    )}
                  </>
+               ) : activeCategory === 'ENTERPRISE' ? (
+                  <>
+                    {activeTab === 'LIST' ? (
+                      <div className="p-0">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                           <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Global Enterprises</span>
+                        </div>
+                        {isEntitiesLoading ? (
+                          <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-3">
+                            <Loader2 size={24} className="animate-spin" />
+                            <span className="text-xs font-bold uppercase">Fetching Enterprises...</span>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-slate-100">
+                            {enterprises.map(e => (
+                              <div key={e.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center group">
+                                 <div className="flex items-center gap-3">
+                                    <div className={`w-2 h-2 rounded-full ${e.status === 'ACTIVE' ? 'bg-green-500' : 'bg-amber-500'}`} />
+                                    <div>
+                                       <div className="text-sm font-bold text-slate-800">{e.displayName}</div>
+                                       <div className="text-[10px] font-mono text-slate-400 uppercase tracking-tighter">Code: {e.code} • Timezone: {e.timezone || 'N/A'}</div>
+                                    </div>
+                                 </div>
+                                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => { setEditingEnterprise(e); setActiveTab('DETAILS'); }} className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors" title="Edit Enterprise Metadata"><Edit2 size={14} /></button>
+                                 </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <form onSubmit={handleUpdateEnterprise} className="p-6 space-y-6">
+                         <div className="flex items-center gap-3 mb-2"><div className="p-2 bg-brand-50 rounded text-brand-600"><Building2 size={18} /></div><h3 className="font-bold text-slate-700">Edit Enterprise Metadata</h3></div>
+                         <div className="space-y-4 text-sm">
+                            <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Enterprise Name</label><input required type="text" className="w-full border border-slate-300 rounded p-2.5 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="e.g. BPM Global Group" value={editingEnterprise?.displayName || ''} onChange={e => setEditingEnterprise(ent => ({ ...ent!, displayName: e.target.value }))} /></div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Primary Timezone</label><select className="w-full border border-slate-300 rounded p-2.5 outline-none bg-white" value={editingEnterprise?.timezone || 'UTC'} onChange={e => setEditingEnterprise(ent => ({ ...ent!, timezone: e.target.value }))}><option value="UTC">UTC</option><option value="Asia/Kolkata">Asia/Kolkata (IST)</option><option value="Europe/Berlin">Europe/Berlin (CET)</option><option value="America/New_York">America/New_York (EST)</option></select></div>
+                               <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Operational Status</label><select className="w-full border border-slate-300 rounded p-2.5 outline-none bg-white" value={editingEnterprise?.status || 'ACTIVE'} onChange={e => setEditingEnterprise(ent => ({ ...ent!, status: e.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option></select></div>
+                            </div>
+                            <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex gap-3 mt-4"><Info size={18} className="text-slate-400 shrink-0" /><p className="text-[11px] text-slate-600 leading-relaxed">Enterprise metadata is for multi-region coordination and audit purposes. Structural changes to topology (Plants) are not permitted in this view.</p></div>
+                         </div>
+                         <div className="pt-6 flex gap-3"><button type="button" onClick={() => { setEditingEnterprise(null); setActiveTab('LIST'); }} className="px-6 py-2.5 rounded text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">CANCEL</button><button type="submit" disabled={isFormSubmitting} className="flex-1 bg-brand-600 hover:bg-brand-700 text-white rounded font-bold text-sm py-2.5 shadow-sm transition-all flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}UPDATE ENTERPRISE</button></div>
+                      </form>
+                    )}
+                  </>
                ) : (
                  <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center">
                     <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center text-slate-300 mb-4"><Lock size={32} /></div>
@@ -1022,7 +1118,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider">Close Panel</button>
                <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
                   <ShieldCheck size={12} />
-                  {['ORGANIZATION', 'LINES', 'WORKSTATIONS'].includes(activeCategory || '') ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
+                  {['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE'].includes(activeCategory || '') ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
                </div>
             </footer>
           </div>

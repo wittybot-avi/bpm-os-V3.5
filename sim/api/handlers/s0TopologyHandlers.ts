@@ -6,6 +6,7 @@
  * @updated V35-S0-CRUD-PP-11 (Plant Mutations)
  * @updated V35-S0-CRUD-PP-13 (Line Mutations)
  * @updated V35-S0-CRUD-PP-14 (Station Mutations)
+ * @updated V35-S0-CRUD-PP-15 (Enterprise Mutations)
  */
 
 import type { ApiHandler, ApiResponse, ApiRequest } from "../apiTypes";
@@ -19,9 +20,10 @@ import {
   addLine,
   updateLine,
   addStation,
-  updateStation
+  updateStation,
+  updateEnterprise
 } from "../s0/systemTopology.store";
-import type { Plant, Line, Station } from "../../../domain/s0/systemTopology.types";
+import type { Enterprise, Plant, Line, Station } from "../../../domain/s0/systemTopology.types";
 
 const ok = (data: any): ApiResponse => ({
   status: 200,
@@ -45,6 +47,19 @@ function parseBody<T>(req: ApiRequest): T {
  */
 export const listEnterprises: ApiHandler = async () => {
   return ok(getEnterprises());
+};
+
+/**
+ * PATCH /api/s0/enterprises/update
+ */
+export const updateEnterpriseHandler: ApiHandler = async (req) => {
+  const body = parseBody<{ id: string; updates: Partial<Enterprise> }>(req);
+  if (!body.id) return err("BAD_REQUEST", "Enterprise ID is required");
+
+  const updated = updateEnterprise(body.id, body.updates);
+  if (!updated) return err("NOT_FOUND", "Enterprise not found", 404);
+
+  return ok(updated);
 };
 
 /**

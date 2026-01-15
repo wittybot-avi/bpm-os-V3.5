@@ -57,7 +57,7 @@ let PLANTS: Plant[] = [
   }
 ];
 
-const ENTERPRISES: Enterprise[] = [
+let ENTERPRISES: Enterprise[] = [
   {
     id: "ENT-BPM-GLOBAL",
     code: "BPM-OS-HQ",
@@ -65,7 +65,8 @@ const ENTERPRISES: Enterprise[] = [
     status: "ACTIVE",
     effectiveFrom: "2026-01-01T00:00:00Z",
     audit: INITIAL_AUDIT,
-    plantIds: ["FAC-WB-01"]
+    plantIds: ["FAC-WB-01"],
+    timezone: "UTC"
   }
 ];
 
@@ -84,7 +85,7 @@ export const getLineById = (id: string) => LINES.find(l => l.id === id);
 export const getStationById = (id: string) => STATIONS.find(s => s.id === id);
 
 /**
- * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13 / PP-14)
+ * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15)
  */
 
 export const addPlant = (plant: Plant) => {
@@ -115,4 +116,9 @@ export const addStation = (station: Station) => {
 export const updateStation = (id: string, updates: Partial<Station>) => {
   STATIONS = STATIONS.map(s => s.id === id ? { ...s, ...updates } : s);
   return STATIONS.find(s => s.id === id);
+};
+
+export const updateEnterprise = (id: string, updates: Partial<Enterprise>) => {
+  ENTERPRISES = ENTERPRISES.map(e => e.id === id ? { ...e, ...updates } : e);
+  return ENTERPRISES.find(e => e.id === id);
 };

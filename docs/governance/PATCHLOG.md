@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-CRUD-PP-15** | CRUD | Enterprise Metadata | **STABLE** | Enables metadata CRUD for Enterprise entities (Name, Timezone, Status). Prepares system for multi-enterprise coordination. | 2026-01-29 23:00 (IST) |
 | **V35-S0-CRUD-PP-14** | CRUD | Stations CRUD | **STABLE** | Enables full CRUD for Stations bound to Line selection. Added support for station type and operation mapping in in-memory store. | 2026-01-29 22:00 (IST) |
 | **V35-S0-CRUD-PP-13** | CRUD | Lines CRUD | **STABLE** | Enables full CRUD for Lines bound to Plant selection. Supported SKU types and Operations added to Line model. | 2026-01-29 21:00 (IST) |
 | **V35-S0-CRUD-PP-12** | Wiring | Topology Cascade | **STABLE** | S0 topology cascade filters lines and stations by selection. Enables interactive navigation of the organizational hierarchy. | 2026-01-29 20:00 (IST) |
