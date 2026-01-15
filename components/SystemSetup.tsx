@@ -20,7 +20,12 @@ import {
   ChevronRight, 
   Building2,
   Loader2,
-  Box
+  Box,
+  X,
+  Plus,
+  List,
+  FileText,
+  Lock
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -39,15 +44,21 @@ const ScopeBadge: React.FC<{ scope: string }> = ({ scope }) => (
   </span>
 );
 
+type ManageCategory = 'ORGANIZATION' | 'LINES' | 'WORKSTATIONS' | 'DEVICES' | 'REGULATORY' | 'USERS' | null;
+
 export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const { role } = useContext(UserContext);
   
-  // Local State for Simulation
+  // Local State
   const [s0Context, setS0Context] = useState<S0Context>(getMockS0Context());
   const [localEvents, setLocalEvents] = useState<AuditEvent[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
+  
+  // Drawer State
+  const [activeCategory, setActiveCategory] = useState<ManageCategory>(null);
+  const [activeTab, setActiveTab] = useState<'LIST' | 'DETAILS'>('LIST');
 
-  // Topology State (V35-S0-UI-PP-08)
+  // Topology State
   const [topology, setTopology] = useState<{
     enterprise?: any;
     plant?: any;
@@ -56,29 +67,24 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   }>({});
   const [isTopologyLoading, setIsTopologyLoading] = useState(true);
 
-  // Load topology from Option-B API
   const fetchTopology = async () => {
     setIsTopologyLoading(true);
     try {
-      // 1. Enterprises
       const entRes = await apiFetch('/api/s0/enterprises');
       const entData = await entRes.json();
       const activeEnt = entData.data?.[0];
 
       if (activeEnt) {
-        // 2. Plants
         const plantRes = await apiFetch(`/api/s0/plants?enterpriseId=${activeEnt.id}`);
         const plantData = await plantRes.json();
         const activePlant = plantData.data?.[0];
 
         if (activePlant) {
-          // 3. Lines
           const lineRes = await apiFetch(`/api/s0/lines?plantId=${activePlant.id}`);
           const lineData = await lineRes.json();
           const activeLine = lineData.data?.[0];
 
           if (activeLine) {
-            // 4. Stations
             const stRes = await apiFetch(`/api/s0/stations?lineId=${activeLine.id}`);
             const stData = await stRes.json();
             const activeStation = stData.data?.[0];
@@ -103,16 +109,12 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     }
   };
 
-  // Load events and topology on mount
   useEffect(() => {
     setLocalEvents(getAuditEvents().filter(e => e.stageId === 'S0'));
     fetchTopology();
   }, []);
 
-  // Helper to resolve action state for UI
-  const getAction = (actionId: S0ActionId) => getS0ActionState(role, s0Context, actionId);
-
-  // Action Handlers
+  // Handlers
   const handleEditPlant = () => {
     setIsSimulating(true);
     setTimeout(() => {
@@ -143,25 +145,25 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
 
   const handleToggleFlag = (flagId: string) => {
     if (role !== UserRole.SYSTEM_ADMIN) return;
-    
     setS0Context(prev => ({
       ...prev,
       featureFlags: prev.featureFlags.map(f => 
         f.id === flagId ? { ...f, isEnabled: !f.isEnabled } : f
       )
     }));
-
-    const flag = s0Context.featureFlags.find(f => f.id === flagId);
-    emitAuditEvent({
-      stageId: 'S0',
-      actionId: 'EDIT_PLANT_DETAILS',
-      actorRole: role,
-      message: `Toggled feature flag: ${flag?.label} to ${!flag?.isEnabled ? 'ON' : 'OFF'}`
-    });
   };
 
   const handleNavToS1 = () => {
     if (onNavigate) onNavigate('sku_blueprint');
+  };
+
+  const openManager = (cat: ManageCategory) => {
+    setActiveCategory(cat);
+    setActiveTab('LIST');
+  };
+
+  const closeManager = () => {
+    setActiveCategory(null);
   };
 
   const hasAccess = role === UserRole.SYSTEM_ADMIN || role === UserRole.MANAGEMENT || role === UserRole.COMPLIANCE;
@@ -179,400 +181,350 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const isReadyForNext = s0Context.status === 'READY';
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-300 pb-12">
-      {/* Configuration Header */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-        <div>
-           <div className="flex items-center gap-1 text-xs text-slate-500 mb-1 font-medium uppercase tracking-wider">
-              Master Data <span className="text-slate-300">/</span> Factory Capabilities
-           </div>
-           <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
-             <Settings className="text-brand-600" size={24} />
-             System Configuration (S0)
-           </h1>
-        </div>
-        <div className="flex flex-col items-end gap-1">
-          <div className="bg-slate-100 text-slate-600 px-3 py-1 rounded text-[10px] font-bold border border-slate-200 uppercase tracking-widest">
-            Capability Layer
-          </div>
-          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-            <Server size={10} /> Node State: {s0Context.status}
-          </div>
-        </div>
-      </div>
-
-      {/* DYNAMIC TOPOLOGY CONTEXT BAR (V35-S0-UI-PP-08) */}
-      <div className="bg-white border border-industrial-border rounded-lg p-3 shadow-sm flex flex-wrap items-center gap-6 overflow-x-auto custom-scrollbar">
-         <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
-            <Building2 size={16} className="text-slate-400" />
-            <div>
-               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Enterprise</div>
-               <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.enterprise?.displayName || 'N/A'}</div>
-            </div>
-         </div>
-         
-         <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
-            <Factory size={16} className="text-slate-400" />
-            <div>
-               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Plant</div>
-               <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.plant?.displayName || 'N/A'}</div>
-            </div>
-         </div>
-
-         <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
-            <Layout size={16} className="text-slate-400" />
-            <div>
-               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Active Line</div>
-               <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.line?.displayName || 'N/A'}</div>
-            </div>
-         </div>
-
-         <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
-            <Box size={16} className="text-brand-500" />
-            <div>
-               <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Primary Station</div>
-               <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.station?.displayName || 'N/A'}</div>
-            </div>
-         </div>
-
-         {isTopologyLoading && (
-            <div className="flex items-center gap-2 text-xs font-medium text-slate-400 ml-auto pr-2">
-               <Loader2 size={14} className="animate-spin text-brand-500" />
-               <span>Syncing Topology...</span>
-            </div>
-         )}
-      </div>
-
-      <StageStateBanner stageId="S0" />
-      <PreconditionsPanel stageId="S0" />
-
-      {/* Configuration Milestone Guidance */}
-      <div className={`bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-in slide-in-from-top-3 ${!onNavigate ? 'hidden' : ''}`}>
-        <div className="flex items-start gap-3">
-          <div className="p-2 bg-blue-100 rounded-full text-blue-600">
-            <CheckCircle2 size={20} />
-          </div>
+    <div className="relative h-full overflow-hidden">
+      <div className="space-y-6 animate-in fade-in duration-300 pb-12 overflow-y-auto h-full px-1 custom-scrollbar">
+        {/* Configuration Header */}
+        <div className="flex items-center justify-between border-b border-slate-200 pb-4">
           <div>
-            <h3 className="font-bold text-blue-900 text-sm">Capability Milestone</h3>
-            <p className="text-xs text-blue-700 mt-1 max-w-lg">
-              {isReadyForNext 
-                ? "Factory capability matrix is locked. You may now define technical SKU specifications in S1." 
-                : "Base capabilities are undefined. Define required plant parameters to unlock product definition."}
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-3 w-full sm:w-auto">
-           <button 
-             onClick={handleNavToS1} 
-             disabled={!isReadyForNext}
-             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
-           >
-             <Cpu size={14} /> SKU Master (S1)
-           </button>
-        </div>
-      </div>
-
-      {/* Capability Grid */}
-      <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${isSimulating ? 'opacity-70 pointer-events-none' : ''}`}>
-        
-        {/* 1. Plant Capabilities */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
-            <div className="flex items-center gap-2 text-slate-700">
-              <Factory size={20} className="text-brand-600" />
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold">Plant Capabilities</h2>
-                <ScopeBadge scope="PLANT" />
-              </div>
+            <div className="flex items-center gap-1 text-xs text-slate-500 mb-1 font-medium uppercase tracking-wider">
+                Master Data <span className="text-slate-300">/</span> Factory Capabilities
             </div>
-            <button 
-              onClick={handleEditPlant}
-              className="text-[10px] font-bold text-brand-600 hover:text-brand-800"
-            >
-              PROVISION
-            </button>
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+              <Settings className="text-brand-600" size={24} />
+              System Configuration (S0)
+            </h1>
           </div>
+          <div className="flex flex-col items-end gap-1">
+            <div className="bg-slate-100 text-slate-600 px-3 py-1 rounded text-[10px] font-bold border border-slate-200 uppercase tracking-widest">
+              Capability Layer
+            </div>
+            <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
+              <Server size={10} /> Node State: {s0Context.status}
+            </div>
+          </div>
+        </div>
+
+        {/* TOPOLOGY CONTEXT BAR */}
+        <div className="bg-white border border-industrial-border rounded-lg p-3 shadow-sm flex flex-wrap items-center gap-6 overflow-x-auto custom-scrollbar">
+          <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
+              <Building2 size={16} className="text-slate-400" />
+              <div>
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Enterprise</div>
+                <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.enterprise?.displayName || 'N/A'}</div>
+              </div>
+          </div>
+          <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
+              <Factory size={16} className="text-slate-400" />
+              <div>
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Plant</div>
+                <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.plant?.displayName || 'N/A'}</div>
+              </div>
+          </div>
+          <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
+              <Layout size={16} className="text-slate-400" />
+              <div>
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Active Line</div>
+                <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.line?.displayName || 'N/A'}</div>
+              </div>
+          </div>
+          <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
+              <Box size={16} className="text-brand-500" />
+              <div>
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Primary Station</div>
+                <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.station?.displayName || 'N/A'}</div>
+              </div>
+          </div>
+          {isTopologyLoading && (
+              <div className="flex items-center gap-2 text-xs font-medium text-slate-400 ml-auto pr-2">
+                <Loader2 size={14} className="animate-spin text-brand-500" />
+                <span>Syncing Topology...</span>
+              </div>
+          )}
+        </div>
+
+        <StageStateBanner stageId="S0" />
+        <PreconditionsPanel stageId="S0" />
+
+        {/* Milestone Guidance */}
+        <div className={`bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-in slide-in-from-top-3 ${!onNavigate ? 'hidden' : ''}`}>
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-blue-100 rounded-full text-blue-600">
+              <CheckCircle2 size={20} />
+            </div>
+            <div>
+              <h3 className="font-bold text-blue-900 text-sm">Capability Milestone</h3>
+              <p className="text-xs text-blue-700 mt-1 max-w-lg">
+                {isReadyForNext 
+                  ? "Factory capability matrix is locked. You may now define technical SKU specifications in S1." 
+                  : "Base capabilities are undefined. Define required plant parameters to unlock product definition."}
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={handleNavToS1} 
+            disabled={!isReadyForNext}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            <Cpu size={14} /> SKU Master (S1)
+          </button>
+        </div>
+
+        {/* Capability Grid */}
+        <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${isSimulating ? 'opacity-70 pointer-events-none' : ''}`}>
           
-          <div className="space-y-4 text-sm flex-1">
-             <div className="grid grid-cols-2 gap-2">
-                <div className="bg-slate-50 p-2 rounded">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Facility ID</span>
-                    <span className="font-mono text-slate-700">{s0Context.plantId}</span>
-                </div>
-                <div className="bg-slate-50 p-2 rounded">
-                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Region</span>
-                    <span className="text-slate-700">{s0Context.region}</span>
-                </div>
-             </div>
-             
-             <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase mb-2 block">Supported Tech Stack</span>
-                <div className="flex flex-wrap gap-2">
-                   {s0Context.plant.capabilities.map(cap => (
-                     <span key={cap} className="px-2 py-1 bg-green-50 text-green-700 text-[10px] font-bold border border-green-100 rounded">
-                       {cap}
-                     </span>
-                   ))}
-                </div>
-             </div>
-          </div>
-        </div>
-
-        {/* 2. Line Capabilities */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
-            <div className="flex items-center gap-2 text-slate-700">
-              <Layout size={20} className="text-brand-600" />
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold">Line Capabilities</h2>
-                <ScopeBadge scope="LINE" />
-              </div>
-            </div>
-            <button className="text-[10px] font-bold text-brand-600 hover:text-brand-800">
-              CONFIGURE
-            </button>
-          </div>
-
-          <div className="space-y-3 flex-1">
-             {s0Context.lines.map(line => (
-               <div key={line.lineId} className="p-3 bg-slate-50 rounded border border-slate-200">
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="font-bold text-slate-800 text-xs">{line.name}</span>
-                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] rounded font-bold uppercase">{line.type}</span>
-                  </div>
-                  <div className="text-[10px] text-slate-500 space-y-1">
-                    <div className="flex justify-between">
-                        <span>Provisioned Nodes:</span>
-                        <span className="font-mono font-bold text-slate-700">{line.workstations.length}</span>
-                    </div>
-                    <div className="flex justify-between">
-                        <span>Max Throughput Potential:</span>
-                        <span className="font-mono font-bold text-slate-700">24 u/hr</span>
-                    </div>
-                  </div>
-               </div>
-             ))}
-             <button className="w-full py-2 border-2 border-dashed border-slate-200 rounded text-[10px] font-bold text-slate-400 hover:text-brand-600 transition-colors">
-                + REGISTER NEW LINE PROFILE
-             </button>
-          </div>
-        </div>
-
-        {/* 3. System Capability Flags */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col md:col-span-2">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
-            <div className="flex items-center gap-2 text-slate-700">
-              <Zap size={20} className="text-brand-600" />
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold">System Capability Flags</h2>
-                <ScopeBadge scope="GLOBAL" />
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase">
-               <ShieldCheck size={12} /> Root Auth Required to Toggle
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-             {s0Context.featureFlags.map(flag => (
-               <div 
-                 key={flag.id} 
-                 className={`p-4 rounded-lg border transition-all ${
-                   flag.isEnabled ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-slate-100 opacity-60'
-                 }`}
-               >
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-800 text-sm">{flag.label}</span>
-                        <span className={`text-[8px] px-1 py-0.5 rounded font-bold border ${
-                          flag.scope === 'GLOBAL' ? 'bg-purple-50 text-purple-600 border-purple-100' :
-                          flag.scope === 'PLANT' ? 'bg-blue-50 text-blue-600 border-blue-100' :
-                          'bg-slate-50 text-slate-500 border-slate-200'
-                        }`}>
-                          {flag.scope}
-                        </span>
-                      </div>
-                      <div className="text-[10px] font-mono text-slate-400 mt-0.5">{flag.id}</div>
-                    </div>
-                    <button 
-                      onClick={() => handleToggleFlag(flag.id)}
-                      disabled={role !== UserRole.SYSTEM_ADMIN}
-                      className={`transition-colors focus:outline-none ${role !== UserRole.SYSTEM_ADMIN ? 'cursor-not-allowed' : ''}`}
-                    >
-                      {flag.isEnabled ? (
-                        <ToggleRight className="text-brand-600" size={24} />
-                      ) : (
-                        <ToggleLeft className="text-slate-300" size={24} />
-                      )}
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">{flag.description}</p>
-               </div>
-             ))}
-          </div>
-        </div>
-
-        {/* 4. Workstation Capabilities */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
-            <div className="flex items-center gap-2 text-slate-700">
-              <Wrench size={20} className="text-brand-600" />
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold">Workstation Capabilities</h2>
-                <ScopeBadge scope="STATION" />
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-4 flex-1">
-             <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                <div className="flex items-center gap-2 mb-2">
-                   <ShieldCheck size={14} className="text-green-600" />
-                   <span className="text-xs font-bold text-slate-700 uppercase">Authorized Gating Logic</span>
-                </div>
-                <div className="space-y-1">
-                   <div className="flex justify-between text-[10px]">
-                      <span className="text-slate-500">Scan-to-Proceed</span>
-                      <span className="text-green-600 font-bold">SUPPORTED</span>
-                   </div>
-                   <div className="flex justify-between text-[10px]">
-                      <span className="text-slate-500">Torque-Tool Interlock</span>
-                      <span className="text-green-600 font-bold">SUPPORTED</span>
-                   </div>
-                   <div className="flex justify-between text-[10px]">
-                      <span className="text-slate-500">Automatic EOL Rejection</span>
-                      <span className="text-slate-300 font-bold italic">PLANNED</span>
-                   </div>
-                </div>
-             </div>
-             
-             <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                <div className="flex items-center gap-2 mb-2">
-                   <Layout size={14} className="text-brand-600" />
-                   <span className="text-xs font-bold text-slate-700 uppercase">Station Sequence Templates</span>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                   <span className="px-2 py-0.5 bg-white border border-slate-200 text-[9px] text-slate-600 rounded">Standard LFP-48V Flow</span>
-                   <span className="px-2 py-0.5 bg-white border border-slate-200 text-[9px] text-slate-600 rounded">High Voltage (NMC) Flow</span>
-                </div>
-             </div>
-          </div>
-        </div>
-
-        {/* 5. Device Class Capabilities */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
-            <div className="flex items-center gap-2 text-slate-700">
-              <Activity size={20} className="text-brand-600" />
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold">Device Class Capabilities</h2>
-                <ScopeBadge scope="STATION" />
-              </div>
-            </div>
-            <button className="text-[10px] font-bold text-brand-600 hover:text-brand-800">
-              MANAGE CLASSES
-            </button>
-          </div>
-
-          <div className="space-y-3 flex-1 overflow-y-auto">
-             <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs">
-                <span className="font-bold text-slate-700">BARCODE_SCANNER</span>
-                <span className="text-slate-500 font-mono">USB / REST</span>
-             </div>
-             <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs">
-                <span className="font-bold text-slate-700">DIGITAL_SCALE</span>
-                <span className="text-slate-500 font-mono">MQTT</span>
-             </div>
-             <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs">
-                <span className="font-bold text-slate-700">PLC_INTERLOCK</span>
-                <span className="text-slate-500 font-mono">MODBUS-TCP</span>
-             </div>
-             <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs">
-                <span className="font-bold text-slate-700">TORQUE_TOOL_BT</span>
-                <span className="text-slate-300 font-mono">BTLE (Pending)</span>
-             </div>
-          </div>
-        </div>
-
-      </div>
-      
-      {/* Regulatory & Identity Sovereignty */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-slate-700">
-              <Globe size={20} className="text-brand-600" />
-              <div className="flex items-center gap-2">
-                <h2 className="font-bold">Regulatory & Sovereignty Compliance</h2>
-                <ScopeBadge scope="REGULATORY" />
-              </div>
-            </div>
-            <button 
-              onClick={handleSyncRegs}
-              className="text-[10px] font-bold text-brand-600"
-            >
-              SYNC MASTER
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-3">
-             <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Identity Sovereignty</span>
-                <span className="text-sm font-bold text-slate-800">BATT-AADHAAR-V1</span>
-                <p className="text-[10px] text-slate-500 mt-1">Authorized for national trace reporting.</p>
-             </div>
-             <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Safety Standard</span>
-                <span className="text-sm font-bold text-slate-800">AIS-156 AMD 3</span>
-                <p className="text-[10px] text-slate-500 mt-1">Gated validation for module welding.</p>
-             </div>
-             <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
-                <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Passport Schema</span>
-                <span className="text-sm font-bold text-slate-800">EU-2023/1542</span>
-                <p className="text-[10px] text-slate-500 mt-1">Authorized for export carbon reporting.</p>
-             </div>
-          </div>
-      </div>
-
-      {/* User Capability Matrix */}
-      <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-slate-700">
-                <Users size={20} className="text-brand-600" />
+          {/* 1. Plant Capabilities */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Factory size={20} className="text-brand-600" />
                 <div className="flex items-center gap-2">
-                    <h2 className="font-bold">User Capability Matrix</h2>
-                    <ScopeBadge scope="GLOBAL" />
+                  <h2 className="font-bold">Plant Capabilities</h2>
+                  <ScopeBadge scope="PLANT" />
                 </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={handleEditPlant} className="text-[10px] font-bold text-brand-600 hover:text-brand-800">PROVISION</button>
+                <button onClick={() => openManager('ORGANIZATION')} className="text-[10px] font-bold text-slate-400 hover:text-brand-600 uppercase">Manage</button>
+              </div>
+            </div>
+            <div className="space-y-4 text-sm flex-1">
+               <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-slate-50 p-2 rounded">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Facility ID</span>
+                      <span className="font-mono text-slate-700">{s0Context.plantId}</span>
+                  </div>
+                  <div className="bg-slate-50 p-2 rounded">
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Region</span>
+                      <span className="text-slate-700">{s0Context.region}</span>
+                  </div>
+               </div>
+               <div>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase mb-2 block">Supported Tech Stack</span>
+                  <div className="flex flex-wrap gap-2">
+                     {s0Context.plant.capabilities.map(cap => (
+                       <span key={cap} className="px-2 py-1 bg-green-50 text-green-700 text-[10px] font-bold border border-green-100 rounded">{cap}</span>
+                     ))}
+                  </div>
+               </div>
             </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="px-4 py-3 font-bold uppercase tracking-wider">Role Entity</th>
-                  <th className="px-4 py-3 font-bold uppercase tracking-wider">System Access Scope</th>
-                  <th className="px-4 py-3 font-bold uppercase tracking-wider text-right">Authorized Nodes</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                <tr>
-                  <td className="px-4 py-3 font-bold">System Admin</td>
-                  <td className="px-4 py-3">Global Configuration & Capability Provisioning</td>
-                  <td className="px-4 py-3 font-mono text-right">GLOBAL</td>
-                </tr>
-                 <tr>
-                  <td className="px-4 py-3 font-bold">Management</td>
-                  <td className="px-4 py-3">Performance Audit & Operational Oversight</td>
-                  <td className="px-4 py-3 font-mono text-right">PLANT_SCOPE</td>
-                </tr>
-                 <tr>
-                  <td className="px-4 py-3 font-bold">Operator</td>
-                  <td className="px-4 py-3">Task Execution & SOP Compliance</td>
-                  <td className="px-4 py-3 font-mono text-right">ASSIGNED_NODES</td>
-                </tr>
-              </tbody>
-            </table>
+
+          {/* 2. Line Capabilities */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Layout size={20} className="text-brand-600" />
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold">Line Capabilities</h2>
+                  <ScopeBadge scope="LINE" />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button className="text-[10px] font-bold text-brand-600 hover:text-brand-800 uppercase">Configure</button>
+                <button onClick={() => openManager('LINES')} className="text-[10px] font-bold text-slate-400 hover:text-brand-600 uppercase">Manage</button>
+              </div>
+            </div>
+            <div className="space-y-3 flex-1">
+               {s0Context.lines.map(line => (
+                 <div key={line.lineId} className="p-3 bg-slate-50 rounded border border-slate-200 text-[10px]">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="font-bold text-slate-800 text-xs">{line.name}</span>
+                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold uppercase">{line.type}</span>
+                    </div>
+                    <div className="flex justify-between"><span>Provisioned Nodes:</span><span className="font-mono font-bold">{line.workstations.length}</span></div>
+                 </div>
+               ))}
+               <button className="w-full py-2 border-2 border-dashed border-slate-200 rounded text-[10px] font-bold text-slate-400 hover:text-brand-600 transition-colors">+ REGISTER NEW LINE</button>
+            </div>
           </div>
+
+          {/* 3. System Capability Flags */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col md:col-span-2">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Zap size={20} className="text-brand-600" />
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold">System Capability Flags</h2>
+                  <ScopeBadge scope="MIXED" />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+               {s0Context.featureFlags.map(flag => (
+                 <div key={flag.id} className={`p-4 rounded-lg border transition-all ${flag.isEnabled ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex items-center gap-2"><span className="font-bold text-slate-800 text-sm">{flag.label}</span><span className="text-[8px] px-1 py-0.5 rounded font-bold border border-slate-200">{flag.scope}</span></div>
+                      <button onClick={() => handleToggleFlag(flag.id)} disabled={role !== UserRole.SYSTEM_ADMIN}>
+                        {flag.isEnabled ? <ToggleRight className="text-brand-600" size={24} /> : <ToggleLeft className="text-slate-300" size={24} />}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">{flag.description}</p>
+                 </div>
+               ))}
+            </div>
+          </div>
+
+          {/* 4. Workstation Capabilities */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Wrench size={20} className="text-brand-600" />
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold">Workstation Capabilities</h2>
+                  <ScopeBadge scope="STATION" />
+                </div>
+              </div>
+              <button onClick={() => openManager('WORKSTATIONS')} className="text-[10px] font-bold text-slate-400 hover:text-brand-600 uppercase">Manage</button>
+            </div>
+            <div className="space-y-4 flex-1">
+               <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                  <div className="flex items-center gap-2 mb-2"><ShieldCheck size={14} className="text-green-600" /><span className="text-xs font-bold text-slate-700 uppercase">Authorized Gating</span></div>
+                  <div className="space-y-1 text-[10px] text-slate-500">
+                     <div className="flex justify-between"><span>Scan-to-Proceed</span><span className="text-green-600 font-bold">SUPPORTED</span></div>
+                     <div className="flex justify-between"><span>Torque-Tool Interlock</span><span className="text-green-600 font-bold">SUPPORTED</span></div>
+                  </div>
+               </div>
+            </div>
+          </div>
+
+          {/* 5. Device Class Capabilities */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
+            <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Activity size={20} className="text-brand-600" />
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold">Device Class Capabilities</h2>
+                  <ScopeBadge scope="STATION" />
+                </div>
+              </div>
+              <button onClick={() => openManager('DEVICES')} className="text-[10px] font-bold text-brand-600 hover:text-brand-800 uppercase">Manage Classes</button>
+            </div>
+            <div className="space-y-3 flex-1 overflow-y-auto">
+               <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs font-bold text-slate-700"><span>BARCODE_SCANNER</span><span className="font-mono text-slate-400">USB / REST</span></div>
+               <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs font-bold text-slate-700"><span>DIGITAL_SCALE</span><span className="font-mono text-slate-400">MQTT</span></div>
+            </div>
+          </div>
+
+        </div>
+        
+        {/* Regulatory */}
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-slate-700">
+                <Globe size={20} className="text-brand-600" />
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold">Regulatory & Sovereignty Compliance</h2>
+                  <ScopeBadge scope="REGULATORY" />
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={handleSyncRegs} className="text-[10px] font-bold text-brand-600 uppercase">Sync Master</button>
+                <button onClick={() => openManager('REGULATORY')} className="text-[10px] font-bold text-slate-400 hover:text-brand-600 uppercase">Manage</button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-3">
+               <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Identity Sovereignty</span>
+                  <span className="text-sm font-bold text-slate-800">BATT-AADHAAR-V1</span>
+               </div>
+               <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Safety Standard</span>
+                  <span className="text-sm font-bold text-slate-800">AIS-156 AMD 3</span>
+               </div>
+            </div>
+        </div>
+
+        {/* User Capability Matrix */}
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2 text-slate-700">
+                  <Users size={20} className="text-brand-600" />
+                  <div className="flex items-center gap-2">
+                      <h2 className="font-bold">User Capability Matrix</h2>
+                      <ScopeBadge scope="GLOBAL" />
+                  </div>
+              </div>
+              <button onClick={() => openManager('USERS')} className="text-[10px] font-bold text-slate-400 hover:text-brand-600 uppercase">Manage Roles</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                  <tr><th className="px-4 py-3 font-bold uppercase">Role Entity</th><th className="px-4 py-3 font-bold uppercase">System Access Scope</th><th className="px-4 py-3 font-bold uppercase text-right">Authorized Nodes</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  <tr><td className="px-4 py-3 font-bold">System Admin</td><td className="px-4 py-3">Global Configuration</td><td className="px-4 py-3 font-mono text-right">GLOBAL</td></tr>
+                  <tr><td className="px-4 py-3 font-bold">Operator</td><td className="px-4 py-3">Task Execution</td><td className="px-4 py-3 font-mono text-right">ASSIGNED_NODES</td></tr>
+                </tbody>
+              </table>
+            </div>
+        </div>
       </div>
+
+      {/* SCAFFOLDED MANAGEMENT DRAWER (V35-S0-CRUD-BP-10) */}
+      {activeCategory && (
+        <div className="absolute inset-0 z-50 flex justify-end animate-in fade-in duration-200">
+          {/* Backdrop */}
+          <div onClick={closeManager} className="absolute inset-0 bg-slate-900/20 backdrop-blur-[1px]" />
+          
+          {/* Drawer Content */}
+          <div className="relative w-full max-w-xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <header className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+               <div className="flex items-center gap-3">
+                  <div className="p-2 bg-brand-600 text-white rounded-lg"><Settings size={20} /></div>
+                  <div>
+                    <h2 className="font-bold text-slate-800">Manage {activeCategory}</h2>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Master Data Management</p>
+                  </div>
+               </div>
+               <button onClick={closeManager} className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400 hover:text-slate-600"><X size={20} /></button>
+            </header>
+
+            {/* Tabs */}
+            <div className="flex border-b border-slate-200 shrink-0">
+               <button 
+                 onClick={() => setActiveTab('LIST')}
+                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'LIST' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50'}`}
+               >
+                 <List size={14} /> Repository List
+               </button>
+               <button 
+                 disabled
+                 className="flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 border-transparent text-slate-300 cursor-not-allowed bg-slate-50/50"
+               >
+                 <FileText size={14} /> Definition Details
+               </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center">
+               <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center text-slate-300 mb-4">
+                  <Lock size={32} />
+               </div>
+               <h3 className="text-lg font-bold text-slate-700 uppercase tracking-tight">Management Framework Scoped</h3>
+               <p className="text-sm text-slate-500 max-w-sm mt-2 leading-relaxed">
+                  The management interface for <strong>{activeCategory}</strong> is wired to the V3.5 Foundation. Entity CRUD forms are coming in the next incremental patch.
+               </p>
+               <div className="mt-8 grid grid-cols-2 gap-4 w-full max-w-xs">
+                  <div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center">
+                     <Plus size={20} className="text-slate-300 mb-1" />
+                     <span className="text-[10px] font-bold text-slate-400 uppercase">Add Entry</span>
+                  </div>
+                  <div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center">
+                     <Settings size={20} className="text-slate-300 mb-1" />
+                     <span className="text-[10px] font-bold text-slate-400 uppercase">Configuration</span>
+                  </div>
+               </div>
+            </div>
+
+            <footer className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center shrink-0">
+               <button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider">Close Panel</button>
+               <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                  <ShieldCheck size={12} />
+                  READ_ONLY_SCAFFOLD_V1
+               </div>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
