@@ -38,13 +38,16 @@ import {
   CheckSquare,
   BookOpen,
   UserCheck,
-  Shield
+  Shield,
+  Search,
+  Settings2
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
 import { getMockS0Context, S0Context } from '../stages/s0/s0Contract';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
 import { apiFetch } from '../services/apiHarness';
+import { resetS0UIState } from '../sim/api/s0/systemTopology.store';
 import type { Enterprise, Plant, Line, Station, DeviceClass } from '../domain/s0/systemTopology.types';
 import type { EffectiveFlag, CapabilityScope } from '../domain/s0/capability.types';
 import type { RegulatoryFramework, EffectiveCompliance, ComplianceBinding, SOPProfile } from '../domain/s0/complianceContext.types';
@@ -60,10 +63,25 @@ const ScopeBadge: React.FC<{ scope: string }> = ({ scope }) => (
   </span>
 );
 
-type ManageCategory = 'ORGANIZATION' | 'LINES' | 'WORKSTATIONS' | 'DEVICES' | 'REGULATORY' | 'USERS' | 'ENTERPRISE' | 'CAPABILITIES' | 'SOP_PROFILES' | null;
+/**
+ * V35-S0-HOTFIX-PP-26: Standardized Category Keys
+ */
+type ManageCategory = 
+  | 'ORG' 
+  | 'PLANTS' 
+  | 'LINES' 
+  | 'STATIONS' 
+  | 'USERS' 
+  | 'SOP_PROFILES' 
+  | 'REGULATORY' 
+  | 'DEVICE_CLASSES' 
+  | 'CAPABILITY_FLAGS' 
+  | null;
 
 export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
-  const { role: activeUserRole } = useContext(UserContext);
+  const user = useContext(UserContext);
+  const activeUserRole = user.role;
+  const isSystemAdmin = activeUserRole === UserRole.SYSTEM_ADMIN;
   
   const [s0Context, setS0Context] = useState<S0Context>(getMockS0Context());
   const [localEvents, setLocalEvents] = useState<AuditEvent[]>([]);
@@ -99,9 +117,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [isComplianceLoading, setIsComplianceLoading] = useState(false);
   const [selBindingScope, setSelBindingScope] = useState<CapabilityScope>('ENTERPRISE');
   const [selBindingScopeId, setSelBindingScopeId] = useState<string>('');
-  const [activeBinding, setActiveBinding] = useState<ComplianceBinding | null>(null);
 
-  const [plants, setPlants] = useState<Plant[]>([]);
   const [isEntitiesLoading, setIsEntitiesLoading] = useState(false);
   const [editingSop, setEditingSop] = useState<Partial<SOPProfile> | null>(null);
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
@@ -111,6 +127,29 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     message: string;
     onConfirm: () => void;
   } | null>(null);
+
+  // V35-S0-STATE-RESET-PP-26A: Reset persisted UI state for clean preview
+  useEffect(() => {
+    const s0Keys = [
+      "bpmos.s0.drawerState",
+      "bpmos.s0.selectedEntity",
+      "bpmos.s0.selectedNode",
+      "bpmos.s0.lastManageKey"
+    ];
+    // V35-S0-HOTFIX-PP-26: Validate stored category key
+    const stored = localStorage.getItem("bpmos.s0.drawerState");
+    if (stored) {
+       try {
+         const parsed = JSON.parse(stored);
+         const validKeys = ['ORG', 'PLANTS', 'LINES', 'STATIONS', 'USERS', 'SOP_PROFILES', 'REGULATORY', 'DEVICE_CLASSES', 'CAPABILITY_FLAGS'];
+         if (!validKeys.includes(parsed.entityKey)) {
+            localStorage.removeItem("bpmos.s0.drawerState");
+         }
+       } catch(e) { localStorage.removeItem("bpmos.s0.drawerState"); }
+    }
+    s0Keys.forEach(key => localStorage.removeItem(key));
+    resetS0UIState();
+  }, []);
 
   useEffect(() => {
     const init = async () => {
@@ -235,11 +274,11 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       setIsEntitiesLoading(true);
       try {
         let endpoint = '';
-        if (activeCategory === 'ORGANIZATION') endpoint = '/api/s0/plants';
+        if (activeCategory === 'PLANTS') endpoint = '/api/s0/plants';
         else if (activeCategory === 'LINES') endpoint = `/api/s0/lines?plantId=${selPlantId}`;
-        else if (activeCategory === 'WORKSTATIONS') endpoint = `/api/s0/stations?lineId=${selLineId}`;
-        else if (activeCategory === 'ENTERPRISE') endpoint = '/api/s0/enterprises';
-        else if (activeCategory === 'DEVICES') endpoint = '/api/s0/device-classes';
+        else if (activeCategory === 'STATIONS') endpoint = `/api/s0/stations?lineId=${selLineId}`;
+        else if (activeCategory === 'ORG') endpoint = '/api/s0/enterprises';
+        else if (activeCategory === 'DEVICE_CLASSES') endpoint = '/api/s0/device-classes';
         else if (activeCategory === 'SOP_PROFILES') endpoint = '/api/s0/compliance/sop-profiles';
         else if (activeCategory === 'USERS') endpoint = '/api/s0/users';
         else if (activeCategory === 'REGULATORY') {
@@ -260,11 +299,11 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           const res = await apiFetch(endpoint);
           const result = await res.json();
           if (result.ok) {
-            if (activeCategory === 'ORGANIZATION') setPlants(result.data);
+            if (activeCategory === 'PLANTS') setActivePlants(result.data);
             if (activeCategory === 'LINES') setActiveLines(result.data);
-            if (activeCategory === 'WORKSTATIONS') setActiveStations(result.data);
-            if (activeCategory === 'ENTERPRISE') setEnterprises(result.data);
-            if (activeCategory === 'DEVICES') setDeviceClasses(result.data);
+            if (activeCategory === 'STATIONS') setActiveStations(result.data);
+            if (activeCategory === 'ORG') setEnterprises(result.data);
+            if (activeCategory === 'DEVICE_CLASSES') setDeviceClasses(result.data);
             if (activeCategory === 'SOP_PROFILES') setAllSops(result.data);
             if (activeCategory === 'USERS') setAppUsers(result.data);
           }
@@ -294,16 +333,6 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     } else { setEffectivePerms(null); }
   }, [activeCategory, activeTab, editingUser?.id, selEntId, selPlantId, selLineId, selStationId]);
 
-  const handleEditPlantTile = () => {
-    setIsSimulating(true);
-    setTimeout(() => {
-      const now = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' }) + ' IST';
-      setS0Context(prev => ({ ...prev, configLastUpdated: now }));
-      emitAuditEvent({ stageId: 'S0', actionId: 'EDIT_PLANT_DETAILS', actorRole: activeUserRole, message: 'Updated plant capability profile' });
-      setIsSimulating(false);
-    }, 600);
-  };
-
   const openManager = (cat: ManageCategory) => {
     setActiveCategory(cat);
     setActiveTab('LIST');
@@ -312,27 +341,6 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   };
 
   const closeManager = () => setActiveCategory(null);
-
-  const handleSopSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingSop || isFormSubmitting) return;
-    setIsFormSubmitting(true);
-    try {
-      const isEdit = !!editingSop.id;
-      const res = await apiFetch(isEdit ? '/api/s0/compliance/sop-profiles/update' : '/api/s0/compliance/sop-profiles/create', {
-        method: isEdit ? 'PATCH' : 'POST',
-        body: JSON.stringify(isEdit ? { id: editingSop.id, updates: editingSop } : editingSop)
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setEditingSop(null);
-        setActiveTab('LIST');
-        const refreshRes = await apiFetch('/api/s0/compliance/sop-profiles');
-        const refreshData = await refreshRes.json();
-        if (refreshData.ok) setAllSops(refreshData.data);
-      }
-    } catch (e) { console.error(e); } finally { setIsFormSubmitting(false); }
-  };
 
   const handleUserSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -357,7 +365,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   };
 
   const toggleFlag = (flag: EffectiveFlag) => {
-    if (activeUserRole !== UserRole.SYSTEM_ADMIN) return;
+    if (!isSystemAdmin) return;
     let targetScope: CapabilityScope = 'GLOBAL';
     let targetId = 'GLOBAL';
     if (selStationId) { targetScope = 'STATION'; targetId = selStationId; }
@@ -383,7 +391,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     const [selScopeId, setSelScopeId] = useState('');
     const getOptions = () => {
       if (selScope === 'ENTERPRISE') return enterprises;
-      if (selScope === 'PLANT') return plants;
+      if (selScope === 'PLANT') return activePlants;
       if (selScope === 'LINE') return activeLines;
       if (selScope === 'STATION') return activeStations;
       return [];
@@ -453,10 +461,12 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     </div>
   );
 
-  if (!(activeUserRole === UserRole.SYSTEM_ADMIN || activeUserRole === UserRole.MANAGEMENT || activeUserRole === UserRole.COMPLIANCE)) {
+  const canManageS0 = user.checkAccess('S0_MANAGE_MASTER_DATA');
+
+  if (!canManageS0) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-slate-500">
-        <ShieldAlert size={64} className="text-red-400 mb-4" /><h2 className="text-xl font-bold text-slate-700">Access Restricted</h2><p>Insufficient permissions.</p>
+        <ShieldAlert size={64} className="text-red-400 mb-4" /><h2 className="text-xl font-bold text-slate-700">Access Restricted</h2><p>Insufficient permissions to view Master Data.</p>
       </div>
     );
   }
@@ -478,10 +488,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         </div>
 
         <div className="bg-white border border-industrial-border rounded-lg p-3 shadow-sm flex flex-wrap items-center gap-4 overflow-x-auto custom-scrollbar">
-          <SelectorItem icon={Building2} label="Enterprise" value={selEntId} options={enterprises} onChange={setSelEntId} onManage={() => openManager('ENTERPRISE')} />
-          <SelectorItem icon={Factory} label="Plant" value={selPlantId} options={activePlants} onChange={setSelPlantId} />
-          <SelectorItem icon={Layout} label="Active Line" value={selLineId} options={activeLines} onChange={setSelLineId} />
-          <SelectorItem icon={Box} label="Primary Station" value={selStationId} options={activeStations} onChange={setSelStationId} />
+          <SelectorItem icon={Building2} label="Enterprise" value={selEntId} options={enterprises} onChange={setSelEntId} onManage={() => openManager('ORG')} />
+          <SelectorItem icon={Factory} label="Plant" value={selPlantId} options={activePlants} onChange={setSelPlantId} onManage={() => openManager('PLANTS')} />
+          <SelectorItem icon={Layout} label="Active Line" value={selLineId} options={activeLines} onChange={setSelLineId} onManage={() => openManager('LINES')} />
+          <SelectorItem icon={Box} label="Primary Station" value={selStationId} options={activeStations} onChange={setSelStationId} onManage={() => openManager('STATIONS')} />
           {isTopologyLoading && (<div className="flex items-center gap-2 text-xs font-medium text-slate-400 ml-auto pr-2"><Loader2 size={14} className="animate-spin text-brand-500" /><span>Syncing Topology...</span></div>)}
         </div>
 
@@ -500,7 +510,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
             <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
               <div className="flex items-center gap-2 text-slate-700"><Factory size={20} className="text-brand-600" /><h2 className="font-bold">Plant Capabilities</h2><ScopeBadge scope="PLANT" /></div>
-              <button onClick={() => openManager('ORGANIZATION')} className="text-[10px] font-bold text-slate-400 uppercase">Manage</button>
+              <button onClick={() => openManager('PLANTS')} className="text-[10px] font-bold text-slate-400 uppercase">Manage</button>
             </div>
             <div className="space-y-4 text-sm flex-1">
                <div className="grid grid-cols-2 gap-2">
@@ -522,6 +532,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col md:col-span-2">
             <div className="flex justify-between mb-4 border-b pb-2">
               <div className="flex items-center gap-2 text-slate-700"><Zap size={20} className="text-brand-600" /><h2 className="font-bold">Capability Flags</h2><ScopeBadge scope="MIXED" /></div>
+              <button onClick={() => openManager('CAPABILITY_FLAGS')} className="text-[10px] font-bold text-slate-400 uppercase">Manage</button>
             </div>
             {isFlagsLoading ? <Loader2 className="mx-auto animate-spin" /> : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -570,43 +581,180 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             <div className="flex-1 overflow-y-auto custom-scrollbar p-6">
                {isEntitiesLoading ? <Loader2 className="animate-spin mx-auto mt-12" /> : (
                  <>
-                   {activeCategory === 'USERS' && activeTab === 'LIST' && (
-                      <div className="space-y-4"><button onClick={() => { setEditingUser({ username: '', fullName: '', role: UserRole.OPERATOR, status: 'ACTIVE', scopes: [] }); setActiveTab('DETAILS'); }} className="text-brand-600 font-bold text-xs">+ NEW ACCOUNT</button><div className="divide-y border rounded-lg overflow-hidden">{appUsers.map(u => (<div key={u.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group"><div><div className="text-sm font-bold">{u.username}</div><div className="text-[10px]">{u.role}</div></div><button onClick={() => { setEditingUser(u); setActiveTab('DETAILS'); }} className="p-2 hover:bg-slate-200 rounded"><Edit2 size={14} /></button></div>))}</div></div>
-                   )}
-                   {activeCategory === 'USERS' && activeTab === 'DETAILS' && (
-                     <div className="space-y-6">
-                        <form onSubmit={handleUserSubmit} className="space-y-6">
-                            <div className="text-sm font-bold text-slate-700 flex items-center gap-2"><UserCheck size={18} className="text-brand-600" /> {editingUser?.id ? 'Edit User' : 'Provision User'}</div>
-                            <div className="space-y-4">
-                            <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Username</label><input required type="text" className="w-full border rounded p-2.5 text-sm font-mono" value={editingUser?.username || ''} onChange={e => setEditingUser(u => ({ ...u!, username: e.target.value }))} /></div>
-                            <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Display Name</label><input required type="text" className="w-full border rounded p-2.5 text-sm" value={editingUser?.fullName || ''} onChange={e => setEditingUser(u => ({ ...u!, fullName: e.target.value }))} /></div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Role</label><select className="w-full border rounded p-2.5 text-xs outline-none bg-white" value={editingUser?.role} onChange={e => setEditingUser(u => ({ ...u!, role: e.target.value as any }))}>{Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}</select></div>
-                                <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</label><select className="w-full border rounded p-2.5 text-xs outline-none bg-white" value={editingUser?.status} onChange={e => setEditingUser(u => ({ ...u!, status: e.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></div>
-                            </div>
-                            <UserScopeSelection />
-                            </div>
-                            <div className="pt-6 border-t flex gap-3"><button type="button" onClick={() => setActiveTab('LIST')} className="px-6 py-2.5 rounded text-xs font-bold text-slate-500 hover:bg-slate-100 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-1 py-2.5 bg-brand-600 text-white rounded font-bold text-xs uppercase shadow-sm hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} Save</button></div>
-                        </form>
-                        {editingUser?.id && (
-                           <div className="bg-slate-900 rounded-xl p-6 border border-slate-700 shadow-xl overflow-hidden relative">
-                              <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><Shield size={64} className="text-white" /></div>
-                              <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3"><div className="flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-400" /><h4 className="text-xs font-bold text-white uppercase tracking-widest">Effective Permissions</h4></div></div>
-                              <div className="space-y-4">
-                                 <div className="flex items-center justify-between text-[10px] text-slate-400"><span>Target: <span className="text-emerald-400 font-bold">{selStationId || selLineId || selPlantId || selEntId || 'Global'}</span></span><span>Role: <span className="text-emerald-400 font-bold">{editingUser.role?.toUpperCase()}</span></span></div>
-                                 {isPermsLoading ? (<div className="py-4 flex flex-col items-center gap-2"><Loader2 size={16} className="animate-spin text-emerald-400" /><span className="text-[9px] text-slate-500 uppercase font-bold">Resolving...</span></div>) : effectivePerms ? (
-                                    <div className="space-y-1.5">{effectivePerms.allowedActions.length > 0 ? (effectivePerms.allowedActions.map(action => (<div key={action} className="flex items-center gap-2 text-[10px] text-slate-300 font-mono"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div><span>{action}</span></div>))) : (<div className="flex items-center gap-2 p-3 bg-red-950/30 border border-red-900/50 rounded-lg text-[10px] text-red-400 font-bold uppercase italic"><Ban size={12} /> Access Denied</div>)}</div>
-                                 ) : (<div className="text-[10px] text-slate-600 italic">Select context.</div>)}
+                   {/** V35-S0-HOTFIX-PP-26: Entity-Specific Drawer Content **/}
+                   {isSystemAdmin ? (
+                      <>
+                        {activeCategory === 'USERS' && activeTab === 'LIST' && (
+                           <div className="space-y-4"><button onClick={() => { setEditingUser({ username: '', fullName: '', role: UserRole.OPERATOR, status: 'ACTIVE', scopes: [] }); setActiveTab('DETAILS'); }} className="text-brand-600 font-bold text-xs">+ NEW ACCOUNT</button><div className="divide-y border rounded-lg overflow-hidden">{appUsers.map(u => (<div key={u.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group"><div><div className="text-sm font-bold">{u.username}</div><div className="text-[10px]">{u.role}</div></div><button onClick={() => { setEditingUser(u); setActiveTab('DETAILS'); }} className="p-2 hover:bg-slate-200 rounded"><Edit2 size={14} /></button></div>))}</div></div>
+                        )}
+                        {activeCategory === 'USERS' && activeTab === 'DETAILS' && (
+                          <div className="space-y-6">
+                             <form onSubmit={handleUserSubmit} className="space-y-6">
+                                 <div className="text-sm font-bold text-slate-700 flex items-center gap-2"><UserCheck size={18} className="text-brand-600" /> {editingUser?.id ? 'Edit User' : 'Provision User'}</div>
+                                 <div className="space-y-4">
+                                 <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Username</label><input required type="text" className="w-full border rounded p-2.5 text-sm font-mono" value={editingUser?.username || ''} onChange={e => setEditingUser(u => ({ ...u!, username: e.target.value }))} /></div>
+                                 <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Display Name</label><input required type="text" className="w-full border rounded p-2.5 text-sm" value={editingUser?.fullName || ''} onChange={e => setEditingUser(u => ({ ...u!, fullName: e.target.value }))} /></div>
+                                 <div className="grid grid-cols-2 gap-4">
+                                     <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Role</label><select className="w-full border rounded p-2.5 text-xs outline-none bg-white" value={editingUser?.role} onChange={e => setEditingUser(u => ({ ...u!, role: e.target.value as any }))}>{Object.values(UserRole).map(r => <option key={r} value={r}>{r}</option>)}</select></div>
+                                     <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Status</label><select className="w-full border rounded p-2.5 text-xs outline-none bg-white" value={editingUser?.status} onChange={e => setEditingUser(u => ({ ...u!, status: e.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select></div>
+                                 </div>
+                                 <UserScopeSelection />
+                                 </div>
+                                 <div className="pt-6 border-t flex gap-3"><button type="button" onClick={() => setActiveTab('LIST')} className="px-6 py-2.5 rounded text-xs font-bold text-slate-500 hover:bg-slate-100 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-1 py-2.5 bg-brand-600 text-white rounded font-bold text-xs uppercase shadow-sm hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} Save</button></div>
+                             </form>
+                             {editingUser?.id && (
+                                <div className="bg-slate-900 rounded-xl p-6 border border-slate-700 shadow-xl overflow-hidden relative">
+                                   <div className="absolute top-0 right-0 p-4 opacity-10 pointer-events-none"><Shield size={64} className="text-white" /></div>
+                                   <div className="flex items-center justify-between mb-4 border-b border-slate-800 pb-3"><div className="flex items-center gap-2"><ShieldCheck size={18} className="text-emerald-400" /><h4 className="text-xs font-bold text-white uppercase tracking-widest">Effective Permissions</h4></div></div>
+                                   <div className="space-y-4">
+                                      <div className="flex items-center justify-between text-[10px] text-slate-400"><span>Target: <span className="text-emerald-400 font-bold">{selStationId || selLineId || selPlantId || selEntId || 'Global'}</span></span><span>Role: <span className="text-emerald-400 font-bold">{editingUser.role?.toUpperCase()}</span></span></div>
+                                      {isPermsLoading ? (<div className="py-4 flex flex-col items-center gap-2"><Loader2 size={16} className="animate-spin text-emerald-400" /><span className="text-[9px] text-slate-500 uppercase font-bold">Resolving...</span></div>) : effectivePerms ? (
+                                         <div className="space-y-1.5">{effectivePerms.allowedActions.length > 0 ? (effectivePerms.allowedActions.map(action => (<div key={action} className="flex items-center gap-2 text-[10px] text-slate-300 font-mono"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div><span>{action}</span></div>))) : (<div className="flex items-center gap-2 p-3 bg-red-950/30 border border-red-900/50 rounded-lg text-[10px] text-red-400 font-bold uppercase italic"><Ban size={12} /> Access Denied</div>)}</div>
+                                      ) : (<div className="text-[10px] text-slate-600 italic">Select context.</div>)}
+                                   </div>
+                                </div>
+                             )}
+                          </div>
+                        )}
+                        {activeCategory === 'ORG' && activeTab === 'LIST' && (
+                           <div className="space-y-4">
+                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Enterprise Ledger</h3>
+                              <div className="divide-y border rounded-lg">
+                                {enterprises.map(e => (
+                                   <div key={e.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
+                                      <div><div className="text-sm font-bold">{e.displayName}</div><div className="text-[10px] font-mono text-slate-400">{e.id}</div></div>
+                                      <button className="p-2 hover:bg-slate-100 rounded text-slate-400"><Edit2 size={14} /></button>
+                                   </div>
+                                ))}
                               </div>
                            </div>
                         )}
-                     </div>
+                        {activeCategory === 'PLANTS' && activeTab === 'LIST' && (
+                           <div className="space-y-4">
+                              <div className="flex justify-between items-center"><h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Manufacturing Facilities</h3><button className="text-[10px] font-bold text-brand-600 uppercase tracking-widest">+ Add Plant</button></div>
+                              <div className="divide-y border rounded-lg">
+                                {activePlants.map(p => (
+                                   <div key={p.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
+                                      <div><div className="text-sm font-bold">{p.displayName}</div><div className="text-[10px] font-mono text-slate-400">LOC: {p.code}</div></div>
+                                      <div className="flex items-center gap-2"><ScopeBadge scope="PLANT" /><button className="p-2 hover:bg-slate-100 rounded text-slate-400"><Edit2 size={14} /></button></div>
+                                   </div>
+                                ))}
+                              </div>
+                           </div>
+                        )}
+                        {activeCategory === 'LINES' && activeTab === 'LIST' && (
+                           <div className="space-y-4">
+                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Production Paths</h3>
+                              <div className="divide-y border rounded-lg">
+                                {activeLines.map(l => (
+                                   <div key={l.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
+                                      <div><div className="text-sm font-bold">{l.displayName}</div><div className="text-[10px] text-slate-400">{l.supportedSkuTypes.join(', ')}</div></div>
+                                      <button className="p-2 hover:bg-slate-100 rounded text-slate-400"><Edit2 size={14} /></button>
+                                   </div>
+                                ))}
+                              </div>
+                           </div>
+                        )}
+                        {activeCategory === 'STATIONS' && activeTab === 'LIST' && (
+                           <div className="space-y-4">
+                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Physical Workstations</h3>
+                              <div className="divide-y border rounded-lg">
+                                {activeStations.map(s => (
+                                   <div key={s.id} className="p-4 flex justify-between items-center hover:bg-slate-50">
+                                      <div><div className="text-sm font-bold">{s.displayName}</div><div className="text-[10px] text-slate-400 uppercase tracking-widest">{s.stationType}</div></div>
+                                      <button className="p-2 hover:bg-slate-100 rounded text-slate-400"><Edit2 size={14} /></button>
+                                   </div>
+                                ))}
+                              </div>
+                           </div>
+                        )}
+                        {activeCategory === 'DEVICE_CLASSES' && activeTab === 'LIST' && (
+                           <div className="space-y-4">
+                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Device Catalog</h3>
+                              <div className="grid grid-cols-2 gap-4">
+                                {deviceClasses.map(dc => (
+                                   <div key={dc.id} className="p-4 border rounded-lg bg-slate-50">
+                                      <div className="text-xs font-bold text-slate-800">{dc.displayName}</div>
+                                      <div className="text-[9px] text-slate-500 uppercase mt-1">{dc.category}</div>
+                                      <div className="mt-2 flex flex-wrap gap-1">
+                                        {dc.supportedProtocols.map(p => <span key={p} className="text-[8px] bg-white border px-1 rounded font-mono">{p}</span>)}
+                                      </div>
+                                   </div>
+                                ))}
+                              </div>
+                           </div>
+                        )}
+                        {activeCategory === 'SOP_PROFILES' && activeTab === 'LIST' && (
+                           <div className="space-y-4">
+                              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active SOP Ledger</h3>
+                              <div className="space-y-2">
+                                {allSops.map(sop => (
+                                   <div key={sop.id} className="p-4 bg-white border rounded-lg shadow-sm flex justify-between items-start">
+                                      <div>
+                                        <div className="text-sm font-bold text-slate-800">{sop.name}</div>
+                                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{sop.code} REV {sop.version}</div>
+                                      </div>
+                                      <span className="text-[9px] font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-100">LOCKED</span>
+                                   </div>
+                                ))}
+                              </div>
+                           </div>
+                        )}
+                        {activeCategory === 'CAPABILITY_FLAGS' && activeTab === 'LIST' && (
+                           <div className="space-y-4">
+                              <div className="p-4 bg-slate-50 border rounded-lg mb-6">
+                                <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Global Hierarchy Control</h3>
+                                <p className="text-[10px] text-slate-400 leading-relaxed italic">Changes here affect effective values across all downstream nodes unless explicitly overridden.</p>
+                              </div>
+                              <div className="space-y-3">
+                                {effectiveFlags.map(f => (
+                                   <div key={f.id} className="p-4 bg-white border rounded-lg flex justify-between items-center group">
+                                      <div className="flex-1 pr-8">
+                                        <div className="font-bold text-slate-800 text-sm">{f.label}</div>
+                                        <div className="text-[10px] text-slate-500 mt-0.5">{f.description}</div>
+                                      </div>
+                                      {f.effectiveValue ? <ToggleRight className="text-brand-600" size={28} /> : <ToggleLeft className="text-slate-300" size={28} />}
+                                   </div>
+                                ))}
+                              </div>
+                           </div>
+                        )}
+                        {activeCategory === 'REGULATORY' && activeTab === 'LIST' && (
+                           <div className="space-y-8">
+                              <div className="space-y-4">
+                                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Available Frameworks</h4>
+                                <div className="grid grid-cols-1 gap-3">
+                                  {allFrameworks.map(f => (
+                                     <div key={f.id} className="p-4 border rounded-lg bg-slate-50 flex items-center gap-4">
+                                        <div className="p-2 bg-white rounded border border-slate-200 text-brand-600"><Shield size={16} /></div>
+                                        <div><div className="text-sm font-bold text-slate-800">{f.name}</div><div className="text-[10px] text-slate-500">{f.jurisdiction} • {f.mandatory ? 'MANDATORY' : 'OPTIONAL'}</div></div>
+                                     </div>
+                                  ))}
+                                </div>
+                              </div>
+                           </div>
+                        )}
+
+                        {/** Catch-all for unknown category in Admin view **/}
+                        {!['USERS', 'ORG', 'PLANTS', 'LINES', 'STATIONS', 'DEVICE_CLASSES', 'SOP_PROFILES', 'CAPABILITY_FLAGS', 'REGULATORY'].includes(activeCategory || '') && (
+                           <div className="h-full flex flex-col items-center justify-center text-slate-400 py-12">
+                              <Box size={48} className="mb-4 opacity-20" />
+                              <p className="text-sm font-bold uppercase tracking-tight">Configuration Registry</p>
+                              <p className="text-xs text-slate-400 mt-2 italic">Entity: {activeCategory || 'Unknown'}</p>
+                           </div>
+                        )}
+                      </>
+                   ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-500">
+                        <Lock size={48} className="text-red-400 mb-4" />
+                        <h3 className="text-xl font-bold">Access Restricted</h3>
+                        <p className="text-sm mt-1">Role <strong>{activeUserRole}</strong> is not authorized to manage {activeCategory}.</p>
+                      </div>
                    )}
-                   {(!['REGULATORY', 'SOP_PROFILES', 'USERS'].includes(activeCategory || '')) && (<div className="h-full flex flex-col items-center justify-center text-slate-400 py-12"><Lock size={32} className="mb-4 opacity-30" /><p className="text-sm font-bold uppercase">Access Restricted</p></div>)}
                  </>
                )}
             </div>
-            <footer className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center"><button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Close</button><div className="text-[10px] font-mono text-slate-400 flex items-center gap-1"><ShieldCheck size={12} /> V3.5</div></footer>
+            <footer className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center"><button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Close</button><div className="text-[10px] font-mono text-slate-400 flex items-center gap-1"><ShieldCheck size={12} /> V3.5-HOTFIX-26</div></footer>
           </div>
         </div>
       )}

@@ -3,6 +3,7 @@
  * Simulated database for Enterprise, Plant, Line, and Station hierarchy.
  * @version V3.5
  * @governance S0-ARCH-BP-04
+ * @updated V35-S0-HOTFIX-PP-26 (Seed Rehydration)
  */
 
 import { UserRole } from "../../../types";
@@ -18,84 +19,16 @@ const INITIAL_AUDIT: TopologyAudit = {
   approvedAt: "2026-01-01T09:00:00Z"
 };
 
-let STATIONS: Station[] = [
-  {
-    id: "STN-A4",
-    code: "STN-A4-MOD-INS",
-    displayName: "Module Insertion Station",
-    status: "ACTIVE",
-    effectiveFrom: "2026-01-01T00:00:00Z",
-    audit: INITIAL_AUDIT,
-    lineId: "LINE-A",
-    stationType: "ASSEMBLY",
-    supportedOperations: ["INSERT_MODULE", "TORQUE_FIX", "SCAN_SERIAL"],
-    deviceBindings: ["DEV-SCAN-01", "DEV-TORQ-01"]
-  }
-];
-
-let LINES: Line[] = [
-  {
-    id: "LINE-A",
-    code: "L-PK-01",
-    displayName: "Pack Assembly Line A",
-    status: "ACTIVE",
-    effectiveFrom: "2026-01-01T00:00:00Z",
-    audit: INITIAL_AUDIT,
-    plantId: "FAC-WB-01",
-    stationIds: ["STN-A4"],
-    supportedOperations: ["ASSEMBLY", "TESTING"],
-    supportedSkuTypes: ["PACK", "MODULE"]
-  }
-];
-
-let PLANTS: Plant[] = [
-  {
-    id: "FAC-WB-01",
-    code: "PL-KOL-01",
-    displayName: "Gigafactory 1 - Kolkata",
-    status: "ACTIVE",
-    effectiveFrom: "2026-01-01T00:00:00Z",
-    audit: INITIAL_AUDIT,
-    enterpriseId: "ENT-BPM-GLOBAL",
-    lineIds: ["LINE-A"]
-  }
-];
-
-let ENTERPRISES: Enterprise[] = [
-  {
-    id: "ENT-BPM-GLOBAL",
-    code: "BPM-OS-HQ",
-    displayName: "BPM Global Manufacturing",
-    status: "ACTIVE",
-    effectiveFrom: "2026-01-01T00:00:00Z",
-    audit: INITIAL_AUDIT,
-    plantIds: ["FAC-WB-01"],
-    timezone: "UTC"
-  }
-];
-
-let DEVICE_CLASSES: DeviceClass[] = [
-  {
-    id: "DC-SCAN-01",
-    code: "BARCODE_SCANNER",
-    displayName: "Standard Handheld Scanner",
-    status: "ACTIVE",
-    category: "SCANNER",
-    supportedProtocols: ["USB", "REST"],
-    effectiveFrom: "2026-01-01T00:00:00Z",
-    audit: INITIAL_AUDIT
-  },
-  {
-    id: "DC-SCALE-01",
-    code: "DIGITAL_SCALE",
-    displayName: "Precision Floor Scale",
-    status: "ACTIVE",
-    category: "METROLOGY",
-    supportedProtocols: ["MQTT", "RS232"],
-    effectiveFrom: "2026-01-01T00:00:00Z",
-    audit: INITIAL_AUDIT
-  }
-];
+let STATIONS: Station[] = [];
+let LINES: Line[] = [];
+let PLANTS: Plant[] = [];
+let ENTERPRISES: Enterprise[] = [];
+let DEVICE_CLASSES: DeviceClass[] = [];
+let CAPABILITY_OVERRIDES: CapabilityOverride[] = [];
+let SOP_PROFILES: SOPProfile[] = [];
+let COMPLIANCE_BINDINGS: ComplianceBinding[] = [];
+let USERS: AppUser[] = [];
+let S0_AUDIT_LOGS: S0AuditEntry[] = [];
 
 const CAPABILITY_FLAGS: CapabilityFlag[] = [
   { id: 'ENABLE_SERIALIZATION', label: 'Unit Serialization', description: 'Enable unique ID generation at S3.', defaultValue: true, category: 'TRACEABILITY' },
@@ -105,76 +38,145 @@ const CAPABILITY_FLAGS: CapabilityFlag[] = [
   { id: 'STRICT_GATING', label: 'Strict Interlock Gating', description: 'Block stage transitions if gates are locked.', defaultValue: true, category: 'MANUFACTURING' }
 ];
 
-let CAPABILITY_OVERRIDES: CapabilityOverride[] = [];
-
-let REGULATORY_FRAMEWORKS: RegulatoryFramework[] = [
+const REGULATORY_FRAMEWORKS: RegulatoryFramework[] = [
   { id: "RF-AIS-156", name: "AIS-156 AMD 3", jurisdiction: "INDIA", mandatory: true, description: "Safety requirements for traction batteries of L, M and N category vehicles." },
   { id: "RF-EU-BP", name: "EU Battery Passport", jurisdiction: "EU", mandatory: true, description: "Digital record providing transparency on battery sustainability and circularity." },
   { id: "RF-UN-383", name: "UN38.3 Certified", jurisdiction: "GLOBAL", mandatory: true, description: "Standard for testing lithium batteries for transport." },
   { id: "RF-BATT-AADHAAR", name: "BATT-AADHAAR-V1", jurisdiction: "INDIA", mandatory: false, description: "Sovereign identity framework for battery tracking." }
 ];
 
-let SOP_PROFILES: SOPProfile[] = [
-  { id: "SOP-ASSY-01", code: "SOP-IND-PK-01", name: "Pack Assembly Protocol (Standard)", version: "V2.4", applicableScopes: ["PLANT", "LINE"] },
-  { id: "SOP-QC-01", code: "SOP-AIS-QC-156", name: "AIS-156 Quality Gate Procedure", version: "V1.8", applicableScopes: ["PLANT", "STATION"] }
-];
+/**
+ * ensureS0Seed
+ * Idempotent seeder to ensure base data is present for Option-B simulation.
+ */
+export function ensureS0Seed() {
+  if (ENTERPRISES.length > 0) return;
 
-let COMPLIANCE_BINDINGS: ComplianceBinding[] = [
-  {
-    scope: 'ENTERPRISE',
-    scopeId: 'ENT-BPM-GLOBAL',
-    regulatoryFrameworkIds: ["RF-AIS-156", "RF-UN-383"],
-    sopProfileIds: ["SOP-QC-01"]
-  }
-];
+  console.info("[S0-STORE] Rehydrating Master Data seed...");
 
-let USERS: AppUser[] = [
-  {
-    id: "USR-001",
-    username: "admin.kol",
-    fullName: "Kolkata System Admin",
-    role: UserRole.SYSTEM_ADMIN,
-    status: 'ACTIVE',
-    scopes: [{ scope: 'PLANT', scopeId: 'FAC-WB-01' }]
-  },
-  {
-    id: "USR-002",
-    username: "op.line.a",
-    fullName: "Line A Operator",
-    role: UserRole.OPERATOR,
-    status: 'ACTIVE',
-    scopes: [{ scope: 'LINE', scopeId: 'LINE-A' }]
-  }
-];
+  STATIONS = [
+    {
+      id: "STN-A4",
+      code: "STN-A4-MOD-INS",
+      displayName: "Module Insertion Station",
+      status: "ACTIVE",
+      effectiveFrom: "2026-01-01T00:00:00Z",
+      audit: INITIAL_AUDIT,
+      lineId: "LINE-A",
+      stationType: "ASSEMBLY",
+      supportedOperations: ["INSERT_MODULE", "TORQUE_FIX", "SCAN_SERIAL"],
+      deviceBindings: ["DEV-SCAN-01", "DEV-TORQ-01"]
+    }
+  ];
 
-let S0_AUDIT_LOGS: S0AuditEntry[] = [];
+  LINES = [
+    {
+      id: "LINE-A",
+      code: "L-PK-01",
+      displayName: "Pack Assembly Line A",
+      status: "ACTIVE",
+      effectiveFrom: "2026-01-01T00:00:00Z",
+      audit: INITIAL_AUDIT,
+      plantId: "FAC-WB-01",
+      stationIds: ["STN-A4"],
+      supportedOperations: ["ASSEMBLY", "TESTING"],
+      supportedSkuTypes: ["PACK", "MODULE"]
+    }
+  ];
+
+  PLANTS = [
+    {
+      id: "FAC-WB-01",
+      code: "PL-KOL-01",
+      displayName: "Gigafactory 1 - Kolkata",
+      status: "ACTIVE",
+      effectiveFrom: "2026-01-01T00:00:00Z",
+      audit: INITIAL_AUDIT,
+      enterpriseId: "ENT-BPM-GLOBAL",
+      lineIds: ["LINE-A"]
+    }
+  ];
+
+  ENTERPRISES = [
+    {
+      id: "ENT-BPM-GLOBAL",
+      code: "BPM-OS-HQ",
+      displayName: "BPM Global Manufacturing",
+      status: "ACTIVE",
+      effectiveFrom: "2026-01-01T00:00:00Z",
+      audit: INITIAL_AUDIT,
+      plantIds: ["FAC-WB-01"],
+      timezone: "UTC"
+    }
+  ];
+
+  DEVICE_CLASSES = [
+    {
+      id: "DC-SCAN-01",
+      code: "BARCODE_SCANNER",
+      displayName: "Standard Handheld Scanner",
+      status: "ACTIVE",
+      category: "SCANNER",
+      supportedProtocols: ["USB", "REST"],
+      effectiveFrom: "2026-01-01T00:00:00Z",
+      audit: INITIAL_AUDIT
+    }
+  ];
+
+  SOP_PROFILES = [
+    { id: "SOP-ASSY-01", code: "SOP-IND-PK-01", name: "Pack Assembly Protocol (Standard)", version: "V2.4", applicableScopes: ["PLANT", "LINE"] },
+    { id: "SOP-QC-01", code: "SOP-AIS-QC-156", name: "AIS-156 Quality Gate Procedure", version: "V1.8", applicableScopes: ["PLANT", "STATION"] }
+  ];
+
+  COMPLIANCE_BINDINGS = [
+    {
+      scope: 'ENTERPRISE',
+      scopeId: 'ENT-BPM-GLOBAL',
+      regulatoryFrameworkIds: ["RF-AIS-156", "RF-UN-383"],
+      sopProfileIds: ["SOP-QC-01"]
+    }
+  ];
+
+  USERS = [
+    {
+      id: "USR-001",
+      username: "admin.kol",
+      fullName: "Kolkata System Admin",
+      role: UserRole.SYSTEM_ADMIN,
+      status: 'ACTIVE',
+      scopes: [{ scope: 'PLANT', scopeId: 'FAC-WB-01' }]
+    }
+  ];
+}
 
 /**
  * STORE ACCESSORS (Read-Only)
  */
-
-export const getEnterprises = (): readonly Enterprise[] => Object.freeze([...ENTERPRISES]);
-export const getPlants = (): readonly Plant[] => Object.freeze([...PLANTS]);
-export const getLines = (): readonly Line[] => Object.freeze([...LINES]);
-export const getStations = (): readonly Station[] => Object.freeze([...STATIONS]);
-export const getDeviceClasses = (): readonly DeviceClass[] => Object.freeze([...DEVICE_CLASSES]);
+export const getEnterprises = (): readonly Enterprise[] => { ensureS0Seed(); return Object.freeze([...ENTERPRISES]); };
+export const getPlants = (): readonly Plant[] => { ensureS0Seed(); return Object.freeze([...PLANTS]); };
+export const getLines = (): readonly Line[] => { ensureS0Seed(); return Object.freeze([...LINES]); };
+export const getStations = (): readonly Station[] => { ensureS0Seed(); return Object.freeze([...STATIONS]); };
+export const getDeviceClasses = (): readonly DeviceClass[] => { ensureS0Seed(); return Object.freeze([...DEVICE_CLASSES]); };
 export const getCapabilityFlags = (): readonly CapabilityFlag[] => Object.freeze([...CAPABILITY_FLAGS]);
 export const getCapabilityOverrides = (): readonly CapabilityOverride[] => Object.freeze([...CAPABILITY_OVERRIDES]);
 export const getRegulatoryFrameworks = (): readonly RegulatoryFramework[] => Object.freeze([...REGULATORY_FRAMEWORKS]);
-export const getSopProfiles = (): readonly SOPProfile[] => Object.freeze([...SOP_PROFILES]);
-export const getComplianceBindings = (): readonly ComplianceBinding[] => Object.freeze([...COMPLIANCE_BINDINGS]);
-export const getUsers = (): readonly AppUser[] => Object.freeze([...USERS]);
+export const getSopProfiles = (): readonly SOPProfile[] => { ensureS0Seed(); return Object.freeze([...SOP_PROFILES]); };
+export const getComplianceBindings = (): readonly ComplianceBinding[] => { ensureS0Seed(); return Object.freeze([...COMPLIANCE_BINDINGS]); };
+export const getUsers = (): readonly AppUser[] => { ensureS0Seed(); return Object.freeze([...USERS]); };
 export const getS0AuditLogs = (): readonly S0AuditEntry[] => Object.freeze([...S0_AUDIT_LOGS]);
 
-export const getEnterpriseById = (id: string) => ENTERPRISES.find(e => e.id === id);
-export const getPlantById = (id: string) => PLANTS.find(p => p.id === id);
-export const getLineById = (id: string) => LINES.find(l => l.id === id);
-export const getStationById = (id: string) => STATIONS.find(s => s.id === id);
-export const getDeviceClassById = (id: string) => DEVICE_CLASSES.find(dc => dc.id === id);
+export const getEnterpriseById = (id: string) => { ensureS0Seed(); return ENTERPRISES.find(e => e.id === id); };
+export const getPlantById = (id: string) => { ensureS0Seed(); return PLANTS.find(p => p.id === id); };
+export const getLineById = (id: string) => { ensureS0Seed(); return LINES.find(l => l.id === id); };
+export const getStationById = (id: string) => { ensureS0Seed(); return STATIONS.find(s => s.id === id); };
+export const getDeviceClassById = (id: string) => { ensureS0Seed(); return DEVICE_CLASSES.find(dc => dc.id === id); };
 
 /**
  * STORE MUTATORS
  */
+export const resetS0UIState = () => {
+  console.debug("[S0-STORE] In-memory UI state reset triggered.");
+};
 
 export const addS0AuditLog = (entry: S0AuditEntry) => {
   S0_AUDIT_LOGS = [entry, ...S0_AUDIT_LOGS].slice(0, 100);
@@ -287,3 +289,5 @@ export const removeComplianceBinding = (scope: string, scopeId: string) => {
     b => !(b.scope === scope && b.scopeId === scopeId)
   );
 };
+
+ensureS0Seed();

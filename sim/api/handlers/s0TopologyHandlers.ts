@@ -15,6 +15,7 @@
  * @updated V35-S0-RBAC-PP-21 (Permission Preview)
  * @updated V35-S0-GOV-PP-22 (Audit Logging)
  * @updated V35-S0-GOV-PP-23 (Guardrails)
+ * @updated V35-S0-HOTFIX-PP-25 (RBAC Permission Key)
  */
 
 import { UserRole } from "../../../types";
@@ -570,9 +571,9 @@ export const getEffectiveUserPermissionsHandler: ApiHandler = async (req) => {
   if (!user) return err("NOT_FOUND", "User not found", 404);
 
   const ROLE_PERMS: Record<UserRole, string[]> = {
-    [UserRole.SYSTEM_ADMIN]: ['MANAGE_ENTERPRISE', 'MANAGE_PLANTS', 'MANAGE_LINES', 'MANAGE_STATIONS', 'MANAGE_DEVICES', 'MANAGE_REGS', 'MANAGE_SOP', 'MANAGE_USERS', 'MANAGE_CAPABILITIES'],
-    [UserRole.MANAGEMENT]: ['VIEW_TOPOLOGY', 'MANAGE_PLANTS', 'MANAGE_LINES', 'MANAGE_STATIONS', 'MANAGE_REGS'],
-    [UserRole.COMPLIANCE]: ['VIEW_TOPOLOGY', 'MANAGE_REGS', 'MANAGE_SOP'],
+    [UserRole.SYSTEM_ADMIN]: ['S0_MANAGE_MASTER_DATA', 'MANAGE_ENTERPRISE', 'MANAGE_PLANTS', 'MANAGE_LINES', 'MANAGE_STATIONS', 'MANAGE_DEVICES', 'MANAGE_REGS', 'MANAGE_SOP', 'MANAGE_USERS', 'MANAGE_CAPABILITIES'],
+    [UserRole.MANAGEMENT]: ['S0_MANAGE_MASTER_DATA', 'VIEW_TOPOLOGY', 'MANAGE_PLANTS', 'MANAGE_LINES', 'MANAGE_STATIONS', 'MANAGE_REGS'],
+    [UserRole.COMPLIANCE]: ['S0_MANAGE_MASTER_DATA', 'VIEW_TOPOLOGY', 'MANAGE_REGS', 'MANAGE_SOP'],
     [UserRole.ENGINEERING]: ['VIEW_TOPOLOGY', 'MANAGE_LINES', 'MANAGE_STATIONS', 'MANAGE_DEVICES'],
     [UserRole.OPERATOR]: ['VIEW_TOPOLOGY'],
     [UserRole.QA_ENGINEER]: ['VIEW_TOPOLOGY'],
