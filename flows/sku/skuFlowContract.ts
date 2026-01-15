@@ -2,6 +2,7 @@
  * SKU Flow Contract (FLOW-001)
  * Canonical definitions for SKU Creation & Blueprint Approval lifecycle.
  * @foundation V34-S1-FLOW-001-BP-01
+ * @updated V35-S1-WIZ-PP-05 (Dynamic Blueprint Schema)
  */
 
 import type { ApiResult, EntityId, IsoDateTime } from "../../types";
@@ -14,13 +15,26 @@ export type SkuFlowRole = "Maker" | "Checker" | "Approver";
 export interface SkuDraft {
   skuCode: string;
   skuName: string;
-  skuType?: SkuType;             // Added for V35 taxonomy
-  isRevision: boolean;           // Added to distinguish new vs revise
-  chemistry?: string;           // e.g., LFP, NMC
-  formFactor?: string;          // pouch/prismatic/cylindrical
-  nominalVoltage?: number;
-  capacityAh?: number;
+  skuType?: SkuType;
+  isRevision: boolean;
   notes?: string;
+
+  // Technical Blueprint - Common & Type Specific
+  chemistry?: string;           // CELL, MODULE, PACK
+  formFactor?: string;          // CELL, PACK
+  nominalVoltage?: number;      // CELL, MODULE, PACK
+  capacityAh?: number;          // CELL, MODULE, PACK
+  energyKwh?: number;           // PACK
+  seriesConfig?: number;        // MODULE, PACK
+  parallelConfig?: number;      // MODULE, PACK
+  cellCount?: number;           // MODULE
+  moduleCount?: number;         // PACK
+  
+  // Hardware/Software Specific
+  hwVersion?: string;           // BMS, IOT
+  fwBaseline?: string;          // BMS, IOT
+  protocol?: string;            // BMS
+  commsType?: string;           // IOT
 }
 
 export interface BlueprintRef {
@@ -41,7 +55,7 @@ export interface SkuFlowInstance {
   blueprint?: BlueprintRef;
 
   // workflow/audit fields
-  submittedBy?: string;         // userId/display
+  submittedBy?: string;
   submittedAt?: IsoDateTime;
   reviewedBy?: string;
   reviewedAt?: IsoDateTime;
@@ -84,6 +98,6 @@ export const SKU_FLOW_ENDPOINTS = {
   submit: "/api/flows/sku/submit",
   review: "/api/flows/sku/review",
   approve: "/api/flows/sku/approve",
-  get: "/api/flows/sku/get",           // expects ?id=
+  get: "/api/flows/sku/get",
   list: "/api/flows/sku/list",
 } as const;

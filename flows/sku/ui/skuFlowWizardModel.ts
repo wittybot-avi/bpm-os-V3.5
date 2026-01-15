@@ -2,11 +2,12 @@
  * SKU Flow Wizard Model
  * Defines local state shape for the FLOW-001 step-wizard.
  * @foundation V34-S1-FLOW-001-PP-03
+ * @updated V35-S1-WIZ-PP-05 (Dynamic Steps)
  */
 
 import type { SkuDraft, SkuFlowState, SkuFlowRole } from "../skuFlowContract";
 
-export type WizardStepId = "INIT" | "DRAFT" | "REVIEW" | "APPROVE" | "PUBLISH";
+export type WizardStepId = "INIT" | "GENERAL" | "TECHNICAL" | "REVIEW" | "APPROVE" | "PUBLISH";
 
 export interface WizardModel {
   role: SkuFlowRole;
@@ -24,15 +25,11 @@ export function createDefaultWizardModel(): WizardModel {
   return {
     role: "Maker",
     state: "Draft",
-    step: "INIT", // New SKUs start at INIT (Step 0)
+    step: "INIT",
     draft: { 
       skuCode: "", 
       skuName: "", 
       isRevision: false,
-      chemistry: "", 
-      formFactor: "", 
-      nominalVoltage: 0, 
-      capacityAh: 0, 
       notes: "" 
     }
   };
@@ -45,7 +42,8 @@ export function resolveStepFromState(state: SkuFlowState): WizardStepId {
   switch (state) {
     case "Draft":
     case "Rejected":
-      return "DRAFT";
+      // Re-entry to Draft always starts at General info for clarity
+      return "GENERAL";
     case "Review":
       return "REVIEW";
     case "Approved":
