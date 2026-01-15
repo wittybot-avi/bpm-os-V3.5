@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-PP-07 (Approval UX & Role Enforcement)
+ * @updated V35-S1-WIZ-FIX-01 (Step Registry Integration)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -45,7 +45,6 @@ import {
   Gavel,
   ClipboardCheck,
   Ban,
-  // Fix: Added missing Activity icon import from lucide-react
   Activity
 } from 'lucide-react';
 import { FlowShell, FlowStep, FlowFooter } from '../../../components/flow';
@@ -65,7 +64,9 @@ import {
   WizardModel, 
   createDefaultWizardModel, 
   resolveStepFromState,
-  WizardStepId
+  WizardStepId,
+  getNextStepId,
+  getPrevStepId
 } from './skuFlowWizardModel';
 import { useDeviceLayout } from '../../../hooks/useDeviceLayout';
 import { apiFetch } from '../../../services/apiHarness';
@@ -213,10 +214,16 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     return Object.keys(errors).length === 0;
   };
 
-  const handleNextStep = (next: WizardStepId) => {
+  const handleNextStep = () => {
     if (validateStep(model.step)) {
+      const next = getNextStepId(model.step, model.draft.isRevision, model.draft.skuType);
       setModel(m => ({ ...m, step: next }));
     }
+  };
+
+  const handlePrevStep = () => {
+    const prev = getPrevStepId(model.step, model.draft.isRevision, model.draft.skuType);
+    setModel(m => ({ ...m, step: prev }));
   };
 
   const handleSaveDraft = async () => {
@@ -486,7 +493,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2">
                                             <span className="text-xs font-bold text-slate-800">{p.label}</span>
-                                            <span className={`text-[8px] font-bold px-1 py-0.5 rounded border ${p.severity === 'HARD' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                                            <span className={`text-[8px] font-bold px-1 py-0.5 rounded border ${p.severity === 'HARD' ? 'bg-red-600 text-red-600 border-red-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
                                                 {p.severity}
                                             </span>
                                         </div>
@@ -662,7 +669,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
             <div className="flex items-center gap-4">
               {model.step === "INIT" && (
                 <button 
-                  onClick={() => handleNextStep('GENERAL')}
+                  onClick={handleNextStep}
                   disabled={!model.draft.skuType || !areHardGatesMet || model.role !== 'Maker'}
                   className="flex items-center justify-center gap-2 px-8 py-3 bg-brand-600 text-white rounded-lg font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-lg active:scale-95"
                 >
@@ -672,7 +679,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
 
               {(model.step === "GENERAL" || model.step === "TECHNICAL") && (
                 <>
-                  <button onClick={() => setModel(m => ({ ...m, step: model.step === 'GENERAL' ? 'INIT' : 'GENERAL' }))} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Back</button>
+                  <button onClick={handlePrevStep} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Back</button>
                   {model.role === 'Maker' && (
                     <>
                       <button 
@@ -683,7 +690,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                         <Save size={18} /> Save Buffer
                       </button>
                       <button 
-                        onClick={() => model.step === 'GENERAL' ? handleNextStep('TECHNICAL') : handleSubmit()}
+                        onClick={() => model.step === 'GENERAL' ? handleNextStep() : handleSubmit()}
                         className={`flex items-center justify-center gap-2 px-8 py-3 bg-brand-600 text-white rounded-lg font-bold text-sm hover:bg-brand-700 transition-all shadow-lg active:scale-95`}
                       >
                         {model.step === 'GENERAL' ? 'Technical Blueprint' : 'Release to Review'} <ChevronRight size={18} />

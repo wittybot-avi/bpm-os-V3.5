@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-WIZ-FIX-01** | Stabilization | Wizard Step Registry | **STABLE** | Introduced a central Step Registry for S1 Wizard. Resolved paths now depend on Intent (Greenfield/Revision) and SKU Type. Hardened navigation helpers. | 2026-01-28 15:00 (IST) |
 | **V35-S1-DOC-PP-08** | Documentation | S1 Master Data SoT | **STABLE** | Established S1 as authoritative Product Master Data source. Documented bindings to S2/S4 and enforced Wizard-only mutation path. | 2026-01-28 14:30 (IST) |
 | **V35-S1-WIZ-PP-07** | UX / RBAC | Refined Approval UX | **STABLE** | Enforced "One Primary Action" UI pattern. Added task directive bar to SKU Wizard. Restricted footer actions strictly to authorized roles per state. | 2026-01-28 14:00 (IST) |
 | **V35-S1-WIZ-PP-06** | Governance | Operational Preconditions | **STABLE** | Implemented precondition gating in SKU Wizard. Added hard gates for ECR/PLM and soft warnings for Regulatory DB link. Progress blocked on hard failures. | 2026-01-28 13:30 (IST) |
