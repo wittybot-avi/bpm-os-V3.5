@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-WIZ-FIX-03** | Stabilization | Technical Scaffolding | **STABLE** | Added empty placeholder steps for all SKU-specific technical blueprints (CELL, MODULE, PACK, BMS, IOT). Updated Registry to support branching paths. | 2026-01-28 16:00 (IST) |
 | **V35-S1-WIZ-FIX-02** | Stabilization | Step Reclassification | **STABLE** | Internally reclassified "General Identifiers" as `BASE_SKU_METADATA` step. Enforced index mapping in registry for future modularity. No UI changes. | 2026-01-28 15:30 (IST) |
 | **V35-S1-WIZ-FIX-01** | Stabilization | Wizard Step Registry | **STABLE** | Introduced a central Step Registry for S1 Wizard. Resolved paths now depend on Intent (Greenfield/Revision) and SKU Type. Hardened navigation helpers. | 2026-01-28 15:00 (IST) |
 | **V35-S1-DOC-PP-08** | Documentation | S1 Master Data SoT | **STABLE** | Established S1 as authoritative Product Master Data source. Documented bindings to S2/S4 and enforced Wizard-only mutation path. | 2026-01-28 14:30 (IST) |

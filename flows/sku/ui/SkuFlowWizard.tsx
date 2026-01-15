@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-FIX-02 (Internal Step Reclassification)
+ * @updated V35-S1-WIZ-FIX-03 (SKU-Specific Step Scaffolding)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -45,7 +45,8 @@ import {
   Gavel,
   ClipboardCheck,
   Ban,
-  Activity
+  Activity,
+  Construction
 } from 'lucide-react';
 import { FlowShell, FlowStep, FlowFooter } from '../../../components/flow';
 import { 
@@ -374,6 +375,23 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     </div>
   );
 
+  const ScaffoldStep = ({ title }: { title: string }) => (
+    <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+       <div className="p-6 bg-slate-50 rounded-full text-slate-300">
+          <Construction size={64} />
+       </div>
+       <div>
+          <h3 className="text-xl font-bold text-slate-800 uppercase tracking-tight">{title}</h3>
+          <p className="text-sm text-slate-500 max-w-sm mt-2">
+             Technical fields for this SKU classification are currently being mapped to the V3.5 schema.
+          </p>
+       </div>
+       <div className="bg-brand-50 text-brand-700 px-4 py-2 rounded-lg border border-brand-100 text-xs font-bold uppercase tracking-widest">
+          S1 Technical Review Module (In Development)
+       </div>
+    </div>
+  );
+
   return (
     <FlowShell 
       title="SKU Flow Wizard (FLOW-001)" 
@@ -551,6 +569,36 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                 </FlowStep>
               )}
 
+              {model.step === "TECH_CELL_SCAFFOLD" && (
+                <FlowStep stepTitle="Cell Technical Blueprint" stepHint="Configure chemical and physical energy unit parameters.">
+                  <ScaffoldStep title="Cell Technical Blueprint (Coming Next)" />
+                </FlowStep>
+              )}
+
+              {model.step === "TECH_MODULE_SCAFFOLD" && (
+                <FlowStep stepTitle="Module Technical Blueprint" stepHint="Define grouped cell configuration and busbar specifications.">
+                  <ScaffoldStep title="Module Technical Blueprint (Coming Next)" />
+                </FlowStep>
+              )}
+
+              {model.step === "TECH_PACK_SCAFFOLD" && (
+                <FlowStep stepTitle="Pack Technical Blueprint" stepHint="Establish full integrated battery assembly constraints.">
+                  <ScaffoldStep title="Pack Technical Blueprint (Coming Next)" />
+                </FlowStep>
+              )}
+
+              {model.step === "TECH_BMS_SCAFFOLD" && (
+                <FlowStep stepTitle="BMS Technical Blueprint" stepHint="Configure controller hardware and communication protocols.">
+                  <ScaffoldStep title="BMS Technical Blueprint (Coming Next)" />
+                </FlowStep>
+              )}
+
+              {model.step === "TECH_IOT_SCAFFOLD" && (
+                <FlowStep stepTitle="IoT Technical Blueprint" stepHint="Specify telemetry hardware and network baseline.">
+                  <ScaffoldStep title="IoT Technical Blueprint (Coming Next)" />
+                </FlowStep>
+              )}
+
               {model.step === "TECHNICAL" && (
                 <FlowStep stepTitle={`${model.draft.skuType} Technical Blueprint`} stepHint="Specify immutable technical constants for this entity type.">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto py-4">
@@ -677,7 +725,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                 </button>
               )}
 
-              {(model.step === "BASE_SKU_METADATA" || model.step === "TECHNICAL") && (
+              {(model.step === "BASE_SKU_METADATA" || model.step.startsWith("TECH_") || model.step === "TECHNICAL") && (
                 <>
                   <button onClick={handlePrevStep} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors">Back</button>
                   {model.role === 'Maker' && (
@@ -690,10 +738,10 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                         <Save size={18} /> Save Buffer
                       </button>
                       <button 
-                        onClick={() => model.step === 'BASE_SKU_METADATA' ? handleNextStep() : handleSubmit()}
+                        onClick={() => (model.step === 'BASE_SKU_METADATA' || model.step.startsWith("TECH_")) ? handleNextStep() : handleSubmit()}
                         className={`flex items-center justify-center gap-2 px-8 py-3 bg-brand-600 text-white rounded-lg font-bold text-sm hover:bg-brand-700 transition-all shadow-lg active:scale-95`}
                       >
-                        {model.step === 'BASE_SKU_METADATA' ? 'Technical Blueprint' : 'Release to Review'} <ChevronRight size={18} />
+                        {model.step === 'TECHNICAL' ? 'Release to Review' : 'Next Step'} <ChevronRight size={18} />
                       </button>
                     </>
                   )}
