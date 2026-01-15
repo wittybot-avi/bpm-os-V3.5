@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-SPEC-FIX-03 (UX Scaffolding)
+ * @updated V35-S1-WIZ-SPEC-FIX-04 (Field Enablement)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -75,7 +75,7 @@ import {
 import { useDeviceLayout } from '../../../hooks/useDeviceLayout';
 import { apiFetch } from '../../../services/apiHarness';
 import { SkuType } from '../../../stages/s1/s1Contract';
-import { resolveSpecSchema } from './spec/skuSpecRegistry';
+import { resolveSpecSchema, SkuSpecField } from './spec/skuSpecRegistry';
 
 interface Precondition {
   id: string;
@@ -122,13 +122,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
       loadInstance(instanceId);
     }
   }, [instanceId]);
-
-  // V35-S1-WIZ-SPEC-FIX-01: Spec Registry Resolver Effect
-  useEffect(() => {
-    if (model.draft.skuType) {
-      resolveSpecSchema(model.draft.skuType);
-    }
-  }, [model.draft.skuType]);
 
   const loadInstance = async (id: string) => {
     setModel(m => ({ ...m, isLoading: true, error: null }));
@@ -197,8 +190,14 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     }
 
     if (step === 'SKU_SPECIFICATIONS') {
-      // V35-S1-WIZ-SPEC-FIX-03: No inputs to validate yet in scaffolding phase
-      return true;
+      const sections = resolveSpecSchema(d.skuType);
+      sections.forEach(section => {
+        section.fields.forEach(field => {
+          if (field.required && !d[field.id]) {
+            errors[field.id] = `${field.label} is required`;
+          }
+        });
+      });
     }
 
     setModel(m => ({ ...m, validationErrors: errors }));
@@ -207,14 +206,12 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
 
   const handleNextStep = () => {
     if (validateStep(model.step)) {
-      // Correct resolution using persisted isRevision and skuType from draft
       const next = getNextStepId(model.step, model.draft.isRevision, model.draft.skuType);
       setModel(m => ({ ...m, step: next }));
     }
   };
 
   const handlePrevStep = () => {
-    // Correct resolution using persisted isRevision and skuType from draft
     const prev = getPrevStepId(model.step, model.draft.isRevision, model.draft.skuType);
     setModel(m => ({ ...m, step: prev }));
   };
@@ -374,6 +371,41 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     const next = getNextStepId(model.step, model.draft.isRevision, model.draft.skuType);
     return next === "REVIEW";
   }, [model.step, model.draft.isRevision, model.draft.skuType]);
+
+  const renderInputField = (field: SkuSpecField) => {
+    // Fix: Ensure value is string or number (not boolean) for HTML elements
+    const inputValue = (model.draft[field.id] === true || model.draft[field.id] === false)
+      ? String(model.draft[field.id])
+      : (model.draft[field.id] ?? "");
+
+    const commonProps = {
+      id: field.id,
+      disabled: model.role !== 'Maker',
+      className: `w-full border rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none transition-all ${
+        model.validationErrors[field.id] ? 'border-red-300 bg-red-50' : 'border-slate-300'
+      } ${model.role !== 'Maker' ? 'bg-slate-50 opacity-80 cursor-not-allowed' : 'bg-white'}`,
+      placeholder: field.placeholder || `Enter ${field.label.toLowerCase()}...`,
+      value: inputValue as string | number // Fix: Explicitly casting to allowed input value types
+    };
+
+    if (field.type === 'select') {
+      return (
+        <select {...commonProps} onChange={e => handleUpdateDraft(field.id, e.target.value)}>
+          <option value="">Select...</option>
+          {field.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+        </select>
+      );
+    }
+
+    return (
+      <input 
+        {...commonProps}
+        type={field.type}
+        step={field.type === 'number' ? 'any' : undefined}
+        onChange={e => handleUpdateDraft(field.id, field.type === 'number' ? parseFloat(e.target.value) : e.target.value)}
+      />
+    );
+  };
 
   return (
     <FlowShell 
@@ -555,22 +587,29 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
 
               {model.step === "SKU_SPECIFICATIONS" && (
                 <FlowStep 
-                  stepTitle="SKU Technical Specification" 
-                  stepHint="Review technical parameters required for this category."
+                  stepTitle={`${model.draft.skuType} Technical Specification`} 
+                  stepHint="Establish technical parameters for the selected asset type."
                 >
-                  <div className="space-y-10 max-w-2xl mx-auto py-4">
-                    {/* V35-S1-WIZ-SPEC-FIX-03: Dynamic Section Scaffolding */}
+                  <div className="space-y-10 max-w-3xl mx-auto py-4">
                     {resolveSpecSchema(model.draft.skuType).map(section => (
                       <div key={section.sectionId} className="animate-in fade-in slide-in-from-left-2">
-                        <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-2">
+                        <div className="flex items-center gap-2 mb-6 border-b border-slate-100 pb-2">
                           <Settings2 size={16} className="text-brand-600" />
                           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-widest">{section.sectionTitle}</h3>
                         </div>
-                        <div className="bg-slate-50 border border-dashed border-slate-300 rounded-xl p-8 flex flex-col items-center justify-center text-slate-400 gap-3">
-                           <div className="p-3 bg-white rounded-full shadow-sm">
-                              <Construction size={24} className="text-slate-300" />
-                           </div>
-                           <p className="text-xs font-medium italic">Fields will be enabled in next step</p>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                          {section.fields.map(field => (
+                            <Field 
+                              key={field.id} 
+                              label={`${field.label}${field.required ? ' *' : ''}`} 
+                              id={field.id} 
+                              icon={field.icon} 
+                              error={model.validationErrors[field.id]}
+                            >
+                              {renderInputField(field)}
+                            </Field>
+                          ))}
                         </div>
                       </div>
                     ))}

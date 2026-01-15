@@ -2,7 +2,7 @@
  * SKU Flow Contract (FLOW-001)
  * Canonical definitions for SKU Creation & Blueprint Approval lifecycle.
  * @foundation V34-S1-FLOW-001-BP-01
- * @updated V35-S1-WIZ-FIX-05 (Schema Completion)
+ * @updated V35-S1-WIZ-SPEC-FIX-04 (Schema Expansion)
  */
 
 import type { ApiResult, EntityId, IsoDateTime } from "../../types";
@@ -36,12 +36,20 @@ export interface SkuDraft {
   protocol?: string;            // BMS
   commsType?: string;           // IOT
   
-  // V3.5 Schema Completion Fields
-  coolingType?: string;         // PACK (e.g. Air, Liquid, Phase-Change)
+  // Circular/Facility Integration
+  coolingType?: string;         // PACK
   voltageMin?: number;          // BMS, PACK
   voltageMax?: number;          // BMS, PACK
-  cellTypeRef?: string;         // MODULE (Link to S1 Cell SKU)
-  powerSource?: string;         // IOT (e.g. Internal, Bus-Powered)
+  cellTypeRef?: string;         // MODULE
+  powerSource?: string;         // IOT
+
+  // V3.5-SPEC-FIX-04: New Schema Fields
+  allowedModuleSkus?: string;   // PACK
+  requiredBmsSku?: string;      // PACK
+  chipset?: string;             // BMS
+  supportedChemistries?: string; // BMS
+  firmwarePolicy?: string;      // BMS
+  telemetrySchemaVersion?: string; // IOT
 }
 
 export interface BlueprintRef {
