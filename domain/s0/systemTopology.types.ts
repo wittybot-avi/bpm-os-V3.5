@@ -15,7 +15,7 @@ export type TopologyStatus = 'ACTIVE' | 'SUSPENDED' | 'RETIRED';
 /**
  * Audit trail record for immutable tracking of entity management actions.
  */
-export interface AuditRecord {
+export interface TopologyAudit {
   readonly createdBy: string;
   readonly createdAt: IsoDateTime;
   readonly approvedBy?: string;
@@ -33,33 +33,7 @@ export interface BaseTopologyEntity {
   readonly status: TopologyStatus;
   readonly effectiveFrom: IsoDateTime;
   readonly effectiveTo?: IsoDateTime;
-  readonly audit: AuditRecord;
-}
-
-/**
- * Station: A discrete physical workspace node on a production line.
- * The terminal node in the organization topology hierarchy.
- */
-export interface Station extends BaseTopologyEntity {
-  readonly stationType: string;
-  readonly supportedOperations: readonly string[];
-  readonly deviceBindings: readonly EntityId[]; // List of unique physical device IDs bound to this node
-}
-
-/**
- * Line: A logical grouping of Stations performing a specific functional sequence.
- * Represents a discrete manufacturing capability path.
- */
-export interface Line extends BaseTopologyEntity {
-  readonly stations: readonly Station[];
-}
-
-/**
- * Plant: A physical manufacturing facility containing multiple Lines.
- * Anchored to a specific geographic region and regulatory context.
- */
-export interface Plant extends BaseTopologyEntity {
-  readonly lines: readonly Line[];
+  readonly audit: TopologyAudit;
 }
 
 /**
@@ -67,5 +41,34 @@ export interface Plant extends BaseTopologyEntity {
  * Acts as the root for the multi-facility plant hierarchy.
  */
 export interface Enterprise extends BaseTopologyEntity {
-  readonly plants: readonly Plant[];
+  readonly plantIds: readonly EntityId[];
+}
+
+/**
+ * Plant: A physical manufacturing facility containing multiple Lines.
+ * Anchored to a specific geographic region and regulatory context.
+ */
+export interface Plant extends BaseTopologyEntity {
+  readonly enterpriseId: EntityId;
+  readonly lineIds: readonly EntityId[];
+}
+
+/**
+ * Line: A logical grouping of Stations performing a specific functional sequence.
+ * Represents a discrete manufacturing capability path.
+ */
+export interface Line extends BaseTopologyEntity {
+  readonly plantId: EntityId;
+  readonly stationIds: readonly EntityId[];
+}
+
+/**
+ * Station: A discrete physical workspace node on a production line.
+ * The terminal node in the organization topology hierarchy.
+ */
+export interface Station extends BaseTopologyEntity {
+  readonly lineId: EntityId;
+  readonly stationType: string;
+  readonly supportedOperations: readonly string[];
+  readonly deviceBindings: readonly EntityId[]; // List of unique physical device IDs bound to this node
 }

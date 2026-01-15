@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-BP-01** | Foundation | S0 Topology | **STABLE** | Canonical Enterprise–Plant–Line–Station hierarchy contracts. ID-based relational model defined. Types only. | 2026-01-29 09:00 (IST) |
 | **V35-S1-WIZ-SPEC-FIX-07** | Governance | S1 Wizard Split | **STABLE** | Formally enforced responsibility split in SKU Wizard. BASE step limited to identity/naming/notes; SKU_SPEC step limited to technical definitions. Updated UI headers and hints to reflect strict governance rules. | 2026-01-28 21:00 (IST) |
 | **V35-S1-WIZ-SPEC-FIX-06** | Data Integrity | Wizard Buffer | **STABLE** | Implemented namespaced `specifications` buffer in `SkuDraft` to ensure SKU-type specific data isolation. Partitions are cleared on taxonomy switch to prevent attribute bleed. | 2026-01-28 20:30 (IST) |
 | **V35-S1-WIZ-SPEC-FIX-05** | UX Correctness | Render Logic | **STABLE** | Enforced strict attribute isolation in SKU Wizard. Added `handleTypeChange` to clear specification buffers when switching taxonomy. Hardened `Summary` panel to hide irrelevant attributes (e.g., electrochemistry for IoT). | 2026-01-28 20:00 (IST) |
