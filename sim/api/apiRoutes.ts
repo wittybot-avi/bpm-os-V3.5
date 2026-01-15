@@ -71,7 +71,10 @@ import {
   updateLineHandler,
   createStationHandler,
   updateStationHandler,
-  updateEnterpriseHandler
+  updateEnterpriseHandler,
+  listDeviceClassesHandler,
+  createDeviceClassHandler,
+  updateDeviceClassHandler
 } from "./handlers/s0TopologyHandlers";
 
 export const SIM_API_ROUTES: RouteDef[] = [
@@ -104,9 +107,10 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("GET", "EXACT", "/api/s0/plants", listPlants),
   route("GET", "EXACT", "/api/s0/lines", listLines),
   route("GET", "EXACT", "/api/s0/stations", listStations),
+  route("GET", "EXACT", "/api/s0/device-classes", listDeviceClassesHandler),
 
   /**
-   * S0 Topology Mutations (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15)
+   * S0 Topology Mutations (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15 / PP-16)
    */
   route("PATCH", "EXACT", "/api/s0/enterprises/update", updateEnterpriseHandler),
   route("POST", "EXACT", "/api/s0/plants/create", createPlantHandler),
@@ -115,6 +119,8 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("PATCH", "EXACT", "/api/s0/lines/update", updateLineHandler),
   route("POST", "EXACT", "/api/s0/stations/create", createStationHandler),
   route("PATCH", "EXACT", "/api/s0/stations/update", updateStationHandler),
+  route("POST", "EXACT", "/api/s0/device-classes/create", createDeviceClassHandler),
+  route("PATCH", "EXACT", "/api/s0/device-classes/update", updateDeviceClassHandler),
 
   /**
    * SKU Flow (FLOW-001) - Live Simulated Handlers
@@ -134,6 +140,7 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("POST", "EXACT", "/api/flows/batch/start", startBatchFlow),
   route("POST", "EXACT", "/api/flows/batch/complete", completeBatchFlow),
   route("POST", "EXACT", "/api/flows/batch/cancel", cancelBatchFlow),
+  // Bug fix: use EXACT for get
   route("GET", "EXACT", "/api/flows/batch/get", getBatchFlow),
   route("GET", "EXACT", "/api/flows/batch/list", listBatchFlows),
 
@@ -157,7 +164,6 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("POST", "EXACT", "/api/flows/final-qa/approve", approveFinalQa),
   route("POST", "EXACT", "/api/flows/final-qa/reject", rejectFinalQa),
   route("POST", "EXACT", "/api/flows/final-qa/rework", reworkFinalQa),
-  // Removed duplicate /api/flows/final-qa/get entry
   route("GET", "EXACT", "/api/flows/final-qa/get", getFinalQa),
   route("GET", "EXACT", "/api/flows/final-qa/list", listFinalQa),
 

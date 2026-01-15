@@ -5,7 +5,7 @@
  * @governance S0-ARCH-BP-04
  */
 
-import type { Enterprise, Plant, Line, Station, TopologyAudit } from "../../../domain/s0/systemTopology.types";
+import type { Enterprise, Plant, Line, Station, DeviceClass, TopologyAudit } from "../../../domain/s0/systemTopology.types";
 
 const INITIAL_AUDIT: TopologyAudit = {
   createdBy: "SYSTEM_PROVISIONER",
@@ -70,6 +70,29 @@ let ENTERPRISES: Enterprise[] = [
   }
 ];
 
+let DEVICE_CLASSES: DeviceClass[] = [
+  {
+    id: "DC-SCAN-01",
+    code: "BARCODE_SCANNER",
+    displayName: "Standard Handheld Scanner",
+    status: "ACTIVE",
+    category: "SCANNER",
+    supportedProtocols: ["USB", "REST"],
+    effectiveFrom: "2026-01-01T00:00:00Z",
+    audit: INITIAL_AUDIT
+  },
+  {
+    id: "DC-SCALE-01",
+    code: "DIGITAL_SCALE",
+    displayName: "Precision Floor Scale",
+    status: "ACTIVE",
+    category: "METROLOGY",
+    supportedProtocols: ["MQTT", "RS232"],
+    effectiveFrom: "2026-01-01T00:00:00Z",
+    audit: INITIAL_AUDIT
+  }
+];
+
 /**
  * STORE ACCESSORS (Read-Only)
  */
@@ -78,14 +101,16 @@ export const getEnterprises = (): readonly Enterprise[] => Object.freeze([...ENT
 export const getPlants = (): readonly Plant[] => Object.freeze([...PLANTS]);
 export const getLines = (): readonly Line[] => Object.freeze([...LINES]);
 export const getStations = (): readonly Station[] => Object.freeze([...STATIONS]);
+export const getDeviceClasses = (): readonly DeviceClass[] => Object.freeze([...DEVICE_CLASSES]);
 
 export const getEnterpriseById = (id: string) => ENTERPRISES.find(e => e.id === id);
 export const getPlantById = (id: string) => PLANTS.find(p => p.id === id);
 export const getLineById = (id: string) => LINES.find(l => l.id === id);
 export const getStationById = (id: string) => STATIONS.find(s => s.id === id);
+export const getDeviceClassById = (id: string) => DEVICE_CLASSES.find(dc => dc.id === id);
 
 /**
- * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15)
+ * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15 / PP-16)
  */
 
 export const addPlant = (plant: Plant) => {
@@ -121,4 +146,14 @@ export const updateStation = (id: string, updates: Partial<Station>) => {
 export const updateEnterprise = (id: string, updates: Partial<Enterprise>) => {
   ENTERPRISES = ENTERPRISES.map(e => e.id === id ? { ...e, ...updates } : e);
   return ENTERPRISES.find(e => e.id === id);
+};
+
+export const addDeviceClass = (dc: DeviceClass) => {
+  DEVICE_CLASSES = [...DEVICE_CLASSES, dc];
+  return dc;
+};
+
+export const updateDeviceClass = (id: string, updates: Partial<DeviceClass>) => {
+  DEVICE_CLASSES = DEVICE_CLASSES.map(dc => dc.id === id ? { ...dc, ...updates } : dc);
+  return DEVICE_CLASSES.find(dc => dc.id === id);
 };

@@ -75,3 +75,12 @@ export interface Station extends BaseTopologyEntity {
   readonly supportedOperations: readonly string[];
   readonly deviceBindings: readonly EntityId[]; // List of unique physical device IDs bound to this node
 }
+
+/**
+ * DeviceClass: Functional category of hardware allowed at stations.
+ * Defines supported protocols and capability scope.
+ */
+export interface DeviceClass extends BaseTopologyEntity {
+  readonly category: string;
+  readonly supportedProtocols: readonly string[];
+}

@@ -7,6 +7,7 @@
  * @updated V35-S0-CRUD-PP-13 (Line Mutations)
  * @updated V35-S0-CRUD-PP-14 (Station Mutations)
  * @updated V35-S0-CRUD-PP-15 (Enterprise Mutations)
+ * @updated V35-S0-CAP-PP-16 (Device Class Mutations)
  */
 
 import type { ApiHandler, ApiResponse, ApiRequest } from "../apiTypes";
@@ -15,15 +16,18 @@ import {
   getPlants, 
   getLines, 
   getStations,
+  getDeviceClasses,
   addPlant,
   updatePlant,
   addLine,
   updateLine,
   addStation,
   updateStation,
-  updateEnterprise
+  updateEnterprise,
+  addDeviceClass,
+  updateDeviceClass
 } from "../s0/systemTopology.store";
-import type { Enterprise, Plant, Line, Station } from "../../../domain/s0/systemTopology.types";
+import type { Enterprise, Plant, Line, Station, DeviceClass } from "../../../domain/s0/systemTopology.types";
 
 const ok = (data: any): ApiResponse => ({
   status: 200,
@@ -222,6 +226,53 @@ export const updateStationHandler: ApiHandler = async (req) => {
 
   const updated = updateStation(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Station not found", 404);
+
+  return ok(updated);
+};
+
+/**
+ * GET /api/s0/device-classes
+ */
+export const listDeviceClassesHandler: ApiHandler = async () => {
+  return ok(getDeviceClasses());
+};
+
+/**
+ * POST /api/s0/device-classes/create
+ */
+export const createDeviceClassHandler: ApiHandler = async (req) => {
+  const body = parseBody<Partial<DeviceClass>>(req);
+  if (!body.code || !body.displayName || !body.category) {
+    return err("BAD_REQUEST", "Code, display name, and category are required");
+  }
+
+  const newDc: DeviceClass = {
+    id: `DC-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
+    code: body.code,
+    displayName: body.displayName,
+    status: body.status || 'ACTIVE',
+    category: body.category,
+    supportedProtocols: body.supportedProtocols || [],
+    effectiveFrom: new Date().toISOString(),
+    audit: {
+      createdBy: "API_USER",
+      createdAt: new Date().toISOString()
+    }
+  };
+
+  addDeviceClass(newDc);
+  return ok(newDc);
+};
+
+/**
+ * PATCH /api/s0/device-classes/update
+ */
+export const updateDeviceClassHandler: ApiHandler = async (req) => {
+  const body = parseBody<{ id: string; updates: Partial<DeviceClass> }>(req);
+  if (!body.id) return err("BAD_REQUEST", "Device Class ID is required");
+
+  const updated = updateDeviceClass(body.id, body.updates);
+  if (!updated) return err("NOT_FOUND", "Device Class not found", 404);
 
   return ok(updated);
 };

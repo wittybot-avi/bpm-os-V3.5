@@ -42,7 +42,7 @@ import { getMockS0Context, S0Context } from '../stages/s0/s0Contract';
 import { getS0ActionState, S0ActionId } from '../stages/s0/s0Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
 import { apiFetch } from '../services/apiHarness';
-import type { Enterprise, Plant, Line, Station } from '../domain/s0/systemTopology.types';
+import type { Enterprise, Plant, Line, Station, DeviceClass } from '../domain/s0/systemTopology.types';
 
 interface SystemSetupProps {
   onNavigate?: (view: NavView) => void;
@@ -73,6 +73,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [activePlants, setActivePlants] = useState<Plant[]>([]);
   const [activeLines, setActiveLines] = useState<Line[]>([]);
   const [activeStations, setActiveStations] = useState<Station[]>([]);
+  const [deviceClasses, setDeviceClasses] = useState<DeviceClass[]>([]);
 
   const [selEntId, setSelEntId] = useState<string>('');
   const [selPlantId, setSelPlantId] = useState<string>('');
@@ -88,6 +89,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [editingLine, setEditingLine] = useState<Partial<Line> | null>(null);
   const [editingStation, setEditingStation] = useState<Partial<Station> | null>(null);
   const [editingEnterprise, setEditingEnterprise] = useState<Partial<Enterprise> | null>(null);
+  const [editingDeviceClass, setEditingDeviceClass] = useState<Partial<DeviceClass> | null>(null);
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
 
   // 1. Initial Load: Enterprises
@@ -231,6 +233,16 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
        };
        loadEnterprises();
+    } else if (activeCategory === 'DEVICES') {
+       const loadDeviceClasses = async () => {
+          setIsEntitiesLoading(true);
+          try {
+             const res = await apiFetch('/api/s0/device-classes');
+             const data = await res.json();
+             if (data.ok) setDeviceClasses(data.data);
+          } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
+       };
+       loadDeviceClasses();
     }
   }, [activeCategory, selPlantId, selLineId]);
 
@@ -284,6 +296,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     setEditingLine(null);
     setEditingStation(null);
     setEditingEnterprise(null);
+    setEditingDeviceClass(null);
   };
 
   const closeManager = () => {
@@ -292,9 +305,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     setEditingLine(null);
     setEditingStation(null);
     setEditingEnterprise(null);
+    setEditingDeviceClass(null);
   };
 
-  // Enterprise CRUD (V35-S0-CRUD-PP-15)
+  // Enterprise CRUD
   const handleUpdateEnterprise = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingEnterprise || !editingEnterprise.id || isFormSubmitting) return;
@@ -315,7 +329,6 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         });
         setEditingEnterprise(null);
         setActiveTab('LIST');
-        // Refresh local list and main context bar
         const entRes = await apiFetch('/api/s0/enterprises');
         const entData = await entRes.json();
         if (entData.ok) setEnterprises(entData.data);
@@ -385,7 +398,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     }
   };
 
-  // Line CRUD (V35-S0-CRUD-PP-13)
+  // Line CRUD
   const handleCreateOrUpdateLine = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingLine || isFormSubmitting || !selPlantId) return;
@@ -449,7 +462,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     }
   };
 
-  // Station CRUD (V35-S0-CRUD-PP-14)
+  // Station CRUD
   const handleCreateOrUpdateStation = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingStation || isFormSubmitting || !selLineId) return;
@@ -505,6 +518,70 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         const stRes = await apiFetch(`/api/s0/stations?lineId=${selLineId}`);
         const stData = await stRes.json();
         if (stData.ok) setActiveStations(stData.data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsFormSubmitting(false);
+    }
+  };
+
+  // Device Class CRUD (V35-S0-CAP-PP-16)
+  const handleCreateOrUpdateDeviceClass = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDeviceClass || isFormSubmitting) return;
+    setIsFormSubmitting(true);
+
+    try {
+      const isEdit = !!editingDeviceClass.id;
+      const endpoint = isEdit ? '/api/s0/device-classes/update' : '/api/s0/device-classes/create';
+      const method = isEdit ? 'PATCH' : 'POST';
+      const body = isEdit 
+        ? { id: editingDeviceClass.id, updates: editingDeviceClass } 
+        : editingDeviceClass;
+
+      const res = await apiFetch(endpoint, { method, body: JSON.stringify(body) });
+      const result = await res.json();
+      
+      if (result.ok) {
+        emitAuditEvent({
+          stageId: 'S0',
+          actionId: 'MANAGE_DEVICE_CLASSES',
+          actorRole: role,
+          message: `${isEdit ? 'Updated' : 'Created'} device class: ${result.data.displayName}`
+        });
+        setEditingDeviceClass(null);
+        setActiveTab('LIST');
+        const dcRes = await apiFetch('/api/s0/device-classes');
+        const dcData = await dcRes.json();
+        if (dcData.ok) setDeviceClasses(dcData.data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFormSubmitting(false);
+    }
+  };
+
+  const handleSuspendDeviceClass = async (id: string) => {
+    if (isFormSubmitting) return;
+    setIsFormSubmitting(true);
+    try {
+      const res = await apiFetch('/api/s0/device-classes/update', {
+        method: 'PATCH',
+        body: JSON.stringify({ id, updates: { status: 'SUSPENDED' } })
+      });
+      const result = await res.json();
+      if (result.ok) {
+        emitAuditEvent({
+          stageId: 'S0',
+          actionId: 'MANAGE_DEVICE_CLASSES',
+          actorRole: role,
+          message: `Suspended device class: ${result.data.displayName}`
+        });
+        const dcRes = await apiFetch('/api/s0/device-classes');
+        const dcData = await dcRes.json();
+        if (dcData.ok) setDeviceClasses(dcData.data);
       }
     } catch (e) {
       console.error(e);
@@ -732,7 +809,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                {s0Context.featureFlags.map(flag => (
                  <div key={flag.id} className={`p-4 rounded-lg border transition-all ${flag.isEnabled ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
                     <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-2"><span className="font-bold text-slate-800 text-sm">{flag.label}</span><span className="text-[8px] px-1 py-0.5 rounded font-bold border border-slate-200">{flag.scope}</span></div>
+                      <div className="flex items-center gap-2"><span className="font-bold text-slate-800 text-sm">{flag.label}</span><span className="text-[8px] font-bold px-1 py-0.5 rounded border border-slate-200">{flag.scope}</span></div>
                       <button onClick={() => handleToggleFlag(flag.id)} disabled={role !== UserRole.SYSTEM_ADMIN}>
                         {flag.isEnabled ? <ToggleRight className="text-brand-600" size={24} /> : <ToggleLeft className="text-slate-300" size={24} />}
                       </button>
@@ -857,7 +934,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <div className="flex items-center gap-3">
                   <div className="p-2 bg-brand-600 text-white rounded-lg"><Settings size={20} /></div>
                   <div>
-                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory === 'LINES' ? 'Lines' : activeCategory === 'WORKSTATIONS' ? 'Stations' : activeCategory === 'ENTERPRISE' ? 'Enterprises' : activeCategory}</h2>
+                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory === 'LINES' ? 'Lines' : activeCategory === 'WORKSTATIONS' ? 'Stations' : activeCategory === 'ENTERPRISE' ? 'Enterprises' : activeCategory === 'DEVICES' ? 'Device Classes' : activeCategory}</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Master Data Management</p>
                   </div>
                </div>
@@ -867,14 +944,14 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             {/* Tabs */}
             <div className="flex border-b border-slate-200 shrink-0">
                <button 
-                 onClick={() => { setActiveTab('LIST'); setEditingPlant(null); setEditingLine(null); setEditingStation(null); setEditingEnterprise(null); }}
+                 onClick={() => { setActiveTab('LIST'); setEditingPlant(null); setEditingLine(null); setEditingStation(null); setEditingEnterprise(null); setEditingDeviceClass(null); }}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'LIST' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50'}`}
                >
                  <List size={14} /> Repository List
                </button>
                <button 
                  onClick={() => setActiveTab('DETAILS')}
-                 disabled={!['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE'].includes(activeCategory || '')}
+                 disabled={!['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE', 'DEVICES'].includes(activeCategory || '')}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'DETAILS' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed'}`}
                >
                  <FileText size={14} /> Definition Details
@@ -1104,6 +1181,60 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                       </form>
                     )}
                   </>
+               ) : activeCategory === 'DEVICES' ? (
+                  <>
+                    {activeTab === 'LIST' ? (
+                      <div className="p-0">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                           <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Global Device Classes</span>
+                           <button 
+                            onClick={() => { setEditingDeviceClass({ displayName: '', code: '', status: 'ACTIVE', category: 'GENERAL', supportedProtocols: [] }); setActiveTab('DETAILS'); }}
+                            className="flex items-center gap-1 text-[10px] font-bold text-brand-600 hover:text-brand-800"
+                          >
+                            <Plus size={12} /> ADD NEW CLASS
+                          </button>
+                        </div>
+                        {isEntitiesLoading ? (
+                          <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-3">
+                            <Loader2 size={24} className="animate-spin" />
+                            <span className="text-xs font-bold uppercase">Fetching Classes...</span>
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-slate-100">
+                            {deviceClasses.map(dc => (
+                              <div key={dc.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center group">
+                                 <div className="flex items-center gap-3">
+                                    <div className={`w-2 h-2 rounded-full ${dc.status === 'ACTIVE' ? 'bg-green-500' : 'bg-amber-500'}`} />
+                                    <div>
+                                       <div className="text-sm font-bold text-slate-800">{dc.displayName}</div>
+                                       <div className="text-[10px] font-mono text-slate-400 uppercase tracking-tighter">Code: {dc.code} • Category: {dc.category}</div>
+                                    </div>
+                                 </div>
+                                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <button onClick={() => { setEditingDeviceClass(dc); setActiveTab('DETAILS'); }} className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors" title="Edit Class Definition"><Edit2 size={14} /></button>
+                                    {dc.status === 'ACTIVE' && <button onClick={() => handleSuspendDeviceClass(dc.id)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Suspend Class"><Ban size={14} /></button>}
+                                 </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <form onSubmit={handleCreateOrUpdateDeviceClass} className="p-6 space-y-6">
+                         <div className="flex items-center gap-3 mb-2"><div className="p-2 bg-brand-50 rounded text-brand-600"><Activity size={18} /></div><h3 className="font-bold text-slate-700">{editingDeviceClass?.id ? 'Edit Device Class' : 'Add New Device Class'}</h3></div>
+                         <div className="space-y-4 text-sm">
+                            <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Class Name</label><input required type="text" className="w-full border border-slate-300 rounded p-2.5 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="e.g. Standard Handheld Scanner" value={editingDeviceClass?.displayName || ''} onChange={e => setEditingDeviceClass(dc => ({ ...dc!, displayName: e.target.value }))} /></div>
+                            <div className="grid grid-cols-2 gap-4">
+                               <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Class Code</label><input required type="text" className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none font-mono uppercase" placeholder="DC-SCAN-01" value={editingDeviceClass?.code || ''} onChange={e => setEditingDeviceClass(dc => ({ ...dc!, code: e.target.value }))} /></div>
+                               <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Category</label><select className="w-full border border-slate-300 rounded p-2.5 outline-none bg-white" value={editingDeviceClass?.category || 'GENERAL'} onChange={e => setEditingDeviceClass(dc => ({ ...dc!, category: e.target.value }))}><option value="GENERAL">GENERAL</option><option value="SCANNER">SCANNER</option><option value="METROLOGY">METROLOGY</option><option value="ASSEMBLY_TOOL">ASSEMBLY_TOOL</option></select></div>
+                            </div>
+                            <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Initial Status</label><select className="w-full border border-slate-300 rounded p-2.5 outline-none bg-white" value={editingDeviceClass?.status || 'ACTIVE'} onChange={e => setEditingDeviceClass(dc => ({ ...dc!, status: e.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option></select></div>
+                            <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supported Protocols (Comma separated)</label><input type="text" className="w-full border border-slate-300 rounded p-2.5 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="REST, MQTT, USB" value={editingDeviceClass?.supportedProtocols?.join(', ') || ''} onChange={e => setEditingDeviceClass(dc => ({ ...dc!, supportedProtocols: e.target.value.split(',').map(p => p.trim()).filter(Boolean) }))} /></div>
+                         </div>
+                         <div className="pt-6 flex gap-3"><button type="button" onClick={() => { setEditingDeviceClass(null); setActiveTab('LIST'); }} className="px-6 py-2.5 rounded text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">CANCEL</button><button type="submit" disabled={isFormSubmitting} className="flex-1 bg-brand-600 hover:bg-brand-700 text-white rounded font-bold text-sm py-2.5 shadow-sm transition-all flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{editingDeviceClass?.id ? 'UPDATE CLASS' : 'CREATE CLASS'}</button></div>
+                      </form>
+                    )}
+                  </>
                ) : (
                  <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center">
                     <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center text-slate-300 mb-4"><Lock size={32} /></div>
@@ -1118,7 +1249,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider">Close Panel</button>
                <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
                   <ShieldCheck size={12} />
-                  {['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE'].includes(activeCategory || '') ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
+                  {['ORGANIZATION', 'LINES', 'WORKSTATIONS', 'ENTERPRISE', 'DEVICES'].includes(activeCategory || '') ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
                </div>
             </footer>
           </div>
