@@ -16,7 +16,9 @@ import {
   CheckCircle2,
   ArrowRight,
   Radar,
-  Cpu
+  Cpu,
+  Layout,
+  Server
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -56,7 +58,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         stageId: 'S0',
         actionId: 'EDIT_PLANT_DETAILS',
         actorRole: role,
-        message: 'Updated facility configuration timestamp'
+        message: 'Updated facility configuration hierarchy'
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -72,7 +74,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         stageId: 'S0',
         actionId: 'MANAGE_LINES',
         actorRole: role,
-        message: `Provisioned new production line (Total: ${s0Context.activeLines + 1})`
+        message: `Provisioned new manufacturing line configuration (Total: ${s0Context.activeLines + 1})`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -89,7 +91,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         stageId: 'S0',
         actionId: 'UPDATE_REGULATIONS',
         actorRole: role,
-        message: 'Synchronized regulatory definitions from cloud'
+        message: 'Synchronized regulatory master definitions'
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -106,7 +108,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         stageId: 'S0',
         actionId: 'SYNC_SOP',
         actorRole: role,
-        message: `Published SOP Revision ${nextVer}`
+        message: `Locked System Baseline Version ${nextVer}`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -119,7 +121,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         stageId: 'S0',
         actionId: 'NAV_NEXT_STAGE',
         actorRole: role,
-        message: 'Navigated to S1: SKU & Blueprint from S0'
+        message: 'Navigated to S1: SKU Master from S0 Configuration'
       });
       onNavigate('sku_blueprint');
     }
@@ -138,7 +140,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       <div className="h-full flex flex-col items-center justify-center text-slate-500">
         <ShieldAlert size={64} className="text-red-400 mb-4" />
         <h2 className="text-xl font-bold text-slate-700">Access Restricted</h2>
-        <p>Your role ({role}) does not have permission to view System Setup.</p>
+        <p>Your role ({role}) does not have permission to view Master Data Configuration.</p>
       </div>
     );
   }
@@ -153,24 +155,24 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300 pb-12">
-      {/* Standard Header */}
+      {/* Configuration Header */}
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
            <div className="flex items-center gap-1 text-xs text-slate-500 mb-1 font-medium uppercase tracking-wider">
-              System Setup <span className="text-slate-300">/</span> Overview
+              Master Data <span className="text-slate-300">/</span> System Topology
            </div>
            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
              <Settings className="text-brand-600" size={24} />
-             System Setup (S0)
+             System Configuration (S0)
            </h1>
-           <p className="text-slate-500 text-sm mt-1">Plant configuration, regulatory context, and user registry.</p>
+           <p className="text-slate-500 text-sm mt-1">Authorized plant topology, capability matrix, and regulatory foundations.</p>
         </div>
         <div className="flex flex-col items-end gap-1">
-          <div className="bg-amber-100 text-amber-800 px-3 py-1 rounded text-xs font-bold border border-amber-200">
-            READ ONLY MODE
+          <div className="bg-slate-100 text-slate-600 px-3 py-1 rounded text-[10px] font-bold border border-slate-200 uppercase tracking-widest">
+            Configuration Layer
           </div>
           <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-            <Database size={10} /> Context Loaded: {s0Context.status}
+            <Server size={10} /> Node State: {s0Context.status}
           </div>
         </div>
       </div>
@@ -178,11 +180,11 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       <StageStateBanner stageId="S0" />
       <PreconditionsPanel stageId="S0" />
 
-      {/* Recent Local Activity Panel */}
+      {/* Recent Config Activity Panel */}
       {localEvents.length > 0 && (
         <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-6 animate-in slide-in-from-top-2">
            <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase mb-2">
-              <History size={14} /> Recent S0 Activity (Session)
+              <History size={14} /> System Configuration Log
            </div>
            <div className="space-y-2">
               {localEvents.slice(0, 3).map(evt => (
@@ -197,18 +199,18 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         </div>
       )}
 
-      {/* Next Step Guidance Panel */}
+      {/* Configuration Milestone Guidance */}
       <div className={`bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-in slide-in-from-top-3 ${!onNavigate ? 'hidden' : ''}`}>
         <div className="flex items-start gap-3">
           <div className="p-2 bg-blue-100 rounded-full text-blue-600">
-            <ArrowRight size={20} />
+            <CheckCircle2 size={20} />
           </div>
           <div>
-            <h3 className="font-bold text-blue-900 text-sm">Next Recommended Action</h3>
+            <h3 className="font-bold text-blue-900 text-sm">Configuration Milestone</h3>
             <p className="text-xs text-blue-700 mt-1 max-w-lg">
               {isReadyForNext 
-                ? "System configuration is valid. Proceed to Product Definition (S1) to define SKUs and blueprints." 
-                : "Configuration pending. Complete S0 setup actions to unlock downstream stages."}
+                ? "Plant topology is validated. You may now define technical SKU specifications in Product Master (S1)." 
+                : "Base configuration is incomplete. Define required facility parameters to unlock product definition."}
             </p>
           </div>
         </div>
@@ -225,10 +227,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                disabled={!isReadyForNext}
                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
              >
-               <Cpu size={14} /> Go to S1: Blueprint
+               <Cpu size={14} /> Open SKU Master (S1)
              </button>
              {!isReadyForNext && (
-                <span className="text-[9px] text-red-500 mt-1 font-medium">Preconditions Not Met</span>
+                <span className="text-[9px] text-red-500 mt-1 font-medium">Config Incomplete</span>
              )}
            </div>
         </div>
@@ -237,39 +239,39 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       {/* Grid Layout */}
       <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${isSimulating ? 'opacity-70 pointer-events-none' : ''}`}>
         
-        {/* Plant Overview */}
+        {/* Plant Hierarchy */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-brand-700">
+            <div className="flex items-center gap-2 text-slate-700">
               <Factory size={20} />
-              <h2 className="font-bold">Plant / Facility Overview</h2>
+              <h2 className="font-bold">Facility Hierarchy</h2>
             </div>
             <button 
               disabled={!editPlantState.enabled}
               onClick={handleEditPlant}
-              className="text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-brand-600 font-medium transition-colors"
+              className="text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-brand-600 font-bold transition-colors"
               title={editPlantState.reason}
             >
-              <Edit2 size={12} /> Edit
+              <Edit2 size={12} /> PROVISION
             </button>
           </div>
           
           <div className="space-y-3 text-sm flex-1">
              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Facility Name</span>
+                <span className="text-slate-500">Identity</span>
                 <span className="font-medium text-slate-800">{s0Context.plantName}</span>
              </div>
              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Location</span>
+                <span className="text-slate-500">Node Location</span>
                 <span className="font-medium text-slate-800">{s0Context.region}</span>
              </div>
              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Facility ID</span>
-                <span className="font-mono text-slate-600">{s0Context.plantId}</span>
+                <span className="text-slate-500">Master Record ID</span>
+                <span className="font-mono text-slate-600 text-xs">{s0Context.plantId}</span>
              </div>
              <div className="flex justify-between pt-1">
-                <span className="text-slate-500">Config Last Updated</span>
-                <span className="font-mono text-xs text-slate-400">{s0Context.configLastUpdated}</span>
+                <span className="text-slate-500">Last Baseline Update</span>
+                <span className="font-mono text-[10px] text-slate-400">{s0Context.configLastUpdated}</span>
              </div>
           </div>
           
@@ -278,35 +280,41 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           )}
         </div>
 
-        {/* Manufacturing Lines */}
+        {/* Manufacturing Line Definitions */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-brand-700">
-              <Settings size={20} />
-              <h2 className="font-bold">Manufacturing Lines</h2>
+            <div className="flex items-center gap-2 text-slate-700">
+              <Layout size={20} />
+              <h2 className="font-bold">Manufacturing Topology</h2>
             </div>
             <button 
               disabled={!manageLinesState.enabled}
               onClick={handleAddLine}
-              className="text-xs flex items-center gap-1 px-2 py-1 rounded bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed font-medium transition-colors border border-transparent disabled:border-slate-200"
+              className="text-xs flex items-center gap-1 px-2 py-1 rounded bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed font-bold transition-colors border border-transparent disabled:border-slate-200"
               title={manageLinesState.reason}
             >
-              <Plus size={12} /> Add Line
+              <Plus size={12} /> ADD LINE CONFIG
             </button>
           </div>
 
           <div className="space-y-3 flex-1">
              <div className="flex items-center justify-between p-3 bg-slate-50 rounded border border-slate-200">
-                <span className="font-medium text-slate-700">Pack Assembly Line A</span>
-                <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-bold">ACTIVE</span>
+                <div>
+                   <div className="font-bold text-slate-700 text-xs">Pack Assembly Line A</div>
+                   <div className="text-[10px] text-slate-400">UID: LINE-A | Capability: LFP/NMC</div>
+                </div>
+                <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] rounded-full font-bold">READY</span>
              </div>
              <div className="flex items-center justify-between p-3 bg-slate-50 rounded border border-slate-200 opacity-75">
-                <span className="font-medium text-slate-700">Module Assembly Line B</span>
-                <span className="px-2 py-0.5 bg-slate-200 text-slate-600 text-xs rounded-full font-bold">MAINTENANCE</span>
+                <div>
+                   <div className="font-bold text-slate-700 text-xs">Module Assembly Line B</div>
+                   <div className="text-[10px] text-slate-400">UID: LINE-B | Capability: PRISMATIC</div>
+                </div>
+                <span className="px-2 py-0.5 bg-slate-200 text-slate-600 text-[10px] rounded-full font-bold">LOCKED</span>
              </div>
              {s0Context.activeLines > 2 && (
-               <div className="p-2 text-center text-xs text-slate-500 italic bg-slate-50 rounded border border-dashed border-slate-200">
-                 + {s0Context.activeLines - 2} Additional Lines Provisioned
+               <div className="p-2 text-center text-[10px] text-slate-500 font-bold uppercase bg-slate-50 rounded border border-dashed border-slate-200">
+                 + {s0Context.activeLines - 2} Additional Definitions Provisioned
                </div>
              )}
           </div>
@@ -316,28 +324,28 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           )}
         </div>
 
-        {/* Regulatory Context */}
+        {/* Regulatory Definitions */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
            <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-brand-700">
+            <div className="flex items-center gap-2 text-slate-700">
               <Globe size={20} />
-              <h2 className="font-bold">Regulatory Context</h2>
+              <h2 className="font-bold">Regulatory Framework</h2>
             </div>
             <button 
               disabled={!updateRegsState.enabled}
               onClick={handleSyncRegs}
-              className="text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 font-medium transition-colors"
+              className="text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 font-bold transition-colors"
               title={updateRegsState.reason}
             >
-              <RefreshCw size={12} /> Sync
+              <RefreshCw size={12} /> SYNC MASTER
             </button>
           </div>
 
           <div className="flex flex-wrap gap-2 flex-1 content-start">
-             <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-xs font-semibold">AIS-156 Amd 3</span>
-             <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-xs font-semibold">EU Battery Reg 2023/1542</span>
-             <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-xs font-semibold">PLI Scheme Compliant</span>
-             <span className="px-3 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded text-xs font-semibold">Battery Aadhaar Enabled</span>
+             <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold uppercase">AIS-156 Amd 3</span>
+             <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold uppercase">EU-2023/1542</span>
+             <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold uppercase">PLI-ELIGIBLE</span>
+             <span className="px-3 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded text-[10px] font-bold uppercase">BATT-AADHAAR-V1</span>
           </div>
 
           {!updateRegsState.enabled && (
@@ -345,35 +353,35 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           )}
         </div>
 
-        {/* SOP Version & Governance */}
+        {/* System Baseline */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
            <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-brand-700">
+            <div className="flex items-center gap-2 text-slate-700">
               <FileText size={20} />
-              <h2 className="font-bold">SOP Governance</h2>
+              <h2 className="font-bold">System Baseline</h2>
             </div>
             <button 
               disabled={!syncSopState.enabled}
               onClick={handlePublishSOP}
-              className="text-xs flex items-center gap-1 px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed text-slate-700 font-medium transition-colors"
+              className="text-xs flex items-center gap-1 px-2 py-1 rounded bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed font-bold transition-colors shadow-sm"
               title={syncSopState.reason}
             >
-              <Lock size={12} /> Publish
+              <Lock size={12} /> FREEZE CONFIG
             </button>
           </div>
 
            <div className="space-y-3 text-sm flex-1">
              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Active SOP Version</span>
+                <span className="text-slate-500">Active SOP Release</span>
                 <span className="font-mono font-bold text-brand-600">{APP_VERSION}</span>
              </div>
              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Internal Revision</span>
-                <span className="font-mono text-slate-600">{s0Context.activeSopVersion}</span>
+                <span className="text-slate-500">Topology Revision</span>
+                <span className="font-mono text-slate-600 text-xs">{s0Context.activeSopVersion}</span>
              </div>
              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Last Audit</span>
-                <span className="font-medium text-slate-800">2025-12-15</span>
+                <span className="text-slate-500">Config Maturity</span>
+                <span className="font-bold text-green-600 text-[10px] uppercase">Validated</span>
              </div>
           </div>
 
@@ -384,36 +392,36 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
 
       </div>
       
-      {/* Role Summary */}
+      {/* Role Configuration Map */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
-          <div className="flex items-center gap-2 mb-4 text-brand-700">
+          <div className="flex items-center gap-2 mb-4 text-slate-700">
             <Users size={20} />
-            <h2 className="font-bold">User Role Summary</h2>
+            <h2 className="font-bold">User Capability Matrix</h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
+            <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
                 <tr>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider">Role</th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider">Access Level</th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-right">Active Sessions</th>
+                  <th className="px-4 py-3 font-bold uppercase tracking-wider">Role Entity</th>
+                  <th className="px-4 py-3 font-bold uppercase tracking-wider">System Access Scope</th>
+                  <th className="px-4 py-3 font-bold uppercase tracking-wider text-right">Provisioned Nodes</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 text-slate-700">
                 <tr>
-                  <td className="px-4 py-3 text-slate-800 font-medium">System Admin</td>
-                  <td className="px-4 py-3 text-slate-600">Full Access</td>
-                  <td className="px-4 py-3 font-mono text-right">1</td>
+                  <td className="px-4 py-3 font-bold">System Admin</td>
+                  <td className="px-4 py-3">Authored Configuration / Topology Control</td>
+                  <td className="px-4 py-3 font-mono text-right">GLOBAL</td>
                 </tr>
                  <tr>
-                  <td className="px-4 py-3 text-slate-800 font-medium">Management</td>
-                  <td className="px-4 py-3 text-slate-600">Read / Audit</td>
-                  <td className="px-4 py-3 font-mono text-right">2</td>
+                  <td className="px-4 py-3 font-bold">Management</td>
+                  <td className="px-4 py-3">Performance Audit / Topology Oversight</td>
+                  <td className="px-4 py-3 font-mono text-right">PLANT-1</td>
                 </tr>
                  <tr>
-                  <td className="px-4 py-3 text-slate-800 font-medium">Operator</td>
-                  <td className="px-4 py-3 text-slate-600">Execution Only</td>
-                  <td className="px-4 py-3 font-mono text-right">14</td>
+                  <td className="px-4 py-3 font-bold">Operator</td>
+                  <td className="px-4 py-3">Task Execution / SOP Compliance</td>
+                  <td className="px-4 py-3 font-mono text-right">STATION-LEVEL</td>
                 </tr>
               </tbody>
             </table>
