@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-WIZ-SPEC-FIX-05** | UX Correctness | Render Logic | **STABLE** | Enforced strict attribute isolation in SKU Wizard. Added `handleTypeChange` to clear specification buffers when switching taxonomy. Hardened `Summary` panel to hide irrelevant attributes (e.g., electrochemistry for IoT). | 2026-01-28 20:00 (IST) |
 | **V35-S1-WIZ-SPEC-FIX-04** | Schema Enablement | Field Definitions | **STABLE** | Defined minimum required fields for CELL, MODULE, PACK, BMS, and IOT in `SKU_SPEC_REGISTRY`. Enabled dynamic input rendering and buffer saving in `SkuFlowWizard`. | 2026-01-28 19:30 (IST) |
 | **V35-S1-WIZ-SPEC-FIX-03** | UX Scaffolding | Dynamic Sections | **STABLE** | Implemented dynamic rendering of technical sections in `SKU_SPECIFICATIONS` step using `SKU_SPEC_REGISTRY`. Added placeholders for future input fields. | 2026-01-28 19:00 (IST) |
 | **V35-S1-WIZ-SPEC-FIX-02** | Architecture | Step Splitting | **STABLE** | Formalized split between `BASE_SKU_METADATA` and dynamic `SKU_SPECIFICATIONS`. Consolidated technical input rendering into a single registry-driven step. | 2026-01-28 18:30 (IST) |

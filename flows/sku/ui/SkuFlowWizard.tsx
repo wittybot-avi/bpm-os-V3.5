@@ -1,26 +1,16 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-SPEC-FIX-04 (Field Enablement)
+ * @updated V35-S1-WIZ-SPEC-FIX-05 (UX Correctness)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   CheckCircle2, 
-  Send, 
   RotateCcw, 
   Save, 
-  User, 
   ChevronRight, 
-  AlertTriangle, 
   ShieldCheck,
-  XCircle,
-  FileText,
-  ChevronDown,
-  ChevronUp,
-  Monitor,
-  Tablet,
-  Smartphone,
   Cloud,
   AlertCircle,
   Loader2,
@@ -32,36 +22,28 @@ import {
   Zap,
   Radio,
   Info,
-  Beaker,
   Settings2,
-  BoxSelect,
-  Globe,
   Lock,
-  Unlock,
-  Link2,
   FileSignature,
-  ArrowRight,
   ArrowLeft,
-  Gavel,
   ClipboardCheck,
   Ban,
   Activity,
-  Construction,
   FlaskConical,
   Wind,
-  Cable
+  Cable,
+  // Added missing icons to fix errors on lines 438 and 544
+  Monitor,
+  Tablet,
+  AlertTriangle
 } from 'lucide-react';
 import { FlowShell, FlowStep, FlowFooter } from '../../../components/flow';
 import { 
-  getAllowedSkuActions, 
-  isActionAllowed, 
   SkuDraft,
   SkuFlowRole,
   SKU_FLOW_ENDPOINTS,
   type CreateSkuFlowReq,
   type SubmitSkuForReviewReq,
-  type ReviewSkuReq,
-  type ApproveSkuReq,
   type SkuFlowInstance,
 } from '../index';
 import { 
@@ -106,7 +88,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
   });
 
   // Mock Preconditions State
-  const [preconditions, setPreconditions] = useState<Precondition[]>([
+  const [preconditions] = useState<Precondition[]>([
     { id: 'ecr', label: 'ECR Approval', status: 'MET', severity: 'HARD', description: 'Engineering Change Request must be formally approved in PLM.' },
     { id: 'plm', label: 'PLM Sync', status: 'MET', severity: 'HARD', description: 'Master Data synchronization with legacy PLM baseline.' },
     { id: 'reg', label: 'Regulatory DB', status: 'NOT_MET', severity: 'SOFT', description: 'External Regulatory Database connectivity (Optional for Draft).' },
@@ -141,13 +123,54 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
   };
 
   const handleUpdateDraft = (field: keyof SkuDraft, value: any) => {
-    // Only Maker can update draft
     if (model.role !== 'Maker' && model.state === 'Draft') return;
     
     setModel(m => ({
       ...m,
       draft: { ...m.draft, [field]: value },
       validationErrors: { ...m.validationErrors, [field]: '' }
+    }));
+  };
+
+  /**
+   * specialized handler to prevent technical specification bleed when 
+   * switching taxonomy during the INIT step.
+   */
+  const handleTypeChange = (type: SkuType) => {
+    if (model.role !== 'Maker') return;
+    
+    setModel(m => ({
+      ...m,
+      draft: { 
+        ...m.draft, 
+        skuType: type,
+        // Reset all optional tech fields
+        chemistry: undefined,
+        formFactor: undefined,
+        nominalVoltage: undefined,
+        capacityAh: undefined,
+        energyKwh: undefined,
+        seriesConfig: undefined,
+        parallelConfig: undefined,
+        cellCount: undefined,
+        moduleCount: undefined,
+        hwVersion: undefined,
+        fwBaseline: undefined,
+        protocol: undefined,
+        commsType: undefined,
+        coolingType: undefined,
+        voltageMin: undefined,
+        voltageMax: undefined,
+        cellTypeRef: undefined,
+        powerSource: undefined,
+        allowedModuleSkus: undefined,
+        requiredBmsSku: undefined,
+        chipset: undefined,
+        supportedChemistries: undefined,
+        firmwarePolicy: undefined,
+        telemetrySchemaVersion: undefined
+      },
+      validationErrors: {}
     }));
   };
 
@@ -179,7 +202,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     setModel(m => ({ ...m, isSyncing: false, error: message }));
   };
 
-  // Validation Logic
   const validateStep = (step: WizardStepId): boolean => {
     const errors: Record<string, string> = {};
     const d = model.draft;
@@ -194,7 +216,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
       sections.forEach(section => {
         section.fields.forEach(field => {
           if (field.required && !d[field.id]) {
-            errors[field.id] = `${field.label} is required`;
+            errors[field.id as string] = `${field.label} is required`;
           }
         });
       });
@@ -232,7 +254,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
         if (result.ok) syncModel(result.data);
         else handleApiError(result.error);
       } else {
-        // Update simulation
         setTimeout(() => setModel(m => ({ ...m, isSyncing: false, error: null })), 500);
       }
     } catch (e) {
@@ -277,10 +298,8 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     }
   };
 
-  // Precondition Logic
   const areHardGatesMet = preconditions.filter(p => p.severity === 'HARD').every(p => p.status === 'MET');
 
-  // Task Instruction Generation
   const taskInstruction = useMemo(() => {
     const s = model.state;
     const r = model.role;
@@ -305,7 +324,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     return "Initialize SKU definition.";
   }, [model.state, model.role]);
 
-  // UI Components
   const Field = ({ label, id, error, children, icon: Icon }: { label: string, id: string, error?: string, children: React.ReactNode, icon?: React.ElementType }) => (
     <div className="space-y-1.5">
       <label htmlFor={id} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
@@ -317,30 +335,39 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     </div>
   );
 
-  const Summary = () => (
-    <div className="bg-slate-50 p-4 rounded border border-slate-200 shadow-inner grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
-      <div>
-        <label className="text-[9px] uppercase font-bold text-slate-400">SKU Profile</label>
-        <div className="font-bold text-slate-800">{model.draft.skuCode || '--'} <span className="font-normal text-slate-400 ml-1">({model.draft.skuType})</span></div>
-      </div>
-      <div>
-        <label className="text-[9px] uppercase font-bold text-slate-400">Intent</label>
-        <div className="text-slate-600 font-medium">{model.draft.isRevision ? 'Revision' : 'Greenfield'}</div>
-      </div>
-      {model.draft.chemistry && (
+  /**
+   * UX Correctness Fix: Only show attributes relevant to the SKU Taxonomy.
+   */
+  const Summary = () => {
+    const { skuType, chemistry, nominalVoltage, skuCode, isRevision } = model.draft;
+    const isElectrochemistry = skuType === 'CELL' || skuType === 'MODULE' || skuType === 'PACK';
+    const isVoltageRelevant = skuType === 'CELL' || skuType === 'PACK' || skuType === 'BMS';
+
+    return (
+      <div className="bg-slate-50 p-4 rounded border border-slate-200 shadow-inner grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
         <div>
-          <label className="text-[9px] uppercase font-bold text-slate-400">Chemistry</label>
-          <div className="text-slate-600 font-medium">{model.draft.chemistry}</div>
+          <label className="text-[9px] uppercase font-bold text-slate-400">SKU Profile</label>
+          <div className="font-bold text-slate-800">{skuCode || '--'} <span className="font-normal text-slate-400 ml-1">({skuType})</span></div>
         </div>
-      )}
-      {model.draft.nominalVoltage && (
         <div>
-          <label className="text-[9px] uppercase font-bold text-slate-400">Voltage</label>
-          <div className="text-slate-600 font-medium">{model.draft.nominalVoltage}V</div>
+          <label className="text-[9px] uppercase font-bold text-slate-400">Intent</label>
+          <div className="text-slate-600 font-medium">{isRevision ? 'Revision' : 'Greenfield'}</div>
         </div>
-      )}
-    </div>
-  );
+        {isElectrochemistry && chemistry && (
+          <div>
+            <label className="text-[9px] uppercase font-bold text-slate-400">Chemistry</label>
+            <div className="text-slate-600 font-medium">{chemistry}</div>
+          </div>
+        )}
+        {isVoltageRelevant && nominalVoltage && (
+          <div>
+            <label className="text-[9px] uppercase font-bold text-slate-400">Voltage</label>
+            <div className="text-slate-600 font-medium">{nominalVoltage}V</div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const TaskBanner = (
     <div className="px-6 py-2 bg-slate-900 text-white flex items-center justify-between gap-4">
@@ -366,14 +393,12 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     </div>
   );
 
-  // Helper to determine if we are at the end of the Maker's path
   const isSubmissionPoint = useMemo(() => {
     const next = getNextStepId(model.step, model.draft.isRevision, model.draft.skuType);
     return next === "REVIEW";
   }, [model.step, model.draft.isRevision, model.draft.skuType]);
 
   const renderInputField = (field: SkuSpecField) => {
-    // Fix: Ensure value is string or number (not boolean) for HTML elements
     const inputValue = (model.draft[field.id] === true || model.draft[field.id] === false)
       ? String(model.draft[field.id])
       : (model.draft[field.id] ?? "");
@@ -385,7 +410,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
         model.validationErrors[field.id] ? 'border-red-300 bg-red-50' : 'border-slate-300'
       } ${model.role !== 'Maker' ? 'bg-slate-50 opacity-80 cursor-not-allowed' : 'bg-white'}`,
       placeholder: field.placeholder || `Enter ${field.label.toLowerCase()}...`,
-      value: inputValue as string | number // Fix: Explicitly casting to allowed input value types
+      value: inputValue as string | number
     };
 
     if (field.type === 'select') {
@@ -491,7 +516,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                         ].map((type) => (
                           <button 
                             key={type.id}
-                            onClick={() => handleUpdateDraft('skuType', type.id)}
+                            onClick={() => handleTypeChange(type.id as SkuType)}
                             disabled={model.role !== 'Maker'}
                             className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${model.draft.skuType === type.id ? 'bg-slate-800 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'} ${model.role !== 'Maker' ? 'cursor-not-allowed' : ''}`}
                           >
@@ -548,7 +573,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
               {model.step === "BASE_SKU_METADATA" && (
                 <FlowStep stepTitle="General Identifiers" stepHint="Establish basic SKU metadata and identification strings.">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto py-8">
-                    {/* stepType: BASE */}
                     <Field label="Canonical SKU Code" id="skuCode" error={model.validationErrors.skuCode}>
                       <input 
                         type="text" id="skuCode"
@@ -588,7 +612,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
               {model.step === "SKU_SPECIFICATIONS" && (
                 <FlowStep 
                   stepTitle={`${model.draft.skuType} Technical Specification`} 
-                  stepHint="Establish technical parameters for the selected asset type."
+                  stepHint={`Immutable technical constants for the ${model.draft.skuType} taxonomy.`}
                 >
                   <div className="space-y-10 max-w-3xl mx-auto py-4">
                     {resolveSpecSchema(model.draft.skuType).map(section => (
@@ -613,6 +637,12 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                         </div>
                       </div>
                     ))}
+                    {resolveSpecSchema(model.draft.skuType).length === 0 && (
+                      <div className="py-12 flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                         <Info size={32} className="mb-2 opacity-50" />
+                         <p className="text-sm font-medium">No additional technical specifications required for this type.</p>
+                      </div>
+                    )}
                   </div>
                 </FlowStep>
               )}
