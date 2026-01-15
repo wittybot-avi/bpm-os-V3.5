@@ -34,7 +34,7 @@ interface SystemSetupProps {
 }
 
 const ScopeBadge: React.FC<{ scope: string }> = ({ scope }) => (
-  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold border bg-slate-50 text-slate-400 border-slate-200 tracking-tighter">
+  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold border bg-slate-50 text-slate-400 border-slate-200 tracking-tighter shrink-0">
     {scope.toUpperCase()}
   </span>
 );
@@ -365,7 +365,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               <Zap size={20} className="text-brand-600" />
               <div className="flex items-center gap-2">
                 <h2 className="font-bold">System Capability Flags</h2>
-                <ScopeBadge scope="MIXED" />
+                <ScopeBadge scope="GLOBAL" />
               </div>
             </div>
             <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase">
@@ -467,7 +467,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               <Activity size={20} className="text-brand-600" />
               <div className="flex items-center gap-2">
                 <h2 className="font-bold">Device Class Capabilities</h2>
-                <ScopeBadge scope="GLOBAL" />
+                <ScopeBadge scope="STATION" />
               </div>
             </div>
             <button className="text-[10px] font-bold text-brand-600 hover:text-brand-800">
@@ -504,7 +504,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               <Globe size={20} className="text-brand-600" />
               <div className="flex items-center gap-2">
                 <h2 className="font-bold">Regulatory & Sovereignty Compliance</h2>
-                <ScopeBadge scope="GLOBAL" />
+                <ScopeBadge scope="REGULATORY" />
               </div>
             </div>
             <button 
@@ -535,11 +535,13 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
 
       {/* User Capability Matrix */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
-          <div className="flex items-center gap-2 mb-4 text-slate-700">
-            <Users size={20} className="text-brand-600" />
-            <div className="flex items-center gap-2">
-              <h2 className="font-bold">User Capability Matrix</h2>
-              <ScopeBadge scope="GLOBAL" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 text-slate-700">
+                <Users size={20} className="text-brand-600" />
+                <div className="flex items-center gap-2">
+                    <h2 className="font-bold">User Capability Matrix</h2>
+                    <ScopeBadge scope="GLOBAL" />
+                </div>
             </div>
           </div>
           <div className="overflow-x-auto">
