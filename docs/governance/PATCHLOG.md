@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-WIZ-FIX-04** | Bugfix | Navigation Hardening | **STABLE** | Hardened S1 Wizard navigation to ensure intent (Greenfield/Revision) and SKU type are strictly coupled. Fixed path resolution fallbacks. | 2026-01-28 16:30 (IST) |
 | **V35-S1-WIZ-FIX-03** | Stabilization | Technical Scaffolding | **STABLE** | Added empty placeholder steps for all SKU-specific technical blueprints (CELL, MODULE, PACK, BMS, IOT). Updated Registry to support branching paths. | 2026-01-28 16:00 (IST) |
 | **V35-S1-WIZ-FIX-02** | Stabilization | Step Reclassification | **STABLE** | Internally reclassified "General Identifiers" as `BASE_SKU_METADATA` step. Enforced index mapping in registry for future modularity. No UI changes. | 2026-01-28 15:30 (IST) |
 | **V35-S1-WIZ-FIX-01** | Stabilization | Wizard Step Registry | **STABLE** | Introduced a central Step Registry for S1 Wizard. Resolved paths now depend on Intent (Greenfield/Revision) and SKU Type. Hardened navigation helpers. | 2026-01-28 15:00 (IST) |

@@ -2,7 +2,7 @@
  * SKU Flow Wizard Model
  * Defines local state shape for the FLOW-001 step-wizard.
  * @foundation V34-S1-FLOW-001-PP-03
- * @updated V35-S1-WIZ-FIX-03 (SKU-Specific Step Scaffolding)
+ * @updated V35-S1-WIZ-FIX-04 (Navigation Hardening)
  */
 
 import type { SkuDraft, SkuFlowState, SkuFlowRole } from "../skuFlowContract";
@@ -32,6 +32,7 @@ export interface WizardModel {
 /**
  * Path Resolution Registry
  * Determines valid step sequences based on Intent and SKU Type.
+ * Couplings are strict to prevent cross-path pollution.
  */
 export const WIZARD_STEP_REGISTRY: Record<string, Record<string, WizardStepId[]>> = {
   GREENFIELD: {
@@ -54,12 +55,21 @@ export const WIZARD_STEP_REGISTRY: Record<string, Record<string, WizardStepId[]>
 
 /**
  * Resolves the full sequence for current context.
+ * Strictly enforces (Intent + SKU Type) lookup.
  */
 export function getStepSequence(isRevision: boolean, skuType?: string): WizardStepId[] {
-  const intent = isRevision ? 'REVISION' : 'GREENFIELD';
+  const intentKey = isRevision ? 'REVISION' : 'GREENFIELD';
   const typeKey = skuType || 'DEFAULT';
-  const sequence = WIZARD_STEP_REGISTRY[intent][typeKey] || WIZARD_STEP_REGISTRY[intent]['DEFAULT'];
-  console.log(`[WIZARD-REGISTRY] Resolved sequence for ${intent}:${typeKey} ->`, sequence);
+  
+  const intentGroup = WIZARD_STEP_REGISTRY[intentKey];
+  if (!intentGroup) {
+    console.error(`[WIZARD-REGISTRY] Intent group ${intentKey} not found.`);
+    return WIZARD_STEP_REGISTRY.GREENFIELD.DEFAULT;
+  }
+
+  const sequence = intentGroup[typeKey] || intentGroup.DEFAULT;
+  
+  console.debug(`[WIZARD-REGISTRY] Resolved Path -> [${intentKey}:${typeKey}]`, sequence);
   return sequence;
 }
 

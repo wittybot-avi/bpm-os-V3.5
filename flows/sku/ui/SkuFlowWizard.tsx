@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-FIX-03 (SKU-Specific Step Scaffolding)
+ * @updated V35-S1-WIZ-FIX-04 (Navigation Hardening)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -100,7 +100,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     ...createDefaultWizardModel(),
     validationErrors: {}
   });
-  const [showSummaryDetails, setShowSummaryDetails] = useState(false);
 
   // Mock Preconditions State
   const [preconditions, setPreconditions] = useState<Precondition[]>([
@@ -217,12 +216,14 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
 
   const handleNextStep = () => {
     if (validateStep(model.step)) {
+      // Correct resolution using persisted isRevision and skuType from draft
       const next = getNextStepId(model.step, model.draft.isRevision, model.draft.skuType);
       setModel(m => ({ ...m, step: next }));
     }
   };
 
   const handlePrevStep = () => {
+    // Correct resolution using persisted isRevision and skuType from draft
     const prev = getPrevStepId(model.step, model.draft.isRevision, model.draft.skuType);
     setModel(m => ({ ...m, step: prev }));
   };
@@ -290,7 +291,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
 
   // Precondition Logic
   const areHardGatesMet = preconditions.filter(p => p.severity === 'HARD').every(p => p.status === 'MET');
-  const hasSoftWarnings = preconditions.some(p => p.severity === 'SOFT' && p.status === 'NOT_MET');
 
   // Task Instruction Generation
   const taskInstruction = useMemo(() => {
@@ -714,7 +714,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
             </button>
           }
           right={
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               {model.step === "INIT" && (
                 <button 
                   onClick={handleNextStep}
