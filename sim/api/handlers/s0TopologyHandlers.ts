@@ -12,8 +12,10 @@
  * @updated V35-S0-COMP-PP-18 (Regulatory Bindings)
  * @updated V35-S0-COMP-PP-19 (SOP Profile CRUD)
  * @updated V35-S0-RBAC-PP-20 (User Scopes)
+ * @updated V35-S0-RBAC-PP-21 (Permission Preview)
  */
 
+import { UserRole } from "../../../types";
 import type { ApiHandler, ApiResponse, ApiRequest } from "../apiTypes";
 import { 
   getEnterprises, 
@@ -36,6 +38,7 @@ import {
   removeOverride,
   getPlantById,
   getLineById,
+  getStationById,
   getRegulatoryFrameworks,
   getComplianceBindings,
   upsertComplianceBinding,
@@ -50,7 +53,7 @@ import {
 import type { Enterprise, Plant, Line, Station, DeviceClass } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityOverride, EffectiveFlag, CapabilityScope } from "../../../domain/s0/capability.types";
 import type { RegulatoryFramework, ComplianceBinding, EffectiveCompliance, SOPProfile } from "../../../domain/s0/complianceContext.types";
-import type { AppUser } from "../../../domain/s0/userManagement.types";
+import type { AppUser, EffectivePermissions } from "../../../domain/s0/userManagement.types";
 
 const ok = (data: any): ApiResponse => ({
   status: 200,
@@ -82,10 +85,8 @@ export const listEnterprises: ApiHandler = async () => {
 export const updateEnterpriseHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Enterprise> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Enterprise ID is required");
-
   const updated = updateEnterprise(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Enterprise not found", 404);
-
   return ok(updated);
 };
 
@@ -95,11 +96,9 @@ export const updateEnterpriseHandler: ApiHandler = async (req) => {
 export const listPlants: ApiHandler = async (req) => {
   const enterpriseId = req.query?.["enterpriseId"];
   const plants = getPlants();
-  
   if (enterpriseId) {
     return ok(plants.filter(p => p.enterpriseId === enterpriseId));
   }
-  
   return ok(plants);
 };
 
@@ -109,7 +108,6 @@ export const listPlants: ApiHandler = async (req) => {
 export const createPlantHandler: ApiHandler = async (req) => {
   const body = parseBody<Partial<Plant>>(req);
   if (!body.code || !body.displayName) return err("BAD_REQUEST", "Plant code and display name are required");
-
   const newPlant: Plant = {
     id: `FAC-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
     code: body.code,
@@ -118,12 +116,8 @@ export const createPlantHandler: ApiHandler = async (req) => {
     enterpriseId: body.enterpriseId || 'ENT-BPM-GLOBAL',
     effectiveFrom: new Date().toISOString(),
     lineIds: [],
-    audit: {
-      createdBy: "API_USER",
-      createdAt: new Date().toISOString()
-    }
+    audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
-
   addPlant(newPlant);
   return ok(newPlant);
 };
@@ -134,10 +128,8 @@ export const createPlantHandler: ApiHandler = async (req) => {
 export const updatePlantHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Plant> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Plant ID is required");
-
   const updated = updatePlant(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Plant not found", 404);
-
   return ok(updated);
 };
 
@@ -147,11 +139,9 @@ export const updatePlantHandler: ApiHandler = async (req) => {
 export const listLines: ApiHandler = async (req) => {
   const plantId = req.query?.["plantId"];
   const lines = getLines();
-  
   if (plantId) {
     return ok(lines.filter(l => l.plantId === plantId));
   }
-  
   return ok(lines);
 };
 
@@ -163,7 +153,6 @@ export const createLineHandler: ApiHandler = async (req) => {
   if (!body.code || !body.displayName || !body.plantId) {
     return err("BAD_REQUEST", "Line code, display name, and parent Plant ID are required");
   }
-
   const newLine: Line = {
     id: `LN-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
     code: body.code,
@@ -174,12 +163,8 @@ export const createLineHandler: ApiHandler = async (req) => {
     stationIds: [],
     supportedOperations: body.supportedOperations || [],
     supportedSkuTypes: body.supportedSkuTypes || [],
-    audit: {
-      createdBy: "API_USER",
-      createdAt: new Date().toISOString()
-    }
+    audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
-
   addLine(newLine);
   return ok(newLine);
 };
@@ -190,10 +175,8 @@ export const createLineHandler: ApiHandler = async (req) => {
 export const updateLineHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Line> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Line ID is required");
-
   const updated = updateLine(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Line not found", 404);
-
   return ok(updated);
 };
 
@@ -203,11 +186,9 @@ export const updateLineHandler: ApiHandler = async (req) => {
 export const listStations: ApiHandler = async (req) => {
   const lineId = req.query?.["lineId"];
   const stations = getStations();
-  
   if (lineId) {
     return ok(stations.filter(s => s.lineId === lineId));
   }
-  
   return ok(stations);
 };
 
@@ -219,7 +200,6 @@ export const createStationHandler: ApiHandler = async (req) => {
   if (!body.code || !body.displayName || !body.lineId || !body.stationType) {
     return err("BAD_REQUEST", "Station code, name, line ID, and station type are required");
   }
-
   const newStation: Station = {
     id: `STN-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
     code: body.code,
@@ -230,12 +210,8 @@ export const createStationHandler: ApiHandler = async (req) => {
     supportedOperations: body.supportedOperations || [],
     deviceBindings: [],
     effectiveFrom: new Date().toISOString(),
-    audit: {
-      createdBy: "API_USER",
-      createdAt: new Date().toISOString()
-    }
+    audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
-
   addStation(newStation);
   return ok(newStation);
 };
@@ -246,10 +222,8 @@ export const createStationHandler: ApiHandler = async (req) => {
 export const updateStationHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Station> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Station ID is required");
-
   const updated = updateStation(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Station not found", 404);
-
   return ok(updated);
 };
 
@@ -268,7 +242,6 @@ export const createDeviceClassHandler: ApiHandler = async (req) => {
   if (!body.code || !body.displayName || !body.category) {
     return err("BAD_REQUEST", "Code, display name, and category are required");
   }
-
   const newDc: DeviceClass = {
     id: `DC-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
     code: body.code,
@@ -277,12 +250,8 @@ export const createDeviceClassHandler: ApiHandler = async (req) => {
     category: body.category,
     supportedProtocols: body.supportedProtocols || [],
     effectiveFrom: new Date().toISOString(),
-    audit: {
-      createdBy: "API_USER",
-      createdAt: new Date().toISOString()
-    }
+    audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
-
   addDeviceClass(newDc);
   return ok(newDc);
 };
@@ -293,48 +262,35 @@ export const createDeviceClassHandler: ApiHandler = async (req) => {
 export const updateDeviceClassHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<DeviceClass> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Device Class ID is required");
-
   const updated = updateDeviceClass(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Device Class not found", 404);
-
   return ok(updated);
 };
 
 /**
  * GET /api/s0/capabilities/effective
- * Returns the effective value for all flags given a scope context.
  */
 export const getEffectiveCapabilitiesHandler: ApiHandler = async (req) => {
   const scope = req.query?.["scope"] as CapabilityScope;
   const scopeId = req.query?.["scopeId"];
-
   if (!scope || !scopeId) return err("BAD_REQUEST", "Scope and scopeId are required");
-
   const flags = getCapabilityFlags();
   const overrides = getCapabilityOverrides();
-
-  // Resolution Logic: Hierarchy search
   const resolve = (flagId: string): EffectiveFlag => {
     const flag = flags.find(f => f.id === flagId)!;
-    
-    // 1. Check exact scope
     const exact = overrides.find(o => o.flagId === flagId && o.scope === scope && o.scopeId === scopeId);
     if (exact) return { ...flag, effectiveValue: exact.value, sourceScope: scope, sourceId: scopeId, isOverridden: true };
-
-    // 2. Fallback to Hierarchy
     if (scope === 'STATION') {
       const station = getStations().find(s => s.id === scopeId);
       if (station) {
         const lineId = station.lineId;
         const lineOverride = overrides.find(o => o.flagId === flagId && o.scope === 'LINE' && o.scopeId === lineId);
         if (lineOverride) return { ...flag, effectiveValue: lineOverride.value, sourceScope: 'LINE', sourceId: lineId, isOverridden: false };
-        
         const line = getLineById(lineId);
         if (line) {
           const plantId = line.plantId;
           const plantOverride = overrides.find(o => o.flagId === flagId && o.scope === 'PLANT' && o.scopeId === plantId);
           if (plantOverride) return { ...flag, effectiveValue: plantOverride.value, sourceScope: 'PLANT', sourceId: plantId, isOverridden: false };
-          
           const plant = getPlantById(plantId);
           if (plant) {
              const entId = plant.enterpriseId;
@@ -358,11 +314,8 @@ export const getEffectiveCapabilitiesHandler: ApiHandler = async (req) => {
         if (entOverride) return { ...flag, effectiveValue: entOverride.value, sourceScope: 'ENTERPRISE', sourceId: entId, isOverridden: false };
       }
     }
-
-    // 3. Global Default
     return { ...flag, effectiveValue: flag.defaultValue, sourceScope: 'GLOBAL', isOverridden: false };
   };
-
   const resolved = flags.map(f => resolve(f.id));
   return ok(resolved);
 };
@@ -373,13 +326,7 @@ export const getEffectiveCapabilitiesHandler: ApiHandler = async (req) => {
 export const setCapabilityOverrideHandler: ApiHandler = async (req) => {
   const body = parseBody<CapabilityOverride>(req);
   if (!body.flagId || !body.scope || !body.scopeId) return err("BAD_REQUEST", "flagId, scope, and scopeId are required");
-
-  const override: CapabilityOverride = {
-    ...body,
-    updatedAt: new Date().toISOString(),
-    updatedBy: "API_USER"
-  };
-
+  const override: CapabilityOverride = { ...body, updatedAt: new Date().toISOString(), updatedBy: "API_USER" };
   upsertOverride(override);
   return ok(override);
 };
@@ -390,7 +337,6 @@ export const setCapabilityOverrideHandler: ApiHandler = async (req) => {
 export const removeCapabilityOverrideHandler: ApiHandler = async (req) => {
   const { flagId, scope, scopeId } = parseBody<{ flagId: string; scope: string; scopeId: string }>(req);
   if (!flagId || !scope || !scopeId) return err("BAD_REQUEST", "Ids are required");
-
   removeOverride(flagId, scope, scopeId);
   return ok({ success: true });
 };
@@ -398,16 +344,12 @@ export const removeCapabilityOverrideHandler: ApiHandler = async (req) => {
 /**
  * GET /api/s0/compliance/frameworks
  */
-export const listRegulatoryFrameworksHandler: ApiHandler = async () => {
-  return ok(getRegulatoryFrameworks());
-};
+export const listRegulatoryFrameworksHandler: ApiHandler = async () => ok(getRegulatoryFrameworks());
 
 /**
  * GET /api/s0/compliance/sop-profiles
  */
-export const listSopProfilesHandler: ApiHandler = async () => {
-  return ok(getSopProfiles());
-};
+export const listSopProfilesHandler: ApiHandler = async () => ok(getSopProfiles());
 
 /**
  * POST /api/s0/compliance/sop-profiles/create
@@ -415,7 +357,6 @@ export const listSopProfilesHandler: ApiHandler = async () => {
 export const createSopProfileHandler: ApiHandler = async (req) => {
   const body = parseBody<Partial<SOPProfile>>(req);
   if (!body.code || !body.name || !body.version) return err("BAD_REQUEST", "Code, Name and Version are required");
-
   const newSop: SOPProfile = {
     id: `SOP-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
     code: body.code,
@@ -423,7 +364,6 @@ export const createSopProfileHandler: ApiHandler = async (req) => {
     version: body.version,
     applicableScopes: body.applicableScopes || ["PLANT"]
   };
-
   addSopProfile(newSop);
   return ok(newSop);
 };
@@ -434,10 +374,8 @@ export const createSopProfileHandler: ApiHandler = async (req) => {
 export const updateSopProfileHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<SOPProfile> }>(req);
   if (!body.id) return err("BAD_REQUEST", "SOP Profile ID is required");
-
   const updated = updateSopProfile(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "SOP Profile not found", 404);
-
   return ok(updated);
 };
 
@@ -447,45 +385,22 @@ export const updateSopProfileHandler: ApiHandler = async (req) => {
 export const getEffectiveComplianceHandler: ApiHandler = async (req) => {
   const scope = req.query?.["scope"] as CapabilityScope;
   const scopeId = req.query?.["scopeId"];
-
   if (!scope || !scopeId) return err("BAD_REQUEST", "Scope and scopeId are required");
-
   const frameworks = getRegulatoryFrameworks();
   const sops = getSopProfiles();
   const bindings = getComplianceBindings();
-
-  // Resolution Logic: Exact scope or fallback to parent
   let activeBinding = bindings.find(b => b.scope === scope && b.scopeId === scopeId);
   let isOverridden = !!activeBinding;
-
   if (!activeBinding && scope === 'PLANT') {
     const plant = getPlantById(scopeId);
-    if (plant) {
-      activeBinding = bindings.find(b => b.scope === 'ENTERPRISE' && b.scopeId === plant.enterpriseId);
-    }
+    if (plant) { activeBinding = bindings.find(b => b.scope === 'ENTERPRISE' && b.scopeId === plant.enterpriseId); }
   }
-
   if (!activeBinding) {
-    return ok({
-      frameworks: [],
-      sopProfiles: [],
-      sourceScope: 'GLOBAL',
-      sourceId: 'GLOBAL',
-      isOverridden: false
-    });
+    return ok({ frameworks: [], sopProfiles: [], sourceScope: 'GLOBAL', sourceId: 'GLOBAL', isOverridden: false });
   }
-
   const resolvedFrameworks = frameworks.filter(f => activeBinding?.regulatoryFrameworkIds.includes(f.id));
   const resolvedSops = sops.filter(s => activeBinding?.sopProfileIds.includes(s.id));
-
-  const result: EffectiveCompliance = {
-    frameworks: resolvedFrameworks,
-    sopProfiles: resolvedSops,
-    sourceScope: activeBinding.scope,
-    sourceId: activeBinding.scopeId,
-    isOverridden
-  };
-
+  const result: EffectiveCompliance = { frameworks: resolvedFrameworks, sopProfiles: resolvedSops, sourceScope: activeBinding.scope, sourceId: activeBinding.scopeId, isOverridden };
   return ok(result);
 };
 
@@ -495,7 +410,6 @@ export const getEffectiveComplianceHandler: ApiHandler = async (req) => {
 export const setComplianceBindingHandler: ApiHandler = async (req) => {
   const body = parseBody<ComplianceBinding>(req);
   if (!body.scope || !body.scopeId) return err("BAD_REQUEST", "scope and scopeId are required");
-
   upsertComplianceBinding(body);
   return ok(body);
 };
@@ -506,7 +420,6 @@ export const setComplianceBindingHandler: ApiHandler = async (req) => {
 export const removeComplianceBindingHandler: ApiHandler = async (req) => {
   const { scope, scopeId } = parseBody<{ scope: string; scopeId: string }>(req);
   if (!scope || !scopeId) return err("BAD_REQUEST", "scope and scopeId are required");
-
   removeComplianceBinding(scope, scopeId);
   return ok({ success: true });
 };
@@ -514,9 +427,7 @@ export const removeComplianceBindingHandler: ApiHandler = async (req) => {
 /**
  * GET /api/s0/users
  */
-export const listUsersHandler: ApiHandler = async () => {
-  return ok(getUsers());
-};
+export const listUsersHandler: ApiHandler = async () => ok(getUsers());
 
 /**
  * POST /api/s0/users/create
@@ -524,7 +435,6 @@ export const listUsersHandler: ApiHandler = async () => {
 export const createUserHandler: ApiHandler = async (req) => {
   const body = parseBody<Partial<AppUser>>(req);
   if (!body.username || !body.fullName || !body.role) return err("BAD_REQUEST", "Username, Name and Role are required");
-
   const newUser: AppUser = {
     id: `USR-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
     username: body.username,
@@ -533,7 +443,6 @@ export const createUserHandler: ApiHandler = async (req) => {
     status: body.status || 'ACTIVE',
     scopes: body.scopes || []
   };
-
   addUser(newUser);
   return ok(newUser);
 };
@@ -544,9 +453,74 @@ export const createUserHandler: ApiHandler = async (req) => {
 export const updateUserHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<AppUser> }>(req);
   if (!body.id) return err("BAD_REQUEST", "User ID is required");
-
   const updated = updateUser(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "User not found", 404);
-
   return ok(updated);
+};
+
+/**
+ * GET /api/s0/users/permissions
+ */
+export const getEffectiveUserPermissionsHandler: ApiHandler = async (req) => {
+  const userId = req.query?.["userId"];
+  const scope = req.query?.["scope"] as CapabilityScope;
+  const scopeId = req.query?.["scopeId"];
+  if (!userId || !scope || !scopeId) return err("BAD_REQUEST", "userId, scope and scopeId are required");
+  const user = getUsers().find(u => u.id === userId);
+  if (!user) return err("NOT_FOUND", "User not found", 404);
+
+  const ROLE_PERMS: Record<UserRole, string[]> = {
+    [UserRole.SYSTEM_ADMIN]: ['MANAGE_ENTERPRISE', 'MANAGE_PLANTS', 'MANAGE_LINES', 'MANAGE_STATIONS', 'MANAGE_DEVICES', 'MANAGE_REGS', 'MANAGE_SOP', 'MANAGE_USERS', 'MANAGE_CAPABILITIES'],
+    [UserRole.MANAGEMENT]: ['VIEW_TOPOLOGY', 'MANAGE_PLANTS', 'MANAGE_LINES', 'MANAGE_STATIONS', 'MANAGE_REGS'],
+    [UserRole.COMPLIANCE]: ['VIEW_TOPOLOGY', 'MANAGE_REGS', 'MANAGE_SOP'],
+    [UserRole.ENGINEERING]: ['VIEW_TOPOLOGY', 'MANAGE_LINES', 'MANAGE_STATIONS', 'MANAGE_DEVICES'],
+    [UserRole.OPERATOR]: ['VIEW_TOPOLOGY'],
+    [UserRole.QA_ENGINEER]: ['VIEW_TOPOLOGY'],
+    [UserRole.SUPERVISOR]: ['VIEW_TOPOLOGY', 'MANAGE_STATIONS'],
+    [UserRole.STORES]: ['VIEW_TOPOLOGY'],
+    [UserRole.PROCUREMENT]: ['VIEW_TOPOLOGY'],
+    [UserRole.PLANNER]: ['VIEW_TOPOLOGY'],
+    [UserRole.LOGISTICS]: ['VIEW_TOPOLOGY'],
+    [UserRole.SERVICE]: ['VIEW_TOPOLOGY'],
+    [UserRole.SUSTAINABILITY]: ['VIEW_TOPOLOGY']
+  };
+
+  const baseActions = ROLE_PERMS[user.role] || [];
+  if (user.role === UserRole.SYSTEM_ADMIN) {
+    return ok({ userId, scope, scopeId, allowedActions: baseActions, isRestrictedByScope: false } as EffectivePermissions);
+  }
+
+  const isAuthorizedAtNode = (): boolean => {
+    for (const binding of user.scopes) {
+      if (binding.scopeId === 'GLOBAL') return true;
+      if (binding.scope === scope && binding.scopeId === scopeId) return true;
+      if (scope === 'PLANT') {
+        const plant = getPlantById(scopeId);
+        if (plant && binding.scope === 'ENTERPRISE' && binding.scopeId === plant.enterpriseId) return true;
+      }
+      if (scope === 'LINE') {
+        const line = getLineById(scopeId);
+        if (line) {
+          if (binding.scope === 'PLANT' && binding.scopeId === line.plantId) return true;
+          const plant = getPlantById(line.plantId);
+          if (plant && binding.scope === 'ENTERPRISE' && binding.scopeId === plant.enterpriseId) return true;
+        }
+      }
+      if (scope === 'STATION') {
+        const station = getStationById(scopeId);
+        if (station) {
+          if (binding.scope === 'LINE' && binding.scopeId === station.lineId) return true;
+          const line = getLineById(station.lineId);
+          if (line) {
+            if (binding.scope === 'PLANT' && binding.scopeId === line.plantId) return true;
+            const plant = getPlantById(line.plantId);
+            if (plant && binding.scope === 'ENTERPRISE' && binding.scopeId === plant.enterpriseId) return true;
+          }
+        }
+      }
+    }
+    return false;
+  };
+  const authorized = isAuthorizedAtNode();
+  return ok({ userId, scope, scopeId, allowedActions: authorized ? baseActions : [], isRestrictedByScope: !authorized } as EffectivePermissions);
 };

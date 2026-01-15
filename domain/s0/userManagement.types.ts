@@ -27,3 +27,14 @@ export interface AppUser {
   readonly status: 'ACTIVE' | 'INACTIVE';
   readonly scopes: readonly UserScopeBinding[];
 }
+
+/**
+ * EffectivePermissions: Resolved set of allowed actions for a specific user/context pair.
+ */
+export interface EffectivePermissions {
+  readonly userId: EntityId;
+  readonly scope: CapabilityScope;
+  readonly scopeId: EntityId;
+  readonly allowedActions: readonly string[];
+  readonly isRestrictedByScope: boolean;
+}

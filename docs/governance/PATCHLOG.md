@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-RBAC-PP-21** | RBAC | Permission Preview | **STABLE** | Implements an effective permission preview engine in the S0 User Management drawer. Allows administrators to verify resolved allowed actions for a user based on their role and assigned hierarchical scopes. | 2026-01-30 04:00 (IST) |
 | **V35-S0-RBAC-PP-20** | RBAC | User Scopes | **STABLE** | Enables assignment of hierarchical access scopes to internal user accounts. Users can be bound to Enterprise, Plant, Line, or Station nodes to restrict functional authorization. | 2026-01-30 03:00 (IST) |
 | **V35-S0-COMP-PP-19** | Compliance | SOP Profile CRUD | **STABLE** | Implements SOP Profile lifecycle management (Add/Edit) and hierarchical binding to organizational nodes. Ensures procedural alignment across facility lines. | 2026-01-30 02:30 (IST) |
 | **V35-S0-COMP-PP-18** | Compliance | Regulatory Context | **STABLE** | Implements hierarchical regulatory framework binding. Supports Enterprise-level defaults and Plant-level overrides for jurisdiction-specific compliance gating. | 2026-01-30 02:00 (IST) |
