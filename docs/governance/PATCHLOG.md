@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-WIZ-PP-06** | Governance | Operational Preconditions | **STABLE** | Implemented precondition gating in SKU Wizard. Added hard gates for ECR/PLM and soft warnings for Regulatory DB link. Progress blocked on hard failures. | 2026-01-28 13:30 (IST) |
 | **V35-S1-WIZ-PP-05** | Wizard UX | Dynamic Blueprint Steps | **STABLE** | Implemented multi-phase definition (General -> Technical). Dynamic form rendering based on SKU type with inline validation. | 2026-01-28 13:00 (IST) |
 | **V35-S1-WIZ-PP-04** | Wizard UX | S1 Mandatory Step 0 | **STABLE** | Added mandatory initial step to SKU Flow Wizard to capture engineering intent (New vs Revision) and SKU taxonomy type. | 2026-01-28 12:30 (IST) |
 | **V35-S1-UX-PP-03** | UX Convergence | S1 Blueprint Dossier Refactor | **STABLE** | Refactored legacy SKU detail forms into a read-only "Blueprint Dossier". Grouped by Technical, Regulatory, and Readiness dimensions. Removed inline editing in favor of Flow Wizards. | 2026-01-28 12:00 (IST) |

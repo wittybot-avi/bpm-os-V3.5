@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-PP-05 (Dynamic Blueprint Content & Validation)
+ * @updated V35-S1-WIZ-PP-06 (Operational Preconditions & Gating)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -35,7 +35,11 @@ import {
   Beaker,
   Settings2,
   BoxSelect,
-  Globe
+  Globe,
+  Lock,
+  Unlock,
+  Link2,
+  FileSignature
 } from 'lucide-react';
 import { FlowShell, FlowStep, FlowFooter } from '../../../components/flow';
 import { 
@@ -60,6 +64,14 @@ import { useDeviceLayout } from '../../../hooks/useDeviceLayout';
 import { apiFetch } from '../../../services/apiHarness';
 import { SkuType } from '../../../stages/s1/s1Contract';
 
+interface Precondition {
+  id: string;
+  label: string;
+  status: 'MET' | 'NOT_MET';
+  severity: 'HARD' | 'SOFT';
+  description: string;
+}
+
 interface SkuFlowWizardProps {
   instanceId?: string | null;
   onExit: () => void;
@@ -80,6 +92,13 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     validationErrors: {}
   });
   const [showSummaryDetails, setShowSummaryDetails] = useState(false);
+
+  // Mock Preconditions State
+  const [preconditions, setPreconditions] = useState<Precondition[]>([
+    { id: 'ecr', label: 'ECR Approval', status: 'MET', severity: 'HARD', description: 'Engineering Change Request must be formally approved in PLM.' },
+    { id: 'plm', label: 'PLM Sync', status: 'MET', severity: 'HARD', description: 'Master Data synchronization with legacy PLM baseline.' },
+    { id: 'reg', label: 'Regulatory DB', status: 'NOT_MET', severity: 'SOFT', description: 'External Regulatory Database connectivity (Optional for Draft).' },
+  ]);
 
   const roles: SkuFlowRole[] = ["Maker", "Checker", "Approver"];
   const isMobile = layout === 'mobile';
@@ -251,6 +270,10 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     }
   };
 
+  // Precondition Logic
+  const areHardGatesMet = preconditions.filter(p => p.severity === 'HARD').every(p => p.status === 'MET');
+  const hasSoftWarnings = preconditions.some(p => p.severity === 'SOFT' && p.status === 'NOT_MET');
+
   // UI Components
   const Field = ({ label, id, error, children }: { label: string, id: string, error?: string, children: React.ReactNode }) => (
     <div className="space-y-1.5">
@@ -335,7 +358,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
             <>
               {model.step === "INIT" && (
                 <FlowStep stepTitle="Intent & Taxonomy" stepHint="Declare engineering scope and SKU category.">
-                  <div className="space-y-10 max-w-2xl mx-auto py-8">
+                  <div className="space-y-10 max-w-2xl mx-auto py-4">
                     <div className="grid grid-cols-2 gap-4">
                       <button 
                         onClick={() => handleUpdateDraft('isRevision', false)}
@@ -373,6 +396,58 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    {/* Preconditions Panel (V35-S1-WIZ-PP-06) */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6">
+                        <div className="flex items-center justify-between mb-4 border-b border-slate-200 pb-3">
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck size={18} className="text-brand-600" />
+                                <h3 className="text-xs font-bold text-slate-700 uppercase tracking-widest">Operational Preconditions</h3>
+                            </div>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${areHardGatesMet ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                {areHardGatesMet ? 'GATE OPEN' : 'GATE LOCKED'}
+                            </span>
+                        </div>
+                        <div className="space-y-3">
+                            {preconditions.map(p => (
+                                <div key={p.id} className={`flex items-start gap-4 p-3 rounded-xl border transition-all ${p.status === 'MET' ? 'bg-white border-slate-100 opacity-60' : 'bg-white border-amber-200 shadow-sm'}`}>
+                                    <div className="mt-0.5">
+                                        {p.status === 'MET' ? (
+                                            <CheckCircle2 size={16} className="text-green-500" />
+                                        ) : (
+                                            p.severity === 'HARD' ? <Lock size={16} className="text-red-500" /> : <AlertTriangle size={16} className="text-amber-500" />
+                                        )}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-xs font-bold text-slate-800">{p.label}</span>
+                                            <span className={`text-[8px] font-bold px-1 py-0.5 rounded border ${p.severity === 'HARD' ? 'bg-red-50 text-red-600 border-red-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                                                {p.severity}
+                                            </span>
+                                        </div>
+                                        <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">{p.description}</p>
+                                    </div>
+                                    {p.status === 'NOT_MET' && p.id === 'ecr' && (
+                                        <button className="text-[9px] font-bold text-brand-600 hover:text-brand-800 flex items-center gap-1 shrink-0 uppercase">
+                                            <FileSignature size={10} /> Sign ECR
+                                        </button>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                        {!areHardGatesMet && (
+                            <div className="mt-4 p-3 bg-red-50 border border-red-100 rounded-lg text-[10px] text-red-800 font-medium flex items-center gap-2">
+                                <AlertOctagon size={14} className="shrink-0" />
+                                Hard gates are active. Progress is blocked until engineering baseline is approved.
+                            </div>
+                        )}
+                        {areHardGatesMet && hasSoftWarnings && (
+                            <div className="mt-4 p-3 bg-amber-50 border border-amber-100 rounded-lg text-[10px] text-amber-800 font-medium flex items-center gap-2">
+                                <Info size={14} className="shrink-0" />
+                                Note: Soft gates identified. Definitions can proceed, but compliance checks will trigger warnings downstream.
+                            </div>
+                        )}
                     </div>
                   </div>
                 </FlowStep>
@@ -592,7 +667,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
               {model.step === "INIT" && (
                 <button 
                   onClick={() => handleNextStep('GENERAL')}
-                  disabled={!model.draft.skuType}
+                  disabled={!model.draft.skuType || !areHardGatesMet}
                   className="flex items-center justify-center gap-2 px-8 py-3 bg-brand-600 text-white rounded-lg font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-lg active:scale-95"
                 >
                   Define General <ChevronRight size={18} />
@@ -665,3 +740,11 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     </FlowShell>
   );
 };
+
+const AlertOctagon = ({ size, className }: { size: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon>
+    <line x1="12" y1="8" x2="12" y2="12"></line>
+    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+  </svg>
+);
