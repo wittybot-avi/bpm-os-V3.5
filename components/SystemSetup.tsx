@@ -19,12 +19,15 @@ import {
   Wrench,
   Activity,
   Zap,
-  ShieldCheck
+  ShieldCheck,
+  ToggleLeft,
+  ToggleRight,
+  Filter
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
 import { DisabledHint } from './DisabledHint';
-import { getMockS0Context, S0Context } from '../stages/s0/s0Contract';
+import { getMockS0Context, S0Context, SystemFeatureFlag } from '../stages/s0/s0Contract';
 import { getS0ActionState, S0ActionId } from '../stages/s0/s0Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
 
@@ -75,6 +78,25 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       });
       setIsSimulating(false);
     }, 1000);
+  };
+
+  const handleToggleFlag = (flagId: string) => {
+    if (role !== UserRole.SYSTEM_ADMIN) return;
+    
+    setS0Context(prev => ({
+      ...prev,
+      featureFlags: prev.featureFlags.map(f => 
+        f.id === flagId ? { ...f, isEnabled: !f.isEnabled } : f
+      )
+    }));
+
+    const flag = s0Context.featureFlags.find(f => f.id === flagId);
+    emitAuditEvent({
+      stageId: 'S0',
+      actionId: 'EDIT_PLANT_DETAILS',
+      actorRole: role,
+      message: `Toggled feature flag: ${flag?.label} to ${!flag?.isEnabled ? 'ON' : 'OFF'}`
+    });
   };
 
   const handleNavToS1 = () => {
@@ -228,7 +250,59 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* 3. Workstation Capabilities */}
+        {/* 3. System Capability Flags (NEW) */}
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col md:col-span-2">
+          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
+            <div className="flex items-center gap-2 text-slate-700">
+              <Zap size={20} className="text-brand-600" />
+              <h2 className="font-bold">System Capability Flags</h2>
+            </div>
+            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase">
+               <ShieldCheck size={12} /> Root Auth Required to Toggle
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+             {s0Context.featureFlags.map(flag => (
+               <div 
+                 key={flag.id} 
+                 className={`p-4 rounded-lg border transition-all ${
+                   flag.isEnabled ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-slate-100 opacity-60'
+                 }`}
+               >
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-800 text-sm">{flag.label}</span>
+                        <span className={`text-[8px] px-1 py-0.5 rounded font-bold border ${
+                          flag.scope === 'GLOBAL' ? 'bg-purple-50 text-purple-600 border-purple-100' :
+                          flag.scope === 'PLANT' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                          'bg-slate-50 text-slate-500 border-slate-200'
+                        }`}>
+                          {flag.scope}
+                        </span>
+                      </div>
+                      <div className="text-[10px] font-mono text-slate-400 mt-0.5">{flag.id}</div>
+                    </div>
+                    <button 
+                      onClick={() => handleToggleFlag(flag.id)}
+                      disabled={role !== UserRole.SYSTEM_ADMIN}
+                      className={`transition-colors focus:outline-none ${role !== UserRole.SYSTEM_ADMIN ? 'cursor-not-allowed' : ''}`}
+                    >
+                      {flag.isEnabled ? (
+                        <ToggleRight className="text-brand-600" size={24} />
+                      ) : (
+                        <ToggleLeft className="text-slate-300" size={24} />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 leading-relaxed">{flag.description}</p>
+               </div>
+             ))}
+          </div>
+        </div>
+
+        {/* 4. Workstation Capabilities */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
           <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
@@ -272,11 +346,11 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* 4. Device Class Capabilities */}
+        {/* 5. Device Class Capabilities */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
           <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
-              <Zap size={20} className="text-brand-600" />
+              <Activity size={20} className="text-brand-600" />
               <h2 className="font-bold">Device Class Capabilities</h2>
             </div>
             <button className="text-[10px] font-bold text-brand-600 hover:text-brand-800">

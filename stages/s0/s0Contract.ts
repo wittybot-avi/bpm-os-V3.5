@@ -13,6 +13,18 @@
 import { EntityId, IsoDateTime } from '../../types';
 
 /**
+ * System Feature Flag
+ * Defines a toggleable capability within the OS.
+ */
+export interface SystemFeatureFlag {
+  id: string;
+  label: string;
+  description: string;
+  isEnabled: boolean;
+  scope: 'GLOBAL' | 'PLANT' | 'LINE';
+}
+
+/**
  * Plant Master Data
  * High-level facility configuration.
  */
@@ -69,6 +81,7 @@ export interface S0Context {
   // Master Entities
   plant: PlantMasterData;
   lines: LineMasterData[];
+  featureFlags: SystemFeatureFlag[];
   
   // System-level counters (Reference only)
   activeLines: number;
@@ -92,6 +105,14 @@ export const getMockS0Context = (): S0Context => {
     ]
   };
 
+  const featureFlags: SystemFeatureFlag[] = [
+    { id: 'ENABLE_SERIALIZATION', label: 'Unit Serialization', description: 'Enable unique ID generation at S3.', isEnabled: true, scope: 'GLOBAL' },
+    { id: 'ENABLE_IOT_BINDING', label: 'IoT Asset Binding', description: 'Link BMS telemetry to Battery ID at S10.', isEnabled: true, scope: 'PLANT' },
+    { id: 'ENABLE_CELL_TRACE', label: 'Deep Cell Traceability', description: 'Track serials down to individual cell units.', isEnabled: false, scope: 'LINE' },
+    { id: 'ENABLE_DIGITAL_PASSPORT', label: 'Digital Passport (EU)', description: 'Generate carbon footprint & compliance schema.', isEnabled: true, scope: 'GLOBAL' },
+    { id: 'STRICT_GATING', label: 'Strict Interlock Gating', description: 'Block stage transitions if gates are locked.', isEnabled: true, scope: 'GLOBAL' }
+  ];
+
   return {
     plantId: 'FAC-IND-WB-001-A',
     plantName: 'Gigafactory 1 - Bengal Unit',
@@ -107,6 +128,7 @@ export const getMockS0Context = (): S0Context => {
       timezone: 'Asia/Kolkata',
       capabilities: ['LFP_ASSEMBLY', 'NMC_ASSEMBLY', 'HV_TESTING']
     },
-    lines: [lineA]
+    lines: [lineA],
+    featureFlags
   };
 };
