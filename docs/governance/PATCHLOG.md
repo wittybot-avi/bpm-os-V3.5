@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-GOV-PP-23** | Governance | S0 Destructive Action Guardrails | **STABLE** | Implements safety interlocks for destructive organizational changes. Prevents suspending or retiring Enterprises, Plants, or Lines if child dependencies exist. Enforces "No Delete" policy for core topology nodes. | 2026-01-30 06:00 (IST) |
 | **V35-S0-GOV-PP-22** | Governance | S0 Audit Logging | **STABLE** | Implements backend-simulated append-only audit logging for all S0 Master Data CRUD operations (Enterprise, Plant, Line, Station, Capability, Compliance, User). Records entity types, IDs, actions, and actors. | 2026-01-30 05:00 (IST) |
 | **V35-S0-RBAC-PP-21** | RBAC | Permission Preview | **STABLE** | Implements an effective permission preview engine in the S0 User Management drawer. Allows administrators to verify resolved allowed actions for a user based on their role and assigned hierarchical scopes. | 2026-01-30 04:00 (IST) |
 | **V35-S0-RBAC-PP-20** | RBAC | User Scopes | **STABLE** | Enables assignment of hierarchical access scopes to internal user accounts. Users can be bound to Enterprise, Plant, Line, or Station nodes to restrict functional authorization. | 2026-01-30 03:00 (IST) |

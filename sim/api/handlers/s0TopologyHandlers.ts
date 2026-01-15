@@ -14,6 +14,7 @@
  * @updated V35-S0-RBAC-PP-20 (User Scopes)
  * @updated V35-S0-RBAC-PP-21 (Permission Preview)
  * @updated V35-S0-GOV-PP-22 (Audit Logging)
+ * @updated V35-S0-GOV-PP-23 (Guardrails)
  */
 
 import { UserRole } from "../../../types";
@@ -106,6 +107,15 @@ export const listEnterprises: ApiHandler = async () => {
 export const updateEnterpriseHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Enterprise> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Enterprise ID is required");
+
+  // V35-S0-GOV-PP-23: Block Suspend if child entities exist
+  if (body.updates.status && body.updates.status !== 'ACTIVE') {
+    const hasPlants = getPlants().some(p => p.enterpriseId === body.id);
+    if (hasPlants) {
+      return err("PRECONDITION_FAILED", "Cannot suspend Enterprise with active Plants. Retain or move Plants first.");
+    }
+  }
+
   const updated = updateEnterprise(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Enterprise not found", 404);
   
@@ -155,6 +165,15 @@ export const createPlantHandler: ApiHandler = async (req) => {
 export const updatePlantHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Plant> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Plant ID is required");
+
+  // V35-S0-GOV-PP-23: Block Suspend if child entities exist
+  if (body.updates.status && body.updates.status !== 'ACTIVE') {
+    const hasLines = getLines().some(l => l.plantId === body.id);
+    if (hasLines) {
+      return err("PRECONDITION_FAILED", "Cannot suspend Plant with existing production Lines. Retire or move Lines first.");
+    }
+  }
+
   const updated = updatePlant(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Plant not found", 404);
   
@@ -208,6 +227,15 @@ export const createLineHandler: ApiHandler = async (req) => {
 export const updateLineHandler: ApiHandler = async (req) => {
   const body = parseBody<{ id: string; updates: Partial<Line> }>(req);
   if (!body.id) return err("BAD_REQUEST", "Line ID is required");
+
+  // V35-S0-GOV-PP-23: Block Suspend if child entities exist
+  if (body.updates.status && body.updates.status !== 'ACTIVE') {
+    const hasStations = getStations().some(s => s.lineId === body.id);
+    if (hasStations) {
+      return err("PRECONDITION_FAILED", "Cannot suspend Line with existing Workstations. Retire Stations first.");
+    }
+  }
+
   const updated = updateLine(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Line not found", 404);
   
