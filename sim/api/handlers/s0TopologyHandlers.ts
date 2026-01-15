@@ -4,6 +4,7 @@
  * @version V3.5
  * @governance S0-ARCH-BP-05
  * @updated V35-S0-CRUD-PP-11 (Plant Mutations)
+ * @updated V35-S0-CRUD-PP-13 (Line Mutations)
  */
 
 import type { ApiHandler, ApiResponse, ApiRequest } from "../apiTypes";
@@ -13,9 +14,11 @@ import {
   getLines, 
   getStations,
   addPlant,
-  updatePlant
+  updatePlant,
+  addLine,
+  updateLine
 } from "../s0/systemTopology.store";
-import type { Plant } from "../../../domain/s0/systemTopology.types";
+import type { Plant, Line } from "../../../domain/s0/systemTopology.types";
 
 const ok = (data: any): ApiResponse => ({
   status: 200,
@@ -105,6 +108,48 @@ export const listLines: ApiHandler = async (req) => {
   }
   
   return ok(lines);
+};
+
+/**
+ * POST /api/s0/lines/create
+ */
+export const createLineHandler: ApiHandler = async (req) => {
+  const body = parseBody<Partial<Line>>(req);
+  if (!body.code || !body.displayName || !body.plantId) {
+    return err("BAD_REQUEST", "Line code, display name, and parent Plant ID are required");
+  }
+
+  const newLine: Line = {
+    id: `LN-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
+    code: body.code,
+    displayName: body.displayName,
+    status: body.status || 'ACTIVE',
+    plantId: body.plantId,
+    effectiveFrom: new Date().toISOString(),
+    stationIds: [],
+    supportedOperations: body.supportedOperations || [],
+    supportedSkuTypes: body.supportedSkuTypes || [],
+    audit: {
+      createdBy: "API_USER",
+      createdAt: new Date().toISOString()
+    }
+  };
+
+  addLine(newLine);
+  return ok(newLine);
+};
+
+/**
+ * PATCH /api/s0/lines/update
+ */
+export const updateLineHandler: ApiHandler = async (req) => {
+  const body = parseBody<{ id: string; updates: Partial<Line> }>(req);
+  if (!body.id) return err("BAD_REQUEST", "Line ID is required");
+
+  const updated = updateLine(body.id, body.updates);
+  if (!updated) return err("NOT_FOUND", "Line not found", 404);
+
+  return ok(updated);
 };
 
 /**

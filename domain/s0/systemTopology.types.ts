@@ -60,6 +60,8 @@ export interface Plant extends BaseTopologyEntity {
 export interface Line extends BaseTopologyEntity {
   readonly plantId: EntityId;
   readonly stationIds: readonly EntityId[];
+  readonly supportedOperations: readonly string[]; // V35-S0-CRUD-PP-13
+  readonly supportedSkuTypes: readonly string[];    // V35-S0-CRUD-PP-13
 }
 
 /**

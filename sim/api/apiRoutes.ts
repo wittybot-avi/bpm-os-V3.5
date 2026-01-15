@@ -66,7 +66,9 @@ import {
   listLines,
   listStations,
   createPlantHandler,
-  updatePlantHandler
+  updatePlantHandler,
+  createLineHandler,
+  updateLineHandler
 } from "./handlers/s0TopologyHandlers";
 
 export const SIM_API_ROUTES: RouteDef[] = [
@@ -101,10 +103,12 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("GET", "EXACT", "/api/s0/stations", listStations),
 
   /**
-   * S0 Topology Mutations (V35-S0-CRUD-PP-11)
+   * S0 Topology Mutations (V35-S0-CRUD-PP-11 / PP-13)
    */
   route("POST", "EXACT", "/api/s0/plants/create", createPlantHandler),
   route("PATCH", "EXACT", "/api/s0/plants/update", updatePlantHandler),
+  route("POST", "EXACT", "/api/s0/lines/create", createLineHandler),
+  route("PATCH", "EXACT", "/api/s0/lines/update", updateLineHandler),
 
   /**
    * SKU Flow (FLOW-001) - Live Simulated Handlers
@@ -147,6 +151,7 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("POST", "EXACT", "/api/flows/final-qa/approve", approveFinalQa),
   route("POST", "EXACT", "/api/flows/final-qa/reject", rejectFinalQa),
   route("POST", "EXACT", "/api/flows/final-qa/rework", reworkFinalQa),
+  // Removed duplicate /api/flows/final-qa/get entry
   route("GET", "EXACT", "/api/flows/final-qa/get", getFinalQa),
   route("GET", "EXACT", "/api/flows/final-qa/list", listFinalQa),
 

@@ -29,7 +29,7 @@ const STATIONS: Station[] = [
   }
 ];
 
-const LINES: Line[] = [
+let LINES: Line[] = [
   {
     id: "LINE-A",
     code: "L-PK-01",
@@ -38,7 +38,9 @@ const LINES: Line[] = [
     effectiveFrom: "2026-01-01T00:00:00Z",
     audit: INITIAL_AUDIT,
     plantId: "FAC-WB-01",
-    stationIds: ["STN-A4"]
+    stationIds: ["STN-A4"],
+    supportedOperations: ["ASSEMBLY", "TESTING"],
+    supportedSkuTypes: ["PACK", "MODULE"]
   }
 ];
 
@@ -82,7 +84,7 @@ export const getLineById = (id: string) => LINES.find(l => l.id === id);
 export const getStationById = (id: string) => STATIONS.find(s => s.id === id);
 
 /**
- * STORE MUTATORS (V35-S0-CRUD-PP-11)
+ * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13)
  */
 
 export const addPlant = (plant: Plant) => {
@@ -93,4 +95,14 @@ export const addPlant = (plant: Plant) => {
 export const updatePlant = (id: string, updates: Partial<Plant>) => {
   PLANTS = PLANTS.map(p => p.id === id ? { ...p, ...updates } : p);
   return PLANTS.find(p => p.id === id);
+};
+
+export const addLine = (line: Line) => {
+  LINES = [...LINES, line];
+  return line;
+};
+
+export const updateLine = (id: string, updates: Partial<Line>) => {
+  LINES = LINES.map(l => l.id === id ? { ...l, ...updates } : l);
+  return LINES.find(l => l.id === id);
 };

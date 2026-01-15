@@ -33,7 +33,8 @@ import {
   Timer,
   // Fix: Added missing Info and Save icons from lucide-react
   Info,
-  Save
+  Save,
+  ChevronDown
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -41,7 +42,7 @@ import { getMockS0Context, S0Context } from '../stages/s0/s0Contract';
 import { getS0ActionState, S0ActionId } from '../stages/s0/s0Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
 import { apiFetch } from '../services/apiHarness';
-import type { Plant } from '../domain/s0/systemTopology.types';
+import type { Plant, Line } from '../domain/s0/systemTopology.types';
 
 interface SystemSetupProps {
   onNavigate?: (view: NavView) => void;
@@ -67,88 +68,148 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [activeCategory, setActiveCategory] = useState<ManageCategory>(null);
   const [activeTab, setActiveTab] = useState<'LIST' | 'DETAILS'>('LIST');
 
-  // Plant CRUD State
-  const [plants, setPlants] = useState<Plant[]>([]);
-  const [isPlantsLoading, setIsPlantsLoading] = useState(false);
-  const [editingPlant, setEditingPlant] = useState<Partial<Plant> | null>(null);
-  const [isFormSubmitting, setIsFormSubmitting] = useState(false);
+  // Topology Selection State (V35-S0-CRUD-PP-12)
+  const [enterprises, setEnterprises] = useState<any[]>([]);
+  const [activePlants, setActivePlants] = useState<any[]>([]);
+  const [activeLines, setActiveLines] = useState<any[]>([]);
+  const [activeStations, setActiveStations] = useState<any[]>([]);
 
-  // Topology State
-  const [topology, setTopology] = useState<{
-    enterprise?: any;
-    plant?: any;
-    line?: any;
-    station?: any;
-  }>({});
+  const [selEntId, setSelEntId] = useState<string>('');
+  const [selPlantId, setSelPlantId] = useState<string>('');
+  const [selLineId, setSelLineId] = useState<string>('');
+  const [selStationId, setSelStationId] = useState<string>('');
+  
   const [isTopologyLoading, setIsTopologyLoading] = useState(true);
 
-  const fetchTopology = async () => {
-    setIsTopologyLoading(true);
-    try {
-      const entRes = await apiFetch('/api/s0/enterprises');
-      const entData = await entRes.json();
-      const activeEnt = entData.data?.[0];
+  // CRUD State
+  const [plants, setPlants] = useState<Plant[]>([]);
+  const [isEntitiesLoading, setIsEntitiesLoading] = useState(false);
+  const [editingPlant, setEditingPlant] = useState<Partial<Plant> | null>(null);
+  const [editingLine, setEditingLine] = useState<Partial<Line> | null>(null);
+  const [isFormSubmitting, setIsFormSubmitting] = useState(false);
 
-      if (activeEnt) {
-        const plantRes = await apiFetch(`/api/s0/plants?enterpriseId=${activeEnt.id}`);
-        const plantData = await plantRes.json();
-        const activePlant = plantData.data?.[0];
-
-        if (activePlant) {
-          const lineRes = await apiFetch(`/api/s0/lines?plantId=${activePlant.id}`);
-          const lineData = await lineRes.json();
-          const activeLine = lineData.data?.[0];
-
-          if (activeLine) {
-            const stRes = await apiFetch(`/api/s0/stations?lineId=${activeLine.id}`);
-            const stData = await stRes.json();
-            const activeStation = stData.data?.[0];
-
-            setTopology({
-              enterprise: activeEnt,
-              plant: activePlant,
-              line: activeLine,
-              station: activeStation
-            });
-          } else {
-            setTopology({ enterprise: activeEnt, plant: activePlant });
-          }
-        } else {
-          setTopology({ enterprise: activeEnt });
-        }
-      }
-    } catch (e) {
-      console.error("Failed to fetch topology context:", e);
-    } finally {
-      setIsTopologyLoading(false);
-    }
-  };
-
-  const fetchPlants = async () => {
-    setIsPlantsLoading(true);
-    try {
-      const res = await apiFetch('/api/s0/plants');
-      const result = await res.json();
-      if (result.ok) {
-        setPlants(result.data);
-      }
-    } catch (e) {
-      console.error("Failed to fetch plants", e);
-    } finally {
-      setIsPlantsLoading(false);
-    }
-  };
-
+  // 1. Initial Load: Enterprises
   useEffect(() => {
-    setLocalEvents(getAuditEvents().filter(e => e.stageId === 'S0'));
-    fetchTopology();
+    const init = async () => {
+      setIsTopologyLoading(true);
+      try {
+        const res = await apiFetch('/api/s0/enterprises');
+        const data = await res.json();
+        if (data.ok && data.data.length > 0) {
+          setEnterprises(data.data);
+          setSelEntId(data.data[0].id);
+        }
+      } catch (e) { console.error(e); }
+    };
+    init();
   }, []);
 
+  // 2. Cascade: Enterprises -> Plants
+  useEffect(() => {
+    if (!selEntId) return;
+    const fetchPlants = async () => {
+      try {
+        const res = await apiFetch(`/api/s0/plants?enterpriseId=${selEntId}`);
+        const data = await res.json();
+        if (data.ok) {
+          setActivePlants(data.data);
+          if (data.data.length > 0) {
+            if (!data.data.find((p: any) => p.id === selPlantId)) {
+               setSelPlantId(data.data[0].id);
+            }
+          } else {
+            setSelPlantId('');
+          }
+        }
+      } catch (e) { console.error(e); }
+    };
+    fetchPlants();
+  }, [selEntId]);
+
+  // 3. Cascade: Plants -> Lines
+  useEffect(() => {
+    if (!selPlantId) {
+      setActiveLines([]);
+      setSelLineId('');
+      return;
+    }
+    const fetchLines = async () => {
+      try {
+        const res = await apiFetch(`/api/s0/lines?plantId=${selPlantId}`);
+        const data = await res.json();
+        if (data.ok) {
+          setActiveLines(data.data);
+          if (data.data.length > 0) {
+            if (!data.data.find((l: any) => l.id === selLineId)) {
+               setSelLineId(data.data[0].id);
+            }
+          } else {
+            setSelLineId('');
+          }
+        }
+      } catch (e) { console.error(e); }
+    };
+    fetchLines();
+  }, [selPlantId]);
+
+  // 4. Cascade: Lines -> Stations
+  useEffect(() => {
+    if (!selLineId) {
+      setActiveStations([]);
+      setSelStationId('');
+      return;
+    }
+    const fetchStations = async () => {
+      try {
+        const res = await apiFetch(`/api/s0/stations?lineId=${selLineId}`);
+        const data = await res.json();
+        if (data.ok) {
+          setActiveStations(data.data);
+          if (data.data.length > 0) {
+            if (!data.data.find((s: any) => s.id === selStationId)) {
+               setSelStationId(data.data[0].id);
+            }
+          } else {
+            setSelStationId('');
+          }
+        }
+      } catch (e) { console.error(e); } finally {
+        setIsTopologyLoading(false);
+      }
+    };
+    fetchStations();
+  }, [selLineId]);
+
+  // Sync audit events
+  useEffect(() => {
+    setLocalEvents(getAuditEvents().filter(e => e.stageId === 'S0'));
+  }, []);
+
+  // Fetch for Manager
   useEffect(() => {
     if (activeCategory === 'ORGANIZATION') {
-      fetchPlants();
+      const loadPlants = async () => {
+        setIsEntitiesLoading(true);
+        try {
+          const res = await apiFetch('/api/s0/plants');
+          const result = await res.json();
+          if (result.ok) setPlants(result.data);
+        } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
+      };
+      loadPlants();
+    } else if (activeCategory === 'LINES') {
+      const loadLines = async () => {
+        if (!selPlantId) return;
+        setIsEntitiesLoading(true);
+        try {
+          const res = await apiFetch(`/api/s0/lines?plantId=${selPlantId}`);
+          const result = await res.json();
+          if (result.ok) setActiveLines(result.data);
+        } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
+      };
+      loadLines();
     }
-  }, [activeCategory]);
+  }, [activeCategory, selPlantId]);
 
   // Handlers
   const handleEditPlantTile = () => {
@@ -197,13 +258,16 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     setActiveCategory(cat);
     setActiveTab('LIST');
     setEditingPlant(null);
+    setEditingLine(null);
   };
 
   const closeManager = () => {
     setActiveCategory(null);
     setEditingPlant(null);
+    setEditingLine(null);
   };
 
+  // Plant CRUD
   const handleCreateOrUpdatePlant = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingPlant || isFormSubmitting) return;
@@ -215,10 +279,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       const method = isEdit ? 'PATCH' : 'POST';
       const body = isEdit ? { id: editingPlant.id, updates: editingPlant } : editingPlant;
 
-      const res = await apiFetch(endpoint, {
-        method,
-        body: JSON.stringify(body)
-      });
+      const res = await apiFetch(endpoint, { method, body: JSON.stringify(body) });
       const result = await res.json();
       
       if (result.ok) {
@@ -230,11 +291,12 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         });
         setEditingPlant(null);
         setActiveTab('LIST');
-        fetchPlants();
-        fetchTopology(); // Refresh the context bar
+        const plantRes = await apiFetch(`/api/s0/plants?enterpriseId=${selEntId}`);
+        const plantData = await plantRes.json();
+        if (plantData.ok) setActivePlants(plantData.data);
       }
     } catch (err) {
-      console.error("Plant save failure", err);
+      console.error(err);
     } finally {
       setIsFormSubmitting(false);
     }
@@ -256,11 +318,76 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           actorRole: role,
           message: `Suspended plant: ${result.data.displayName}`
         });
-        fetchPlants();
-        fetchTopology();
+        const plantRes = await apiFetch(`/api/s0/plants?enterpriseId=${selEntId}`);
+        const plantData = await plantRes.json();
+        if (plantData.ok) setActivePlants(plantData.data);
       }
     } catch (e) {
-      console.error("Suspend failed", e);
+      console.error(e);
+    } finally {
+      setIsFormSubmitting(false);
+    }
+  };
+
+  // Line CRUD (V35-S0-CRUD-PP-13)
+  const handleCreateOrUpdateLine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingLine || isFormSubmitting || !selPlantId) return;
+    setIsFormSubmitting(true);
+
+    try {
+      const isEdit = !!editingLine.id;
+      const endpoint = isEdit ? '/api/s0/lines/update' : '/api/s0/lines/create';
+      const method = isEdit ? 'PATCH' : 'POST';
+      const body = isEdit 
+        ? { id: editingLine.id, updates: editingLine } 
+        : { ...editingLine, plantId: selPlantId };
+
+      const res = await apiFetch(endpoint, { method, body: JSON.stringify(body) });
+      const result = await res.json();
+      
+      if (result.ok) {
+        emitAuditEvent({
+          stageId: 'S0',
+          actionId: 'MANAGE_LINES',
+          actorRole: role,
+          message: `${isEdit ? 'Updated' : 'Created'} line: ${result.data.displayName}`
+        });
+        setEditingLine(null);
+        setActiveTab('LIST');
+        const lineRes = await apiFetch(`/api/s0/lines?plantId=${selPlantId}`);
+        const lineData = await lineRes.json();
+        if (lineData.ok) setActiveLines(lineData.data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFormSubmitting(false);
+    }
+  };
+
+  const handleSuspendLine = async (id: string) => {
+    if (isFormSubmitting) return;
+    setIsFormSubmitting(true);
+    try {
+      const res = await apiFetch('/api/s0/lines/update', {
+        method: 'PATCH',
+        body: JSON.stringify({ id, updates: { status: 'SUSPENDED' } })
+      });
+      const result = await res.json();
+      if (result.ok) {
+        emitAuditEvent({
+          stageId: 'S0',
+          actionId: 'MANAGE_LINES',
+          actorRole: role,
+          message: `Suspended line: ${result.data.displayName}`
+        });
+        const lineRes = await apiFetch(`/api/s0/lines?plantId=${selPlantId}`);
+        const lineData = await lineRes.json();
+        if (lineData.ok) setActiveLines(lineData.data);
+      }
+    } catch (e) {
+      console.error(e);
     } finally {
       setIsFormSubmitting(false);
     }
@@ -279,6 +406,28 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   }
 
   const isReadyForNext = s0Context.status === 'READY';
+
+  const SelectorItem = ({ icon: Icon, label, value, options, onChange }: any) => (
+    <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
+      <Icon size={16} className="text-slate-400 shrink-0" />
+      <div className="flex flex-col">
+        <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">{label}</label>
+        <div className="relative">
+          <select 
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="text-xs font-bold text-slate-700 bg-transparent outline-none appearance-none pr-4 cursor-pointer hover:text-brand-600 transition-colors"
+          >
+            {options.length === 0 && <option value="">N/A</option>}
+            {options.map((opt: any) => (
+              <option key={opt.id} value={opt.id}>{opt.displayName || opt.code}</option>
+            ))}
+          </select>
+          <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="relative h-full overflow-hidden">
@@ -305,35 +454,36 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         </div>
 
         {/* TOPOLOGY CONTEXT BAR */}
-        <div className="bg-white border border-industrial-border rounded-lg p-3 shadow-sm flex flex-wrap items-center gap-6 overflow-x-auto custom-scrollbar">
-          <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
-              <Building2 size={16} className="text-slate-400" />
-              <div>
-                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Enterprise</div>
-                <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.enterprise?.displayName || 'N/A'}</div>
-              </div>
-          </div>
-          <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
-              <Factory size={16} className="text-slate-400" />
-              <div>
-                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Plant</div>
-                <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.plant?.displayName || 'N/A'}</div>
-              </div>
-          </div>
-          <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
-              <Layout size={16} className="text-slate-400" />
-              <div>
-                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Active Line</div>
-                <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.line?.displayName || 'N/A'}</div>
-              </div>
-          </div>
-          <div className="flex items-center gap-2 px-2 border-r border-slate-100 last:border-0 pr-4">
-              <Box size={16} className="text-brand-500" />
-              <div>
-                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest leading-none mb-1">Primary Station</div>
-                <div className="text-xs font-bold text-slate-700">{isTopologyLoading ? '...' : topology.station?.displayName || 'N/A'}</div>
-              </div>
-          </div>
+        <div className="bg-white border border-industrial-border rounded-lg p-3 shadow-sm flex flex-wrap items-center gap-4 overflow-x-auto custom-scrollbar">
+          <SelectorItem 
+            icon={Building2} 
+            label="Enterprise" 
+            value={selEntId} 
+            options={enterprises} 
+            onChange={setSelEntId} 
+          />
+          <SelectorItem 
+            icon={Factory} 
+            label="Plant" 
+            value={selPlantId} 
+            options={activePlants} 
+            onChange={setSelPlantId} 
+          />
+          <SelectorItem 
+            icon={Layout} 
+            label="Active Line" 
+            value={selLineId} 
+            options={activeLines} 
+            onChange={setSelLineId} 
+          />
+          <SelectorItem 
+            icon={Box} 
+            label="Primary Station" 
+            value={selStationId} 
+            options={activeStations} 
+            onChange={setSelStationId} 
+          />
+          
           {isTopologyLoading && (
               <div className="flex items-center gap-2 text-xs font-medium text-slate-400 ml-auto pr-2">
                 <Loader2 size={14} className="animate-spin text-brand-500" />
@@ -391,7 +541,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <div className="grid grid-cols-2 gap-2">
                   <div className="bg-slate-50 p-2 rounded">
                       <span className="text-[10px] text-slate-400 font-bold uppercase block">Facility ID</span>
-                      <span className="font-mono text-slate-700">{s0Context.plantId}</span>
+                      <span className="font-mono text-slate-700">{selPlantId || 'N/A'}</span>
                   </div>
                   <div className="bg-slate-50 p-2 rounded">
                       <span className="text-[10px] text-slate-400 font-bold uppercase block">Region</span>
@@ -425,16 +575,17 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               </div>
             </div>
             <div className="space-y-3 flex-1">
-               {s0Context.lines.map(line => (
-                 <div key={line.lineId} className="p-3 bg-slate-50 rounded border border-slate-200 text-[10px]">
+               {activeLines.length === 0 && <div className="text-xs text-slate-400 italic py-4">No lines provisioned for this plant.</div>}
+               {activeLines.map(line => (
+                 <div key={line.id} className={`p-3 rounded border transition-all text-[10px] ${selLineId === line.id ? 'bg-brand-50 border-brand-200 ring-1 ring-brand-100' : 'bg-slate-50 border-slate-200'}`}>
                     <div className="flex justify-between items-start mb-2">
-                      <span className="font-bold text-slate-800 text-xs">{line.name}</span>
-                      <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold uppercase">{line.type}</span>
+                      <span className="font-bold text-slate-800 text-xs">{line.displayName}</span>
+                      <span className={`px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold uppercase ${line.status === 'SUSPENDED' ? 'opacity-50' : ''}`}>{line.status}</span>
                     </div>
-                    <div className="flex justify-between"><span>Provisioned Nodes:</span><span className="font-mono font-bold">{line.workstations.length}</span></div>
+                    <div className="flex justify-between"><span>Provisioned Code:</span><span className="font-mono font-bold">{line.code}</span></div>
                  </div>
                ))}
-               <button className="w-full py-2 border-2 border-dashed border-slate-200 rounded text-[10px] font-bold text-slate-400 hover:text-brand-600 transition-colors">+ REGISTER NEW LINE</button>
+               <button onClick={() => { setEditingLine({ displayName: '', code: '', status: 'ACTIVE', supportedOperations: [], supportedSkuTypes: [] }); setActiveTab('DETAILS'); openManager('LINES'); }} className="w-full py-2 border-2 border-dashed border-slate-200 rounded text-[10px] font-bold text-slate-400 hover:text-brand-600 transition-colors">+ REGISTER NEW LINE</button>
             </div>
           </div>
 
@@ -477,13 +628,19 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               <button onClick={() => openManager('WORKSTATIONS')} className="text-[10px] font-bold text-slate-400 hover:text-brand-600 uppercase">Manage</button>
             </div>
             <div className="space-y-4 flex-1">
-               <div className="bg-slate-50 p-3 rounded border border-slate-200">
-                  <div className="flex items-center gap-2 mb-2"><ShieldCheck size={14} className="text-green-600" /><span className="text-xs font-bold text-slate-700 uppercase">Authorized Gating</span></div>
-                  <div className="space-y-1 text-[10px] text-slate-500">
-                     <div className="flex justify-between"><span>Scan-to-Proceed</span><span className="text-green-600 font-bold">SUPPORTED</span></div>
-                     <div className="flex justify-between"><span>Torque-Tool Interlock</span><span className="text-green-600 font-bold">SUPPORTED</span></div>
-                  </div>
-               </div>
+               {activeStations.length === 0 && <div className="text-xs text-slate-400 italic py-4">No workstations found for this line.</div>}
+               {activeStations.map(station => (
+                 <div key={station.id} className={`p-3 rounded border border-slate-200 transition-all ${selStationId === station.id ? 'bg-brand-50 border-brand-300' : 'bg-slate-50'}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <ShieldCheck size={14} className="text-green-600" />
+                      <span className="text-xs font-bold text-slate-700 uppercase">{station.displayName}</span>
+                    </div>
+                    <div className="space-y-1 text-[10px] text-slate-500">
+                       <div className="flex justify-between"><span>Station Type</span><span className="font-bold">{station.stationType}</span></div>
+                       <div className="flex justify-between"><span>Status</span><span className="text-green-600 font-bold">{station.status}</span></div>
+                    </div>
+                 </div>
+               ))}
             </div>
           </div>
 
@@ -560,7 +717,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* SCAFFOLDED MANAGEMENT DRAWER (V35-S0-CRUD-BP-10) */}
+      {/* SCAFFOLDED MANAGEMENT DRAWER */}
       {activeCategory && (
         <div className="absolute inset-0 z-50 flex justify-end animate-in fade-in duration-200">
           {/* Backdrop */}
@@ -572,7 +729,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <div className="flex items-center gap-3">
                   <div className="p-2 bg-brand-600 text-white rounded-lg"><Settings size={20} /></div>
                   <div>
-                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory}</h2>
+                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory === 'LINES' ? 'Lines' : activeCategory}</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Master Data Management</p>
                   </div>
                </div>
@@ -582,14 +739,14 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             {/* Tabs */}
             <div className="flex border-b border-slate-200 shrink-0">
                <button 
-                 onClick={() => { setActiveTab('LIST'); setEditingPlant(null); }}
+                 onClick={() => { setActiveTab('LIST'); setEditingPlant(null); setEditingLine(null); }}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'LIST' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50'}`}
                >
                  <List size={14} /> Repository List
                </button>
                <button 
                  onClick={() => setActiveTab('DETAILS')}
-                 disabled={activeCategory !== 'ORGANIZATION'}
+                 disabled={activeCategory !== 'ORGANIZATION' && activeCategory !== 'LINES'}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'DETAILS' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed'}`}
                >
                  <FileText size={14} /> Definition Details
@@ -610,7 +767,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                             <Plus size={12} /> ADD NEW PLANT
                           </button>
                        </div>
-                       {isPlantsLoading ? (
+                       {isEntitiesLoading ? (
                          <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-3">
                            <Loader2 size={24} className="animate-spin" />
                            <span className="text-xs font-bold uppercase">Fetching Registry...</span>
@@ -627,22 +784,8 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                                    </div>
                                 </div>
                                 <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                   <button 
-                                      onClick={() => { setEditingPlant(p); setActiveTab('DETAILS'); }}
-                                      className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors"
-                                      title="Edit Definition"
-                                   >
-                                      <Edit2 size={14} />
-                                   </button>
-                                   {p.status === 'ACTIVE' && (
-                                     <button 
-                                        onClick={() => handleSuspendPlant(p.id)}
-                                        className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                        title="Suspend Capability"
-                                     >
-                                        <Ban size={14} />
-                                     </button>
-                                   )}
+                                   <button onClick={() => { setEditingPlant(p); setActiveTab('DETAILS'); }} className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors" title="Edit Definition"><Edit2 size={14} /></button>
+                                   {p.status === 'ACTIVE' && <button onClick={() => handleSuspendPlant(p.id)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Suspend Capability"><Ban size={14} /></button>}
                                 </div>
                              </div>
                            ))}
@@ -651,98 +794,86 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                      </div>
                    ) : (
                      <form onSubmit={handleCreateOrUpdatePlant} className="p-6 space-y-6">
-                        <div className="flex items-center gap-3 mb-2">
-                           <div className="p-2 bg-brand-50 rounded text-brand-600"><Factory size={18} /></div>
-                           <h3 className="font-bold text-slate-700">{editingPlant?.id ? 'Edit Plant Definition' : 'Add New Plant Entity'}</h3>
-                        </div>
-
+                        <div className="flex items-center gap-3 mb-2"><div className="p-2 bg-brand-50 rounded text-brand-600"><Factory size={18} /></div><h3 className="font-bold text-slate-700">{editingPlant?.id ? 'Edit Plant Definition' : 'Add New Plant Entity'}</h3></div>
                         <div className="space-y-4">
-                           <div className="space-y-1.5">
-                              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Plant Display Name</label>
-                              <input 
-                                required
-                                type="text"
-                                className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none"
-                                placeholder="e.g. Gigafactory 2 - Mumbai"
-                                value={editingPlant?.displayName || ''}
-                                onChange={e => setEditingPlant(p => ({ ...p!, displayName: e.target.value }))}
-                              />
-                           </div>
-
+                           <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Plant Display Name</label><input required type="text" className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none" placeholder="e.g. Gigafactory 2 - Mumbai" value={editingPlant?.displayName || ''} onChange={e => setEditingPlant(p => ({ ...p!, displayName: e.target.value }))} /></div>
                            <div className="grid grid-cols-2 gap-4">
-                              <div className="space-y-1.5">
-                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Plant Code</label>
-                                 <input 
-                                    required
-                                    type="text"
-                                    className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none font-mono uppercase"
-                                    placeholder="PL-MUM-01"
-                                    value={editingPlant?.code || ''}
-                                    onChange={e => setEditingPlant(p => ({ ...p!, code: e.target.value }))}
-                                 />
-                              </div>
-                              <div className="space-y-1.5">
-                                 <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Initial Status</label>
-                                 <select 
-                                    className="w-full border border-slate-300 rounded p-2.5 text-sm outline-none bg-white"
-                                    value={editingPlant?.status || 'ACTIVE'}
-                                    onChange={e => setEditingPlant(p => ({ ...p!, status: e.target.value as any }))}
-                                 >
-                                    <option value="ACTIVE">ACTIVE</option>
-                                    <option value="SUSPENDED">SUSPENDED</option>
-                                 </select>
-                              </div>
+                              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Plant Code</label><input required type="text" className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none font-mono uppercase" placeholder="PL-MUM-01" value={editingPlant?.code || ''} onChange={e => setEditingPlant(p => ({ ...p!, code: e.target.value }))} /></div>
+                              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Initial Status</label><select className="w-full border border-slate-300 rounded p-2.5 text-sm outline-none bg-white" value={editingPlant?.status || 'ACTIVE'} onChange={e => setEditingPlant(p => ({ ...p!, status: e.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option></select></div>
                            </div>
-
-                           <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex gap-3 mt-4">
-                              {/* Fix: Info icon is now imported */}
-                              <Info size={18} className="text-slate-400 shrink-0" />
-                              <p className="text-[11px] text-slate-600 leading-relaxed">
-                                Creating a new plant establishes a root node for manufacturing topology. Once active, lines can be provisioned within this facility.
-                              </p>
+                           <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg flex gap-3 mt-4"><Info size={18} className="text-slate-400 shrink-0" /><p className="text-[11px] text-slate-600 leading-relaxed">Creating a new plant establishes a root node for manufacturing topology. Once active, lines can be provisioned within this facility.</p></div>
+                        </div>
+                        <div className="pt-6 flex gap-3"><button type="button" onClick={() => { setEditingPlant(null); setActiveTab('LIST'); }} className="px-6 py-2.5 rounded text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">CANCEL</button><button type="submit" disabled={isFormSubmitting} className="flex-1 bg-brand-600 hover:bg-brand-700 text-white rounded font-bold text-sm py-2.5 shadow-sm transition-all flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{editingPlant?.id ? 'UPDATE DEFINITION' : 'CREATE PLANT ENTITY'}</button></div>
+                     </form>
+                   )}
+                 </>
+               ) : activeCategory === 'LINES' ? (
+                 <>
+                   {activeTab === 'LIST' ? (
+                     <div className="p-0">
+                       <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active Lines for Selected Plant</span>
+                          <button 
+                            disabled={!selPlantId}
+                            onClick={() => { setEditingLine({ displayName: '', code: '', status: 'ACTIVE', supportedOperations: [], supportedSkuTypes: [] }); setActiveTab('DETAILS'); }}
+                            className="flex items-center gap-1 text-[10px] font-bold text-brand-600 hover:text-brand-800 disabled:opacity-50"
+                          >
+                            <Plus size={12} /> ADD NEW LINE
+                          </button>
+                       </div>
+                       {isEntitiesLoading ? (
+                         <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-3">
+                           <Loader2 size={24} className="animate-spin" />
+                           <span className="text-xs font-bold uppercase">Fetching Registry...</span>
+                         </div>
+                       ) : (
+                         <div className="divide-y divide-slate-100">
+                           {activeLines.map(l => (
+                             <div key={l.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center group">
+                                <div className="flex items-center gap-3">
+                                   <div className={`w-2 h-2 rounded-full ${l.status === 'ACTIVE' ? 'bg-green-50' : 'bg-amber-500'}`} />
+                                   <div>
+                                      <div className="text-sm font-bold text-slate-800">{l.displayName}</div>
+                                      <div className="text-[10px] font-mono text-slate-400 uppercase tracking-tighter">Code: {l.code} • ID: {l.id}</div>
+                                   </div>
+                                </div>
+                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                   <button onClick={() => { setEditingLine(l); setActiveTab('DETAILS'); }} className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors" title="Edit Definition"><Edit2 size={14} /></button>
+                                   {l.status === 'ACTIVE' && <button onClick={() => handleSuspendLine(l.id)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Suspend Capability"><Ban size={14} /></button>}
+                                </div>
+                             </div>
+                           ))}
+                           {activeLines.length === 0 && (
+                             <div className="p-12 text-center text-slate-400 italic text-sm">No lines provisioned for this facility.</div>
+                           )}
+                         </div>
+                       )}
+                     </div>
+                   ) : (
+                     <form onSubmit={handleCreateOrUpdateLine} className="p-6 space-y-6">
+                        <div className="flex items-center gap-3 mb-2"><div className="p-2 bg-brand-50 rounded text-brand-600"><Layout size={18} /></div><h3 className="font-bold text-slate-700">{editingLine?.id ? 'Edit Line Definition' : 'Add New Line Entity'}</h3></div>
+                        <div className="space-y-4 text-sm">
+                           <div className="p-3 bg-slate-50 border border-slate-200 rounded-md flex items-center justify-between mb-4">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Parent Plant Binding</span>
+                              <span className="font-bold text-brand-700">{activePlants.find(p => p.id === selPlantId)?.displayName || selPlantId}</span>
                            </div>
+                           <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Line Display Name</label><input required type="text" className="w-full border border-slate-300 rounded p-2.5 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="e.g. Pack Assembly Line B" value={editingLine?.displayName || ''} onChange={e => setEditingLine(l => ({ ...l!, displayName: e.target.value }))} /></div>
+                           <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Line Code</label><input required type="text" className="w-full border border-slate-300 rounded p-2.5 focus:ring-2 focus:ring-brand-500 outline-none font-mono uppercase" placeholder="LN-PK-02" value={editingLine?.code || ''} onChange={e => setEditingLine(l => ({ ...l!, code: e.target.value }))} /></div>
+                              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Initial Status</label><select className="w-full border border-slate-300 rounded p-2.5 outline-none bg-white" value={editingLine?.status || 'ACTIVE'} onChange={e => setEditingLine(l => ({ ...l!, status: e.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option></select></div>
+                           </div>
+                           <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supported Sku Types (Comma separated)</label><input type="text" className="w-full border border-slate-300 rounded p-2.5 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="PACK, MODULE" value={editingLine?.supportedSkuTypes?.join(', ') || ''} onChange={e => setEditingLine(l => ({ ...l!, supportedSkuTypes: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }))} /></div>
                         </div>
-
-                        <div className="pt-6 flex gap-3">
-                           <button 
-                              type="button"
-                              onClick={() => { setEditingPlant(null); setActiveTab('LIST'); }}
-                              className="px-6 py-2.5 rounded text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors"
-                           >
-                              CANCEL
-                           </button>
-                           <button 
-                              type="submit"
-                              disabled={isFormSubmitting}
-                              className="flex-1 bg-brand-600 hover:bg-brand-700 text-white rounded font-bold text-sm py-2.5 shadow-sm transition-all flex items-center justify-center gap-2"
-                           >
-                              {/* Fix: Save icon is now imported */}
-                              {isFormSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                              {editingPlant?.id ? 'UPDATE DEFINITION' : 'CREATE PLANT ENTITY'}
-                           </button>
-                        </div>
+                        <div className="pt-6 flex gap-3"><button type="button" onClick={() => { setEditingLine(null); setActiveTab('LIST'); }} className="px-6 py-2.5 rounded text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">CANCEL</button><button type="submit" disabled={isFormSubmitting} className="flex-1 bg-brand-600 hover:bg-brand-700 text-white rounded font-bold text-sm py-2.5 shadow-sm transition-all flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{editingLine?.id ? 'UPDATE DEFINITION' : 'CREATE LINE ENTITY'}</button></div>
                      </form>
                    )}
                  </>
                ) : (
                  <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center">
-                    <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center text-slate-300 mb-4">
-                        <Lock size={32} />
-                    </div>
+                    <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center text-slate-300 mb-4"><Lock size={32} /></div>
                     <h3 className="text-lg font-bold text-slate-700 uppercase tracking-tight">Management Framework Scoped</h3>
-                    <p className="text-sm text-slate-500 max-w-sm mt-2 leading-relaxed">
-                        The management interface for <strong>{activeCategory}</strong> is wired to the V3.5 Foundation. Entity CRUD forms are coming in the next incremental patch.
-                    </p>
-                    <div className="mt-8 grid grid-cols-2 gap-4 w-full max-w-xs">
-                        <div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center">
-                            <Plus size={20} className="text-slate-300 mb-1" />
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Add Entry</span>
-                        </div>
-                        <div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center">
-                            <Settings size={20} className="text-slate-300 mb-1" />
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Configuration</span>
-                        </div>
-                    </div>
+                    <p className="text-sm text-slate-500 max-w-sm mt-2 leading-relaxed">The management interface for <strong>{activeCategory}</strong> is wired to the V3.5 Foundation. Entity CRUD forms are coming in the next incremental patch.</p>
+                    <div className="mt-8 grid grid-cols-2 gap-4 w-full max-w-xs"><div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center"><Plus size={20} className="text-slate-300 mb-1" /><span className="text-[10px] font-bold text-slate-400 uppercase">Add Entry</span></div><div className="p-3 border border-slate-100 rounded-lg bg-slate-50 flex flex-col items-center"><Settings size={20} className="text-slate-300 mb-1" /><span className="text-[10px] font-bold text-slate-400 uppercase">Configuration</span></div></div>
                  </div>
                )}
             </div>
@@ -751,7 +882,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider">Close Panel</button>
                <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
                   <ShieldCheck size={12} />
-                  {activeCategory === 'ORGANIZATION' ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
+                  {['ORGANIZATION', 'LINES'].includes(activeCategory || '') ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
                </div>
             </footer>
           </div>
