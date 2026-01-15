@@ -27,9 +27,15 @@ export const DOC_ARTIFACTS: DocArtifact[] = [
     path: "/docs/v35/S0_MASTER_DATA_SOURCE_OF_TRUTH.md" 
   },
   { 
-    id: "s1-master", 
-    title: "S1 Product Master", 
+    id: "s1-sot", 
+    title: "S1 Product Master SoT", 
     tab: "S1 Product Master", 
+    path: "/docs/v35/S1_PRODUCT_MASTER_SOURCE_OF_TRUTH.md" 
+  },
+  { 
+    id: "s1-master", 
+    title: "S1 Product Master Contract", 
+    tab: "S1 Contract", 
     path: "/docs/v35/S1_PRODUCT_MASTER_CONTRACT.md" 
   },
   { 
