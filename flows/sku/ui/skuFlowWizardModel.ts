@@ -6,7 +6,7 @@
 
 import type { SkuDraft, SkuFlowState, SkuFlowRole } from "../skuFlowContract";
 
-export type WizardStepId = "DRAFT" | "REVIEW" | "APPROVE" | "PUBLISH";
+export type WizardStepId = "INIT" | "DRAFT" | "REVIEW" | "APPROVE" | "PUBLISH";
 
 export interface WizardModel {
   role: SkuFlowRole;
@@ -24,10 +24,11 @@ export function createDefaultWizardModel(): WizardModel {
   return {
     role: "Maker",
     state: "Draft",
-    step: "DRAFT",
+    step: "INIT", // New SKUs start at INIT (Step 0)
     draft: { 
       skuCode: "", 
       skuName: "", 
+      isRevision: false,
       chemistry: "", 
       formFactor: "", 
       nominalVoltage: 0, 
@@ -52,6 +53,6 @@ export function resolveStepFromState(state: SkuFlowState): WizardStepId {
     case "Active":
       return "PUBLISH";
     default:
-      return "DRAFT";
+      return "INIT";
   }
 }

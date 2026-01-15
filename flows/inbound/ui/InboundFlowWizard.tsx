@@ -116,17 +116,20 @@ export const InboundFlowWizard: React.FC<InboundFlowWizardProps> = ({ instanceId
   };
 
   const handleApiError = (err: any) => {
-    console.error("Inbound Flow API Error Context:", err);
-    // Robust error message extraction to prevent [object Object]
-    let message = "Communication failure with simulated API.";
+    const errString = err && typeof err === 'object' ? JSON.stringify(err) : String(err);
+    console.error(`Inbound Flow API Error Context: ${errString}`);
+    
+    let message = "Warehouse system communication failure.";
     if (typeof err === 'string') {
       message = err;
-    } else if (err?.message && typeof err.message === 'string') {
-      message = err.message;
-    } else if (err?.error?.message && typeof err.error.message === 'string') {
-      message = err.error.message;
     } else if (err && typeof err === 'object') {
-      message = `Internal Error: ${err.code || 'UNKNOWN_INBOUND_ERROR'}`;
+      if (err.message && typeof err.message === 'string') {
+        message = err.message;
+      } else if (err.error?.message && typeof err.error.message === 'string') {
+        message = err.error.message;
+      } else {
+        message = err.code ? `Error: ${err.code}` : `Technical Error: ${errString}`;
+      }
     }
 
     setModel(m => ({

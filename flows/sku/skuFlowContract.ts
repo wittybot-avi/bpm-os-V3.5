@@ -5,6 +5,7 @@
  */
 
 import type { ApiResult, EntityId, IsoDateTime } from "../../types";
+import type { SkuType } from "../../stages/s1/s1Contract";
 
 export type SkuFlowState = "Draft" | "Review" | "Approved" | "Active" | "Rejected";
 
@@ -13,6 +14,8 @@ export type SkuFlowRole = "Maker" | "Checker" | "Approver";
 export interface SkuDraft {
   skuCode: string;
   skuName: string;
+  skuType?: SkuType;             // Added for V35 taxonomy
+  isRevision: boolean;           // Added to distinguish new vs revise
   chemistry?: string;           // e.g., LFP, NMC
   formFactor?: string;          // pouch/prismatic/cylindrical
   nominalVoltage?: number;

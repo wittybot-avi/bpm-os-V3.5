@@ -28,7 +28,11 @@ import {
   Lock,
   Cloud,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  XCircle,
+  // Added FileText and Archive imports
+  FileText,
+  Archive
 } from 'lucide-react';
 import { FlowShell, FlowStep, FlowFooter } from '../../../components/flow';
 import { useDeviceLayout } from '../../../hooks/useDeviceLayout';
@@ -71,7 +75,7 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
   }));
 
   const isDesktop = layout === 'desktop';
-  const isTouch = layout !== 'desktop';
+  const isMobile = layout === 'mobile';
 
   // Load existing instance if provided
   useEffect(() => {
@@ -114,17 +118,20 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
   };
 
   const handleApiError = (err: any) => {
-    console.error("Dispatch Flow API Error Context:", err);
-    // Robust error message extraction to prevent [object Object]
-    let message = "Communication failure with simulated API.";
+    const errString = err && typeof err === 'object' ? JSON.stringify(err) : String(err);
+    console.error(`Dispatch Flow API Error Context: ${errString}`);
+    
+    let message = "Logistics communication failure.";
     if (typeof err === 'string') {
       message = err;
-    } else if (err?.message && typeof err.message === 'string') {
-      message = err.message;
-    } else if (err?.error?.message && typeof err.error.message === 'string') {
-      message = err.error.message;
     } else if (err && typeof err === 'object') {
-      message = `Internal Error: ${err.code || 'UNKNOWN_DISPATCH_ERROR'}`;
+      if (err.message && typeof err.message === 'string') {
+        message = err.message;
+      } else if (err.error?.message && typeof err.error.message === 'string') {
+        message = err.error.message;
+      } else {
+        message = err.code ? `Error: ${err.code}` : `Technical Error: ${errString}`;
+      }
     }
 
     setModel(m => ({
@@ -141,7 +148,6 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
     }));
   };
 
-  // Handlers
   const handleNext = async () => {
     if (model.step === "DRAFT") {
       setModel(m => ({ ...m, isSyncing: true, error: null }));
@@ -238,7 +244,13 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
     });
   };
 
-  // UI Components
+  const DeviceIndicator = (
+    <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400 mr-4 select-none opacity-50">
+      {isDesktop ? <Monitor size={10} /> : layout === 'tablet' ? <Tablet size={10} /> : <Smartphone size={10} />}
+      <span className="uppercase">{layout}</span>
+    </div>
+  );
+
   const RoleSwitcher = (
     <div className="flex bg-slate-200 p-1 rounded-md">
       {(["SCM", "Finance", "Logistics"] as DispatchRole[]).map(r => (
@@ -257,15 +269,8 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
     </div>
   );
 
-  const DeviceIndicator = (
-    <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400 mr-4 select-none opacity-50">
-      {layout === 'desktop' ? <Monitor size={10} /> : layout === 'tablet' ? <Tablet size={10} /> : <Smartphone size={10} />}
-      <span className="uppercase">{layout}</span>
-    </div>
-  );
-
   const SummaryPill = ({ label, value }: { label: string, value: string }) => (
-    <div className="bg-slate-100 px-3 py-2 rounded-lg border border-slate-200">
+    <div className="bg-slate-100 px-3 py-2 rounded-lg border border-slate-200 min-w-[120px]">
       <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{label}</div>
       <div className="text-xs font-bold text-slate-700 font-mono truncate">{value}</div>
     </div>
@@ -283,7 +288,6 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
       )}
     >
       <div className="h-full flex flex-col relative">
-        {/* Status Line */}
         <div className="px-6 py-1 bg-slate-100 border-b border-slate-200 flex justify-between items-center text-[9px] font-mono text-slate-500">
            <div className="flex items-center gap-2">
               <Cloud size={10} className={model.instanceId ? "text-green-500" : "text-slate-300"} />
@@ -292,11 +296,10 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
            {(model.isSyncing || model.isLoading) && <span className="animate-pulse text-brand-600 font-bold uppercase">Syncing...</span>}
         </div>
 
-        {/* Global Error Banner */}
         {model.error && (
           <div className="px-6 py-2 bg-red-50 text-red-700 text-xs border-b border-red-100 flex items-center gap-2">
             <AlertCircle size={14} className="shrink-0" />
-            <span className="font-medium text-red-800">{model.error}</span>
+            <span className="font-medium">{model.error}</span>
           </div>
         )}
 
@@ -304,7 +307,7 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
           {model.isLoading ? (
             <div className="h-full flex flex-col items-center justify-center p-12 text-slate-400 gap-3">
               <Loader2 size={32} className="animate-spin text-brand-500" />
-              <p className="text-sm font-bold uppercase tracking-widest">Loading Instance...</p>
+              <p className="text-sm font-bold uppercase tracking-widest">Loading Consignment...</p>
             </div>
           ) : (
             <>
@@ -316,7 +319,7 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Customer Name</label>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Customer Name</label>
                         <input 
                           type="text"
                           className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none"
@@ -326,7 +329,7 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Delivery Destination</label>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Delivery Destination</label>
                         <div className="relative">
                           <input 
                             type="text"
@@ -340,8 +343,8 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
                       </div>
                     </div>
                     
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-3">Allocated Items</label>
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-inner">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Allocated Items</label>
                       <div className="space-y-2">
                         {model.draft.items.map((item, i) => (
                           <div key={i} className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg shadow-sm">
@@ -375,7 +378,7 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
                     <SummaryPill label="Total Items" value={model.draft.items.length.toString()} />
                   </div>
 
-                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
                     <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                       <div className="flex items-center gap-2">
                         <CreditCard size={18} className="text-brand-600" />
@@ -385,7 +388,7 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
                     </div>
                     <div className="p-6 space-y-4">
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Invoice Number (Finance Entry)</label>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Invoice Number (Finance Entry)</label>
                         <input 
                           type="text"
                           className="w-full border border-slate-300 rounded p-2.5 text-sm font-mono focus:ring-2 focus:ring-brand-500 outline-none"
@@ -418,13 +421,13 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
                   <div className="flex gap-4 mb-6 overflow-x-auto pb-2">
                     <SummaryPill label="Consignment" value={model.draft.consignmentId} />
                     <SummaryPill label="Customer" value={model.draft.customerName} />
-                    <SummaryPill label="State" value="AUTHORIZED" />
+                    <SummaryPill label="Invoice" value={model.invoiceInput || "--"} />
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-4">
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Transporter / Fleet</label>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Transporter / Fleet</label>
                         <input 
                           type="text"
                           className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none"
@@ -434,4 +437,216 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="block text-[10px
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Vehicle Registration</label>
+                        <input 
+                          type="text"
+                          className="w-full border border-slate-300 rounded p-2.5 text-sm font-mono focus:ring-2 focus:ring-brand-500 outline-none uppercase"
+                          placeholder="WB-01-XXXX"
+                          value={model.vehicleInput || ""}
+                          onChange={e => setModel(m => ({ ...m, vehicleInput: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Driver Name</label>
+                        <input 
+                          type="text"
+                          className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none"
+                          placeholder="Enter full name..."
+                          value={model.driverInput || ""}
+                          onChange={e => setModel(m => ({ ...m, driverInput: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div className="bg-slate-900 text-white p-6 rounded-xl border border-slate-700 shadow-xl relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                          <Truck size={64} />
+                        </div>
+                        <div className="relative z-10">
+                          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Gate Pass Generator</h4>
+                          <div className="space-y-3">
+                            <div className="flex justify-between border-b border-slate-800 pb-2">
+                              <span className="text-[10px] text-slate-500">Security Gate</span>
+                              <span className="text-xs font-bold text-emerald-400">AUTHORIZED</span>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-800 pb-2">
+                              <span className="text-[10px] text-slate-500">Hazmat Checklist</span>
+                              <span className="text-xs font-bold text-emerald-400">PASSED</span>
+                            </div>
+                          </div>
+                          <p className="mt-6 text-[10px] text-slate-400 italic">Gate pass will be issued to driver upon physical loading confirmation.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {model.role !== 'Logistics' && (
+                    <div className="mt-6 p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-center gap-2">
+                      <AlertTriangle size={14} />
+                      <span>Switch role to <strong>Logistics</strong> to confirm loading and departure.</span>
+                    </div>
+                  )}
+                </FlowStep>
+              )}
+
+              {model.step === "DELIVERY" && (
+                <FlowStep 
+                  stepTitle="Delivery Confirmation" 
+                  stepHint="Verify handover to customer and transition liability."
+                >
+                  <div className="flex gap-4 mb-6 overflow-x-auto pb-2">
+                    <SummaryPill label="Driver" value={model.driverInput || "--"} />
+                    <SummaryPill label="Vehicle" value={model.vehicleInput || "--"} />
+                    <SummaryPill label="Status" value="IN-TRANSIT" />
+                  </div>
+
+                  <div className="flex flex-col items-center py-8">
+                    <div className="w-24 h-24 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-6 shadow-inner animate-pulse">
+                      <Truck size={48} />
+                    </div>
+                    <h3 className="text-xl font-bold text-slate-800">Shipment is En-Route</h3>
+                    <p className="text-slate-500 text-sm text-center max-w-md mt-2">
+                      The customer must provide the verification token or digital signature to acknowledge receipt.
+                    </p>
+                    
+                    <div className="mt-8 w-full max-w-xs space-y-4">
+                      <div className="space-y-1.5 text-center">
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Handover Verification Code</label>
+                        <input 
+                          type="text"
+                          className="w-full text-center text-2xl font-bold tracking-[0.5em] border-2 border-brand-500 rounded-xl p-3 focus:ring-4 focus:ring-brand-100 outline-none"
+                          placeholder="••••••"
+                          maxLength={6}
+                        />
+                      </div>
+                      <p className="text-[9px] text-slate-400 text-center uppercase tracking-wider font-bold">Generated at Customer Portal</p>
+                    </div>
+                  </div>
+                </FlowStep>
+              )}
+
+              {model.step === "COMPLETION" && (
+                <FlowStep 
+                  stepTitle="Dispatch Complete" 
+                  stepHint="Chain of custody has been formally closed."
+                >
+                  <div className="flex flex-col items-center py-10">
+                    <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-6 shadow-md">
+                      <CheckCircle2 size={40} />
+                    </div>
+                    <h3 className="text-2xl font-bold text-slate-800 tracking-tight">Custody Transferred</h3>
+                    <p className="text-slate-500 text-sm text-center max-w-md mt-2 leading-relaxed">
+                      Legal title and safety liability for consignment <strong>{model.draft.consignmentId}</strong> has been transferred to <strong>{model.draft.customerName}</strong>.
+                    </p>
+
+                    <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center">
+                        <ShieldCheck size={24} className="mx-auto text-blue-500 mb-2" />
+                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Trace Record</div>
+                        <div className="text-xs font-bold text-slate-700">LIFECYCLE: FIELD</div>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center">
+                        <Fingerprint size={24} className="mx-auto text-purple-500 mb-2" />
+                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Identity</div>
+                        <div className="text-xs font-bold text-slate-700">CUSTODIAN: CUSTOMER</div>
+                      </div>
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-center">
+                        <FileText size={24} className="mx-auto text-slate-500 mb-2" />
+                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ledger</div>
+                        <div className="text-xs font-bold text-slate-700">STATUS: CLOSED</div>
+                      </div>
+                    </div>
+                  </div>
+                </FlowStep>
+              )}
+            </>
+          )}
+        </div>
+
+        <FlowFooter 
+          left={
+            <button 
+              onClick={onExit}
+              className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
+            >
+              Exit
+            </button>
+          }
+          right={
+            <div className="flex items-center gap-3">
+              {model.step === "DRAFT" && (
+                <>
+                  <button onClick={handleReset} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800">Reset</button>
+                  <button 
+                    onClick={handleNext}
+                    disabled={!model.draft.customerName || !model.draft.destination || model.isSyncing}
+                    className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
+                  >
+                    Next: Finance Review <ChevronRight size={16} />
+                  </button>
+                </>
+              )}
+
+              {model.step === "APPROVAL" && (
+                <>
+                  <button onClick={() => setModel(m => ({ ...m, step: "DRAFT" }))} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800">Back</button>
+                  <button 
+                    onClick={handleNext}
+                    disabled={model.role !== 'Finance' || !model.invoiceInput || model.isSyncing}
+                    className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
+                  >
+                    Authorize Dispatch <Lock size={16} />
+                  </button>
+                </>
+              )}
+
+              {model.step === "EXECUTION" && (
+                <>
+                  <button onClick={() => setModel(m => ({ ...m, step: "APPROVAL" }))} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800">Back</button>
+                  <button 
+                    onClick={handleNext}
+                    disabled={model.role !== 'Logistics' || !model.transporterInput || model.isSyncing}
+                    className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
+                  >
+                    Release & Ship <Truck size={16} />
+                  </button>
+                </>
+              )}
+
+              {model.step === "DELIVERY" && (
+                <>
+                  <button 
+                    onClick={handleNext}
+                    disabled={model.role !== 'Logistics' || model.isSyncing}
+                    className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
+                  >
+                    Confirm Handover <CheckCircle2 size={16} />
+                  </button>
+                </>
+              )}
+
+              {model.step === "COMPLETION" && (
+                <>
+                  <button 
+                    onClick={handleFinalize}
+                    disabled={model.state === 'Closed' || model.isSyncing}
+                    className="flex items-center justify-center gap-2 px-6 py-2 bg-slate-800 text-white rounded font-bold text-sm hover:bg-slate-900 disabled:opacity-50 transition-all shadow-sm"
+                  >
+                    Final Archive <Archive size={16} />
+                  </button>
+                  <button 
+                    onClick={handleReset}
+                    className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 transition-all shadow-sm"
+                  >
+                    New Consignment <Plus size={16} />
+                  </button>
+                </>
+              )}
+            </div>
+          }
+        />
+      </div>
+    </FlowShell>
+  );
+};

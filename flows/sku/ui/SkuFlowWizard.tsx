@@ -3,6 +3,7 @@
  * A standardized step-wizard for SKU creation lifecycle.
  * Wired to simulated /api/flows/sku/* endpoints.
  * @foundation V34-S1-FLOW-001-PP-06
+ * @updated V35-S1-WIZ-PP-04 (Step 0 Intent & Type)
  */
 
 import React, { useState, useEffect } from 'react';
@@ -24,7 +25,16 @@ import {
   Smartphone,
   Cloud,
   AlertCircle,
-  Loader2
+  Loader2,
+  FilePlus,
+  GitBranch,
+  Battery,
+  Cpu,
+  Layers,
+  Zap,
+  Radio,
+  // Added Info import
+  Info
 } from 'lucide-react';
 import { FlowShell, FlowStep, FlowFooter } from '../../../components/flow';
 import { 
@@ -46,6 +56,7 @@ import {
 } from './skuFlowWizardModel';
 import { useDeviceLayout } from '../../../hooks/useDeviceLayout';
 import { apiFetch } from '../../../services/apiHarness';
+import { SkuType } from '../../../stages/s1/s1Contract';
 
 interface SkuFlowWizardProps {
   instanceId?: string | null;
@@ -119,17 +130,21 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
   };
 
   const handleApiError = (err: any) => {
-    console.error("SKU Flow API Error Context:", err);
-    // Robust error message extraction to prevent [object Object]
+    // Robust error string conversion for logs and UI
+    const errString = err && typeof err === 'object' ? JSON.stringify(err) : String(err);
+    console.error(`SKU Flow API Error Context: ${errString}`);
+    
     let message = "Communication failure with simulated API.";
     if (typeof err === 'string') {
       message = err;
-    } else if (err?.message && typeof err.message === 'string') {
-      message = err.message;
-    } else if (err?.error?.message && typeof err.error.message === 'string') {
-      message = err.error.message;
     } else if (err && typeof err === 'object') {
-      message = `Internal Error: ${err.code || 'UNKNOWN_SKU_ERROR'}`;
+      if (err.message && typeof err.message === 'string') {
+        message = err.message;
+      } else if (err.error?.message && typeof err.error.message === 'string') {
+        message = err.error.message;
+      } else {
+        message = err.code ? `Internal Error: ${err.code}` : `Technical Error: ${errString}`;
+      }
     }
 
     setModel(m => ({
@@ -155,7 +170,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
         if (result.ok) syncModel(result.data);
         else handleApiError(result.error);
       } else {
-        // Update not implemented in sim yet, just fake success for UI flow
+        // Update not implemented in sim yet
         setTimeout(() => {
           setModel(m => ({ ...m, isSyncing: false, error: null }));
         }, 500);
@@ -210,14 +225,15 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     setModel(m => ({ ...m, isSyncing: true, error: null }));
 
     try {
-      const payload: ApproveSkuReq = { 
-        instanceId: model.instanceId, 
+      let endpoint = SKU_FLOW_ENDPOINTS.approve;
+      let body: ApproveSkuReq = { 
+        instanceId: model.instanceId!, 
         decision, 
         reason: model.rejectionReason 
       };
-      const res = await apiFetch(SKU_FLOW_ENDPOINTS.approve, {
+      const res = await apiFetch(endpoint, {
         method: 'POST',
-        body: JSON.stringify(payload)
+        body: JSON.stringify(body)
       });
       const result = await res.json();
       if (result.ok) syncModel(result.data);
@@ -271,6 +287,10 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     const content = (
       <div className={`grid ${isMobile ? 'grid-cols-2 gap-4' : 'grid-cols-2 tablet:grid-cols-1 gap-x-6 gap-y-4'} text-sm`}>
         <div className="space-y-1">
+          <label className="text-[9px] uppercase font-bold text-slate-400">SKU Type</label>
+          <div className="font-bold text-brand-600">{model.draft.skuType || '--'}</div>
+        </div>
+        <div className="space-y-1">
           <label className="text-[9px] uppercase font-bold text-slate-400">SKU Code</label>
           <div className="font-mono font-bold text-slate-700 break-all">{model.draft.skuCode || '--'}</div>
         </div>
@@ -281,10 +301,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
         <div className="space-y-1">
           <label className="text-[9px] uppercase font-bold text-slate-400">Chemistry</label>
           <div className="font-medium text-slate-700">{model.draft.chemistry || '--'}</div>
-        </div>
-        <div className="space-y-1">
-          <label className="text-[9px] uppercase font-bold text-slate-400">Form Factor</label>
-          <div className="font-medium text-slate-700">{model.draft.formFactor || '--'}</div>
         </div>
       </div>
     );
@@ -318,6 +334,8 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
       </div>
     );
   };
+
+  const isStep0Valid = model.draft.skuType !== undefined;
 
   return (
     <FlowShell 
@@ -356,10 +374,79 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
             </div>
           ) : (
             <>
+              {model.step === "INIT" && (
+                <FlowStep 
+                  stepTitle="Intent & Taxonomy Selection" 
+                  stepHint="Declare your engineering intent and select the appropriate SKU category."
+                >
+                  <div className="space-y-8 max-w-2xl mx-auto py-4">
+                    {/* Intent Switch */}
+                    <div className="space-y-3">
+                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">Engineering Intent</label>
+                       <div className="grid grid-cols-2 gap-4">
+                          <button 
+                             onClick={() => handleUpdateDraft('isRevision', false)}
+                             className={`p-4 border-2 rounded-xl flex flex-col items-center gap-2 transition-all ${!model.draft.isRevision ? 'border-brand-500 bg-brand-50 shadow-md' : 'border-slate-100 bg-white hover:border-slate-200 opacity-60'}`}
+                          >
+                             <FilePlus size={24} className={!model.draft.isRevision ? 'text-brand-600' : 'text-slate-400'} />
+                             <div className="text-center">
+                                <div className="font-bold text-slate-800 text-sm">Create New SKU</div>
+                                <div className="text-[10px] text-slate-500">Define a completely new profile</div>
+                             </div>
+                          </button>
+                          <button 
+                             onClick={() => handleUpdateDraft('isRevision', true)}
+                             className={`p-4 border-2 rounded-xl flex flex-col items-center gap-2 transition-all ${model.draft.isRevision ? 'border-brand-500 bg-brand-50 shadow-md' : 'border-slate-100 bg-white hover:border-slate-200 opacity-60'}`}
+                          >
+                             <GitBranch size={24} className={model.draft.isRevision ? 'text-brand-600' : 'text-slate-400'} />
+                             <div className="text-center">
+                                <div className="font-bold text-slate-800 text-sm">Revise Existing</div>
+                                <div className="text-[10px] text-slate-500">Iterate on active blueprint</div>
+                             </div>
+                          </button>
+                       </div>
+                    </div>
+
+                    {/* Taxonomy Grid */}
+                    <div className="space-y-3">
+                       <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">SKU Type (Taxonomy)</label>
+                       <div className="grid grid-cols-5 gap-3">
+                          {[
+                             { id: 'CELL', icon: Zap, label: 'Cell' },
+                             { id: 'MODULE', icon: Layers, label: 'Module' },
+                             { id: 'PACK', icon: Battery, label: 'Pack' },
+                             { id: 'BMS', icon: Cpu, label: 'BMS' },
+                             { id: 'IOT', icon: Radio, label: 'IoT' },
+                          ].map((type) => (
+                             <button 
+                                key={type.id}
+                                onClick={() => handleUpdateDraft('skuType', type.id)}
+                                className={`flex flex-col items-center gap-2 p-3 rounded-lg border transition-all ${model.draft.skuType === type.id ? 'bg-slate-800 border-slate-900 text-white shadow-lg' : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'}`}
+                             >
+                                <type.icon size={20} />
+                                <span className="text-[10px] font-bold uppercase tracking-tight">{type.label}</span>
+                             </button>
+                          ))}
+                       </div>
+                    </div>
+
+                    {model.draft.skuType && (
+                       <div className="p-4 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 animate-in fade-in slide-in-from-top-2">
+                          <div className="flex items-center gap-2 font-bold mb-1">
+                             <Info size={14} className="text-brand-500" />
+                             Context Locked
+                          </div>
+                          <span>The wizard will now present fields optimized for <strong>{model.draft.skuType}</strong> development.</span>
+                       </div>
+                    )}
+                  </div>
+                </FlowStep>
+              )}
+
               {model.step === "DRAFT" && (
                 <FlowStep 
                   stepTitle="Define SKU Specifications" 
-                  stepHint={isMobile ? "Set technical parameters." : "Specify technical parameters for the new battery pack profile."}
+                  stepHint={isMobile ? "Set technical parameters." : `Specify technical parameters for the new ${model.draft.skuType || 'entity'} profile.`}
                 >
                   <div className={`grid ${isDesktop ? 'grid-cols-2' : 'grid-cols-1'} gap-6`}>
                     <div className="space-y-2">
@@ -382,32 +469,37 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                         onChange={e => handleUpdateDraft('skuName', e.target.value)}
                       />
                     </div>
-                    <div className="space-y-2">
-                      <label className="block text-xs font-bold text-slate-600 uppercase">Chemistry</label>
-                      <select 
-                        className="w-full border border-slate-300 rounded p-2 text-sm outline-none bg-white"
-                        value={model.draft.chemistry}
-                        onChange={e => handleUpdateDraft('chemistry', e.target.value)}
-                      >
-                        <option value="">Select Chemistry...</option>
-                        <option value="LFP">LFP (Lithium Iron Phosphate)</option>
-                        <option value="NMC">NMC (Nickel Manganese Cobalt)</option>
-                        <option value="LTO">LTO (Lithium Titanate)</option>
-                      </select>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="block text-xs font-bold text-slate-600 uppercase">Form Factor</label>
-                      <select 
-                        className="w-full border border-slate-300 rounded p-2 text-sm outline-none bg-white"
-                        value={model.draft.formFactor}
-                        onChange={e => handleUpdateDraft('formFactor', e.target.value)}
-                      >
-                        <option value="">Select Form Factor...</option>
-                        <option value="Pouch">Pouch Cell</option>
-                        <option value="Prismatic">Prismatic</option>
-                        <option value="Cylindrical">Cylindrical</option>
-                      </select>
-                    </div>
+                    {/* Conditional Fields based on SkuType */}
+                    {model.draft.skuType === 'CELL' && (
+                      <>
+                        <div className="space-y-2">
+                          <label className="block text-xs font-bold text-slate-600 uppercase">Chemistry</label>
+                          <select 
+                            className="w-full border border-slate-300 rounded p-2 text-sm outline-none bg-white"
+                            value={model.draft.chemistry}
+                            onChange={e => handleUpdateDraft('chemistry', e.target.value)}
+                          >
+                            <option value="">Select Chemistry...</option>
+                            <option value="LFP">LFP (Lithium Iron Phosphate)</option>
+                            <option value="NMC">NMC (Nickel Manganese Cobalt)</option>
+                            <option value="LTO">LTO (Lithium Titanate)</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-xs font-bold text-slate-600 uppercase">Form Factor</label>
+                          <select 
+                            className="w-full border border-slate-300 rounded p-2 text-sm outline-none bg-white"
+                            value={model.draft.formFactor}
+                            onChange={e => handleUpdateDraft('formFactor', e.target.value)}
+                          >
+                            <option value="">Select Form Factor...</option>
+                            <option value="Pouch">Pouch Cell</option>
+                            <option value="Prismatic">Prismatic</option>
+                            <option value="Cylindrical">Cylindrical</option>
+                          </select>
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="space-y-2 mt-4">
                     <label className="block text-xs font-bold text-slate-600 uppercase">Notes / Instructions</label>
@@ -510,8 +602,24 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
           }
           right={
             <div className={`flex ${isMobile ? 'flex-col-reverse w-full' : 'items-center'} gap-3`}>
+              {model.step === "INIT" && (
+                <button 
+                  onClick={() => setModel(m => ({ ...m, step: "DRAFT" }))}
+                  disabled={!isStep0Valid}
+                  className={`flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm ${isMobile ? 'w-full' : ''}`}
+                >
+                  Configure Specifications <ChevronRight size={16} />
+                </button>
+              )}
+
               {model.step === "DRAFT" && (
                 <>
+                  <button 
+                    onClick={() => setModel(m => ({ ...m, step: "INIT" }))}
+                    className={`px-4 py-2 text-sm font-bold text-slate-500 ${isMobile ? 'w-full' : ''}`}
+                  >
+                    Back
+                  </button>
                   <button 
                     onClick={handleReset}
                     className={`flex items-center justify-center gap-2 px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 rounded border border-transparent transition-all ${isMobile ? 'w-full' : ''}`}
@@ -557,6 +665,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
               {model.step === "APPROVE" && (
                 <>
                   <button 
+                    // Fixed onClick handler to use arrow function
                     onClick={() => handleApprove("REJECT")}
                     disabled={!isActionAllowed(model.role, model.state, "REJECT") || model.isSyncing}
                     className={`flex items-center justify-center gap-2 px-4 py-2 bg-white border border-red-200 text-red-700 rounded font-bold text-sm hover:bg-red-50 disabled:opacity-50 transition-all ${isMobile ? 'w-full' : ''}`}
@@ -564,6 +673,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                     <XCircle size={16} /> Reject
                   </button>
                   <button 
+                    // Fixed onClick handler to use arrow function
                     onClick={() => handleApprove("APPROVE")}
                     disabled={!isActionAllowed(model.role, model.state, "APPROVE_TO_ACTIVE") || model.isSyncing}
                     className={`flex items-center justify-center gap-2 px-6 py-2 bg-green-600 text-white rounded font-bold text-sm hover:bg-green-700 disabled:opacity-50 transition-all shadow-sm ${isMobile ? 'w-full' : ''}`}

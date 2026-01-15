@@ -33,7 +33,6 @@ import {
   canApprove,
   canStart,
   canComplete,
-  // resolveBatchStepFromState removed from here as it is a UI model helper
   type CreateBatchReq,
   type ApproveBatchReq,
   type StartBatchReq,
@@ -42,7 +41,6 @@ import {
 import { 
   BatchWizardModel, 
   createDefaultBatchWizardModel,
-  // Fix: Moved resolveBatchStepFromState to its source file within the UI package
   resolveBatchStepFromState
 } from './batchWizardModel';
 import { apiFetch } from '../../../services/apiHarness';
@@ -116,17 +114,20 @@ export const BatchFlowWizard: React.FC<BatchFlowWizardProps> = ({ instanceId, on
   };
 
   const handleApiError = (err: any) => {
-    console.error("Batch Flow API Error Context:", err);
-    // Robust error message extraction to prevent [object Object]
-    let message = "Communication failure with simulated API.";
+    const errString = err && typeof err === 'object' ? JSON.stringify(err) : String(err);
+    console.error(`Batch Flow API Error Context: ${errString}`);
+    
+    let message = "Production communication failure.";
     if (typeof err === 'string') {
       message = err;
-    } else if (err?.message && typeof err.message === 'string') {
-      message = err.message;
-    } else if (err?.error?.message && typeof err.error.message === 'string') {
-      message = err.error.message;
     } else if (err && typeof err === 'object') {
-      message = `Internal Error: ${err.code || 'UNKNOWN_BATCH_ERROR'}`;
+      if (err.message && typeof err.message === 'string') {
+        message = err.message;
+      } else if (err.error?.message && typeof err.error.message === 'string') {
+        message = err.error.message;
+      } else {
+        message = err.code ? `Error: ${err.code}` : `Technical Error: ${errString}`;
+      }
     }
 
     setModel(m => ({
@@ -403,7 +404,7 @@ export const BatchFlowWizard: React.FC<BatchFlowWizardProps> = ({ instanceId, on
                       </div>
                     </div>
                     <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden border border-slate-200">
-                      <div className="bg-brand-500 h-full w-1/3 animate-pulse"></div>
+                      <div className="bg-brand-50 h-full w-1/3 animate-pulse"></div>
                     </div>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="p-3 bg-white border border-slate-200 rounded flex flex-col items-center">
