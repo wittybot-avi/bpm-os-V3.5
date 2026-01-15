@@ -42,7 +42,7 @@ import { getMockS0Context, S0Context } from '../stages/s0/s0Contract';
 import { getS0ActionState, S0ActionId } from '../stages/s0/s0Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
 import { apiFetch } from '../services/apiHarness';
-import type { Plant, Line } from '../domain/s0/systemTopology.types';
+import type { Plant, Line, Station } from '../domain/s0/systemTopology.types';
 
 interface SystemSetupProps {
   onNavigate?: (view: NavView) => void;
@@ -86,6 +86,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [isEntitiesLoading, setIsEntitiesLoading] = useState(false);
   const [editingPlant, setEditingPlant] = useState<Partial<Plant> | null>(null);
   const [editingLine, setEditingLine] = useState<Partial<Line> | null>(null);
+  const [editingStation, setEditingStation] = useState<Partial<Station> | null>(null);
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
 
   // 1. Initial Load: Enterprises
@@ -208,8 +209,19 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
       };
       loadLines();
+    } else if (activeCategory === 'WORKSTATIONS') {
+      const loadStations = async () => {
+        if (!selLineId) return;
+        setIsEntitiesLoading(true);
+        try {
+          const res = await apiFetch(`/api/s0/stations?lineId=${selLineId}`);
+          const result = await res.json();
+          if (result.ok) setActiveStations(result.data);
+        } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
+      };
+      loadStations();
     }
-  }, [activeCategory, selPlantId]);
+  }, [activeCategory, selPlantId, selLineId]);
 
   // Handlers
   const handleEditPlantTile = () => {
@@ -259,12 +271,14 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     setActiveTab('LIST');
     setEditingPlant(null);
     setEditingLine(null);
+    setEditingStation(null);
   };
 
   const closeManager = () => {
     setActiveCategory(null);
     setEditingPlant(null);
     setEditingLine(null);
+    setEditingStation(null);
   };
 
   // Plant CRUD
@@ -385,6 +399,70 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         const lineRes = await apiFetch(`/api/s0/lines?plantId=${selPlantId}`);
         const lineData = await lineRes.json();
         if (lineData.ok) setActiveLines(lineData.data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsFormSubmitting(false);
+    }
+  };
+
+  // Station CRUD (V35-S0-CRUD-PP-14)
+  const handleCreateOrUpdateStation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStation || isFormSubmitting || !selLineId) return;
+    setIsFormSubmitting(true);
+
+    try {
+      const isEdit = !!editingStation.id;
+      const endpoint = isEdit ? '/api/s0/stations/update' : '/api/s0/stations/create';
+      const method = isEdit ? 'PATCH' : 'POST';
+      const body = isEdit 
+        ? { id: editingStation.id, updates: editingStation } 
+        : { ...editingStation, lineId: selLineId };
+
+      const res = await apiFetch(endpoint, { method, body: JSON.stringify(body) });
+      const result = await res.json();
+      
+      if (result.ok) {
+        emitAuditEvent({
+          stageId: 'S0',
+          actionId: 'MANAGE_WORKSTATIONS',
+          actorRole: role,
+          message: `${isEdit ? 'Updated' : 'Created'} station: ${result.data.displayName}`
+        });
+        setEditingStation(null);
+        setActiveTab('LIST');
+        const stRes = await apiFetch(`/api/s0/stations?lineId=${selLineId}`);
+        const stData = await stRes.json();
+        if (stData.ok) setActiveStations(stData.data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFormSubmitting(false);
+    }
+  };
+
+  const handleSuspendStation = async (id: string) => {
+    if (isFormSubmitting) return;
+    setIsFormSubmitting(true);
+    try {
+      const res = await apiFetch('/api/s0/stations/update', {
+        method: 'PATCH',
+        body: JSON.stringify({ id, updates: { status: 'SUSPENDED' } })
+      });
+      const result = await res.json();
+      if (result.ok) {
+        emitAuditEvent({
+          stageId: 'S0',
+          actionId: 'MANAGE_WORKSTATIONS',
+          actorRole: role,
+          message: `Suspended station: ${result.data.displayName}`
+        });
+        const stRes = await apiFetch(`/api/s0/stations?lineId=${selLineId}`);
+        const stData = await stRes.json();
+        if (stData.ok) setActiveStations(stData.data);
       }
     } catch (e) {
       console.error(e);
@@ -637,7 +715,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                     </div>
                     <div className="space-y-1 text-[10px] text-slate-500">
                        <div className="flex justify-between"><span>Station Type</span><span className="font-bold">{station.stationType}</span></div>
-                       <div className="flex justify-between"><span>Status</span><span className="text-green-600 font-bold">{station.status}</span></div>
+                       <div className="flex justify-between"><span>Status</span><span className={`font-bold ${station.status === 'SUSPENDED' ? 'text-slate-400' : 'text-green-600'}`}>{station.status}</span></div>
                     </div>
                  </div>
                ))}
@@ -729,7 +807,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <div className="flex items-center gap-3">
                   <div className="p-2 bg-brand-600 text-white rounded-lg"><Settings size={20} /></div>
                   <div>
-                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory === 'LINES' ? 'Lines' : activeCategory}</h2>
+                    <h2 className="font-bold text-slate-800">Manage {activeCategory === 'ORGANIZATION' ? 'Plants' : activeCategory === 'LINES' ? 'Lines' : activeCategory === 'WORKSTATIONS' ? 'Stations' : activeCategory}</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Master Data Management</p>
                   </div>
                </div>
@@ -739,14 +817,14 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             {/* Tabs */}
             <div className="flex border-b border-slate-200 shrink-0">
                <button 
-                 onClick={() => { setActiveTab('LIST'); setEditingPlant(null); setEditingLine(null); }}
+                 onClick={() => { setActiveTab('LIST'); setEditingPlant(null); setEditingLine(null); setEditingStation(null); }}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'LIST' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50'}`}
                >
                  <List size={14} /> Repository List
                </button>
                <button 
                  onClick={() => setActiveTab('DETAILS')}
-                 disabled={activeCategory !== 'ORGANIZATION' && activeCategory !== 'LINES'}
+                 disabled={!['ORGANIZATION', 'LINES', 'WORKSTATIONS'].includes(activeCategory || '')}
                  className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-2 border-b-2 transition-all ${activeTab === 'DETAILS' ? 'border-brand-600 text-brand-600 bg-white' : 'border-transparent text-slate-400 hover:text-slate-600 bg-slate-50 disabled:text-slate-300 disabled:cursor-not-allowed'}`}
                >
                  <FileText size={14} /> Definition Details
@@ -868,6 +946,68 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                      </form>
                    )}
                  </>
+               ) : activeCategory === 'WORKSTATIONS' ? (
+                 <>
+                   {activeTab === 'LIST' ? (
+                     <div className="p-0">
+                       <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                          <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Active Stations for Selected Line</span>
+                          <button 
+                            disabled={!selLineId}
+                            onClick={() => { setEditingStation({ displayName: '', code: '', status: 'ACTIVE', stationType: 'ASSEMBLY', supportedOperations: [] }); setActiveTab('DETAILS'); }}
+                            className="flex items-center gap-1 text-[10px] font-bold text-brand-600 hover:text-brand-800 disabled:opacity-50"
+                          >
+                            <Plus size={12} /> ADD NEW STATION
+                          </button>
+                       </div>
+                       {isEntitiesLoading ? (
+                         <div className="py-12 flex flex-col items-center justify-center text-slate-400 gap-3">
+                           <Loader2 size={24} className="animate-spin" />
+                           <span className="text-xs font-bold uppercase">Fetching Registry...</span>
+                         </div>
+                       ) : (
+                         <div className="divide-y divide-slate-100">
+                           {activeStations.map(s => (
+                             <div key={s.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center group">
+                                <div className="flex items-center gap-3">
+                                   <div className={`w-2 h-2 rounded-full ${s.status === 'ACTIVE' ? 'bg-green-500' : 'bg-amber-500'}`} />
+                                   <div>
+                                      <div className="text-sm font-bold text-slate-800">{s.displayName}</div>
+                                      <div className="text-[10px] font-mono text-slate-400 uppercase tracking-tighter">Code: {s.code} • Type: {s.stationType}</div>
+                                   </div>
+                                </div>
+                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                   <button onClick={() => { setEditingStation(s); setActiveTab('DETAILS'); }} className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded transition-colors" title="Edit Station"><Edit2 size={14} /></button>
+                                   {s.status === 'ACTIVE' && <button onClick={() => handleSuspendStation(s.id)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors" title="Suspend Station"><Ban size={14} /></button>}
+                                </div>
+                             </div>
+                           ))}
+                           {activeStations.length === 0 && (
+                             <div className="p-12 text-center text-slate-400 italic text-sm">No stations defined for this line.</div>
+                           )}
+                         </div>
+                       )}
+                     </div>
+                   ) : (
+                     <form onSubmit={handleCreateOrUpdateStation} className="p-6 space-y-6">
+                        <div className="flex items-center gap-3 mb-2"><div className="p-2 bg-brand-50 rounded text-brand-600"><Wrench size={18} /></div><h3 className="font-bold text-slate-700">{editingStation?.id ? 'Edit Station Definition' : 'Add New Station Entity'}</h3></div>
+                        <div className="space-y-4 text-sm">
+                           <div className="p-3 bg-slate-50 border border-slate-200 rounded-md flex items-center justify-between mb-4">
+                              <span className="text-[10px] font-bold text-slate-400 uppercase">Parent Line Binding</span>
+                              <span className="font-bold text-brand-700">{activeLines.find(l => l.id === selLineId)?.displayName || selLineId}</span>
+                           </div>
+                           <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Station Name</label><input required type="text" className="w-full border border-slate-300 rounded p-2.5 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="e.g. Module Insertion Station" value={editingStation?.displayName || ''} onChange={e => setEditingStation(s => ({ ...s!, displayName: e.target.value }))} /></div>
+                           <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Station Code</label><input required type="text" className="w-full border border-slate-300 rounded p-2.5 focus:ring-2 focus:ring-brand-500 outline-none font-mono uppercase" placeholder="STN-A-01" value={editingStation?.code || ''} onChange={e => setEditingStation(s => ({ ...s!, code: e.target.value }))} /></div>
+                              <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Station Type</label><select className="w-full border border-slate-300 rounded p-2.5 outline-none bg-white" value={editingStation?.stationType || 'ASSEMBLY'} onChange={e => setEditingStation(s => ({ ...s!, stationType: e.target.value }))}><option value="ASSEMBLY">ASSEMBLY</option><option value="TESTING">TESTING</option><option value="PACKAGING">PACKAGING</option></select></div>
+                           </div>
+                           <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Initial Status</label><select className="w-full border border-slate-300 rounded p-2.5 outline-none bg-white" value={editingStation?.status || 'ACTIVE'} onChange={e => setEditingStation(s => ({ ...s!, status: e.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option></select></div>
+                           <div className="space-y-1.5"><label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Supported Ops (Comma separated)</label><input type="text" className="w-full border border-slate-300 rounded p-2.5 focus:ring-2 focus:ring-brand-500 outline-none" placeholder="INSERT_CELL, WELD_BUSBAR" value={editingStation?.supportedOperations?.join(', ') || ''} onChange={e => setEditingStation(s => ({ ...s!, supportedOperations: e.target.value.split(',').map(op => op.trim()).filter(Boolean) }))} /></div>
+                        </div>
+                        <div className="pt-6 flex gap-3"><button type="button" onClick={() => { setEditingStation(null); setActiveTab('LIST'); }} className="px-6 py-2.5 rounded text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">CANCEL</button><button type="submit" disabled={isFormSubmitting} className="flex-1 bg-brand-600 hover:bg-brand-700 text-white rounded font-bold text-sm py-2.5 shadow-sm transition-all flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{editingStation?.id ? 'UPDATE DEFINITION' : 'CREATE STATION ENTITY'}</button></div>
+                     </form>
+                   )}
+                 </>
                ) : (
                  <div className="flex-1 overflow-y-auto p-8 flex flex-col items-center justify-center text-center">
                     <div className="w-16 h-16 bg-slate-50 border border-slate-200 rounded-full flex items-center justify-center text-slate-300 mb-4"><Lock size={32} /></div>
@@ -882,7 +1022,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                <button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 uppercase tracking-wider">Close Panel</button>
                <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
                   <ShieldCheck size={12} />
-                  {['ORGANIZATION', 'LINES'].includes(activeCategory || '') ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
+                  {['ORGANIZATION', 'LINES', 'WORKSTATIONS'].includes(activeCategory || '') ? 'MASTER_DATA_CRUD_V1' : 'READ_ONLY_SCAFFOLD_V1'}
                </div>
             </footer>
           </div>

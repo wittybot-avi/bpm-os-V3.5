@@ -14,7 +14,7 @@ const INITIAL_AUDIT: TopologyAudit = {
   approvedAt: "2026-01-01T09:00:00Z"
 };
 
-const STATIONS: Station[] = [
+let STATIONS: Station[] = [
   {
     id: "STN-A4",
     code: "STN-A4-MOD-INS",
@@ -84,7 +84,7 @@ export const getLineById = (id: string) => LINES.find(l => l.id === id);
 export const getStationById = (id: string) => STATIONS.find(s => s.id === id);
 
 /**
- * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13)
+ * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13 / PP-14)
  */
 
 export const addPlant = (plant: Plant) => {
@@ -105,4 +105,14 @@ export const addLine = (line: Line) => {
 export const updateLine = (id: string, updates: Partial<Line>) => {
   LINES = LINES.map(l => l.id === id ? { ...l, ...updates } : l);
   return LINES.find(l => l.id === id);
+};
+
+export const addStation = (station: Station) => {
+  STATIONS = [...STATIONS, station];
+  return station;
+};
+
+export const updateStation = (id: string, updates: Partial<Station>) => {
+  STATIONS = STATIONS.map(s => s.id === id ? { ...s, ...updates } : s);
+  return STATIONS.find(s => s.id === id);
 };

@@ -5,6 +5,7 @@
  * @governance S0-ARCH-BP-05
  * @updated V35-S0-CRUD-PP-11 (Plant Mutations)
  * @updated V35-S0-CRUD-PP-13 (Line Mutations)
+ * @updated V35-S0-CRUD-PP-14 (Station Mutations)
  */
 
 import type { ApiHandler, ApiResponse, ApiRequest } from "../apiTypes";
@@ -16,9 +17,11 @@ import {
   addPlant,
   updatePlant,
   addLine,
-  updateLine
+  updateLine,
+  addStation,
+  updateStation
 } from "../s0/systemTopology.store";
-import type { Plant, Line } from "../../../domain/s0/systemTopology.types";
+import type { Plant, Line, Station } from "../../../domain/s0/systemTopology.types";
 
 const ok = (data: any): ApiResponse => ({
   status: 200,
@@ -164,4 +167,46 @@ export const listStations: ApiHandler = async (req) => {
   }
   
   return ok(stations);
+};
+
+/**
+ * POST /api/s0/stations/create
+ */
+export const createStationHandler: ApiHandler = async (req) => {
+  const body = parseBody<Partial<Station>>(req);
+  if (!body.code || !body.displayName || !body.lineId || !body.stationType) {
+    return err("BAD_REQUEST", "Station code, name, line ID, and station type are required");
+  }
+
+  const newStation: Station = {
+    id: `STN-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
+    code: body.code,
+    displayName: body.displayName,
+    status: body.status || 'ACTIVE',
+    lineId: body.lineId,
+    stationType: body.stationType,
+    supportedOperations: body.supportedOperations || [],
+    deviceBindings: [],
+    effectiveFrom: new Date().toISOString(),
+    audit: {
+      createdBy: "API_USER",
+      createdAt: new Date().toISOString()
+    }
+  };
+
+  addStation(newStation);
+  return ok(newStation);
+};
+
+/**
+ * PATCH /api/s0/stations/update
+ */
+export const updateStationHandler: ApiHandler = async (req) => {
+  const body = parseBody<{ id: string; updates: Partial<Station> }>(req);
+  if (!body.id) return err("BAD_REQUEST", "Station ID is required");
+
+  const updated = updateStation(body.id, body.updates);
+  if (!updated) return err("NOT_FOUND", "Station not found", 404);
+
+  return ok(updated);
 };
