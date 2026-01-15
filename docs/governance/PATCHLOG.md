@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-WIZ-FIX-06** | UX Stabilization | Focused Wizard Paths | **STABLE** | Pruned redundant generic TECHNICAL step from all SKU paths. Merged missing capacity/cell count fields into type-specific steps. Ensured clean, focused wizard sequences per SKU type. | 2026-01-28 17:30 (IST) |
 | **V35-S1-WIZ-FIX-05** | Stabilization | Schema Completion | **STABLE** | Implemented minimal technical fields per SKU type (CELL, MODULE, PACK, BMS, IOT). Replaced scaffolds with functional inputs and updated contract. | 2026-01-28 17:00 (IST) |
 | **V35-S1-WIZ-FIX-04** | Bugfix | Navigation Hardening | **STABLE** | Hardened S1 Wizard navigation to ensure intent (Greenfield/Revision) and SKU type are strictly coupled. Fixed path resolution fallbacks. | 2026-01-28 16:30 (IST) |
 | **V35-S1-WIZ-FIX-03** | Stabilization | Technical Scaffolding | **STABLE** | Added empty placeholder steps for all SKU-specific technical blueprints (CELL, MODULE, PACK, BMS, IOT). Updated Registry to support branching paths. | 2026-01-28 16:00 (IST) |

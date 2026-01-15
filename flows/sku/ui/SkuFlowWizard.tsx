@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-FIX-05 (Schema Completion)
+ * @updated V35-S1-WIZ-FIX-06 (Step Pruning & UX Focus)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -188,10 +188,10 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
       if (!d.skuName) errors.skuName = 'SKU Name is required';
     }
 
-    // V35 FIX-05: Minimal required fields per type for stabilization
     if (step === 'TECH_CELL_SCAFFOLD') {
       if (!d.chemistry) errors.chemistry = 'Chemistry required';
       if (!d.nominalVoltage) errors.nominalVoltage = 'Voltage required';
+      if (!d.capacityAh) errors.capacityAh = 'Capacity required';
     }
     if (step === 'TECH_MODULE_SCAFFOLD') {
       if (!d.cellTypeRef) errors.cellTypeRef = 'Cell Type Ref required';
@@ -215,14 +215,12 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
 
   const handleNextStep = () => {
     if (validateStep(model.step)) {
-      // Correct resolution using persisted isRevision and skuType from draft
       const next = getNextStepId(model.step, model.draft.isRevision, model.draft.skuType);
       setModel(m => ({ ...m, step: next }));
     }
   };
 
   const handlePrevStep = () => {
-    // Correct resolution using persisted isRevision and skuType from draft
     const prev = getPrevStepId(model.step, model.draft.isRevision, model.draft.skuType);
     setModel(m => ({ ...m, step: prev }));
   };
@@ -376,6 +374,12 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
        </div>
     </div>
   );
+
+  // Helper to determine if we are at the end of the Maker's path
+  const isSubmissionPoint = useMemo(() => {
+    const next = getNextStepId(model.step, model.draft.isRevision, model.draft.skuType);
+    return next === "REVIEW";
+  }, [model.step, model.draft.isRevision, model.draft.skuType]);
 
   return (
     <FlowShell 
@@ -594,6 +598,15 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                           onChange={e => handleUpdateDraft('nominalVoltage', parseFloat(e.target.value))}
                         />
                      </Field>
+                     <Field label="Nominal Capacity (Ah)" id="capacityAh" icon={Battery} error={model.validationErrors.capacityAh}>
+                        <input 
+                          type="number" step="0.1"
+                          disabled={model.role !== 'Maker'}
+                          className="w-full border border-slate-300 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-brand-500" 
+                          value={model.draft.capacityAh || ''} 
+                          onChange={e => handleUpdateDraft('capacityAh', parseFloat(e.target.value))} 
+                        />
+                    </Field>
                   </div>
                 </FlowStep>
               )}
@@ -629,6 +642,15 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                           onChange={e => handleUpdateDraft('parallelConfig', parseInt(e.target.value))}
                         />
                      </Field>
+                     <Field label="Total Cell Count" id="cellCount" icon={BoxSelect} error={model.validationErrors.cellCount}>
+                        <input 
+                          type="number" 
+                          disabled={model.role !== 'Maker'} 
+                          className="w-full border border-slate-300 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-brand-500" 
+                          value={model.draft.cellCount || ''} 
+                          onChange={e => handleUpdateDraft('cellCount', parseInt(e.target.value))} 
+                        />
+                    </Field>
                   </div>
                 </FlowStep>
               )}
@@ -764,39 +786,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                 </FlowStep>
               )}
 
-              {model.step === "TECHNICAL" && (
-                <FlowStep stepTitle={`${model.draft.skuType} Technical Blueprint`} stepHint="Specify immutable technical constants for this entity type.">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-4xl mx-auto py-4">
-                    {/* Dynamic Fields for Maker Only */}
-                    {model.draft.skuType === 'CELL' && (
-                      <>
-                        <Field label="Chemistry" id="chemistry" error={model.validationErrors.chemistry}>
-                          <select 
-                            id="chemistry"
-                            disabled={model.role !== 'Maker'}
-                            className="w-full border border-slate-300 rounded p-3 text-sm bg-white outline-none focus:ring-2 focus:ring-brand-500"
-                            value={model.draft.chemistry}
-                            onChange={e => handleUpdateDraft('chemistry', e.target.value)}
-                          >
-                            <option value="">Select...</option>
-                            <option value="LFP">LFP (Lithium Iron Phosphate)</option>
-                            <option value="NMC">NMC (Nickel Manganese Cobalt)</option>
-                            <option value="LTO">LTO (Lithium Titanate)</option>
-                          </select>
-                        </Field>
-                        <Field label="Nominal Voltage (V)" id="nominalVoltage" error={model.validationErrors.nominalVoltage}>
-                          <input type="number" step="0.01" disabled={model.role !== 'Maker'} className="w-full border border-slate-300 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-brand-500" value={model.draft.nominalVoltage || ''} onChange={e => handleUpdateDraft('nominalVoltage', parseFloat(e.target.value))} />
-                        </Field>
-                        <Field label="Nominal Capacity (Ah)" id="capacityAh" error={model.validationErrors.capacityAh}>
-                          <input type="number" step="0.1" disabled={model.role !== 'Maker'} className="w-full border border-slate-300 rounded p-3 text-sm outline-none focus:ring-2 focus:ring-brand-500" value={model.draft.capacityAh || ''} onChange={e => handleUpdateDraft('capacityAh', parseFloat(e.target.value))} />
-                        </Field>
-                      </>
-                    )}
-                    {/* ... fallback UI if step sequence differs ... */}
-                  </div>
-                </FlowStep>
-              )}
-
               {model.step === "REVIEW" && (
                 <FlowStep stepTitle="Engineering Review" stepHint="Validate blueprint schema before committing to technical review phase.">
                   <Summary />
@@ -903,10 +892,10 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                         <Save size={18} /> Save Buffer
                       </button>
                       <button 
-                        onClick={() => (model.step === 'BASE_SKU_METADATA' || model.step.startsWith("TECH_")) ? handleNextStep() : handleSubmit()}
+                        onClick={() => isSubmissionPoint ? handleSubmit() : handleNextStep()}
                         className={`flex items-center justify-center gap-2 px-8 py-3 bg-brand-600 text-white rounded-lg font-bold text-sm hover:bg-brand-700 transition-all shadow-lg active:scale-95`}
                       >
-                        {model.step === 'TECHNICAL' ? 'Release to Review' : 'Next Step'} <ChevronRight size={18} />
+                        {isSubmissionPoint ? 'Release to Review' : 'Next Step'} <ChevronRight size={18} />
                       </button>
                     </>
                   )}

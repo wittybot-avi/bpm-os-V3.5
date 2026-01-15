@@ -2,7 +2,7 @@
  * SKU Flow Wizard Model
  * Defines local state shape for the FLOW-001 step-wizard.
  * @foundation V34-S1-FLOW-001-PP-03
- * @updated V35-S1-WIZ-FIX-04 (Navigation Hardening)
+ * @updated V35-S1-WIZ-FIX-06 (Step Pruning & UX Focus)
  */
 
 import type { SkuDraft, SkuFlowState, SkuFlowRole } from "../skuFlowContract";
@@ -32,30 +32,29 @@ export interface WizardModel {
 /**
  * Path Resolution Registry
  * Determines valid step sequences based on Intent and SKU Type.
- * Couplings are strict to prevent cross-path pollution.
+ * Pruned redundant TECHNICAL step to ensure focused UX per type.
  */
 export const WIZARD_STEP_REGISTRY: Record<string, Record<string, WizardStepId[]>> = {
   GREENFIELD: {
-    DEFAULT: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    CELL:    ["INIT", "BASE_SKU_METADATA", "TECH_CELL_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    MODULE:  ["INIT", "BASE_SKU_METADATA", "TECH_MODULE_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    PACK:    ["INIT", "BASE_SKU_METADATA", "TECH_PACK_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    BMS:     ["INIT", "BASE_SKU_METADATA", "TECH_BMS_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    IOT:     ["INIT", "BASE_SKU_METADATA", "TECH_IOT_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    DEFAULT: ["INIT", "BASE_SKU_METADATA", "REVIEW", "APPROVE", "PUBLISH"],
+    CELL:    ["INIT", "BASE_SKU_METADATA", "TECH_CELL_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    MODULE:  ["INIT", "BASE_SKU_METADATA", "TECH_MODULE_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    PACK:    ["INIT", "BASE_SKU_METADATA", "TECH_PACK_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    BMS:     ["INIT", "BASE_SKU_METADATA", "TECH_BMS_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    IOT:     ["INIT", "BASE_SKU_METADATA", "TECH_IOT_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
   },
   REVISION: {
-    DEFAULT: ["INIT", "BASE_SKU_METADATA", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    CELL:    ["INIT", "BASE_SKU_METADATA", "TECH_CELL_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    MODULE:  ["INIT", "BASE_SKU_METADATA", "TECH_MODULE_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    PACK:    ["INIT", "BASE_SKU_METADATA", "TECH_PACK_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    BMS:     ["INIT", "BASE_SKU_METADATA", "TECH_BMS_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
-    IOT:     ["INIT", "BASE_SKU_METADATA", "TECH_IOT_SCAFFOLD", "TECHNICAL", "REVIEW", "APPROVE", "PUBLISH"],
+    DEFAULT: ["INIT", "BASE_SKU_METADATA", "REVIEW", "APPROVE", "PUBLISH"],
+    CELL:    ["INIT", "BASE_SKU_METADATA", "TECH_CELL_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    MODULE:  ["INIT", "BASE_SKU_METADATA", "TECH_MODULE_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    PACK:    ["INIT", "BASE_SKU_METADATA", "TECH_PACK_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    BMS:     ["INIT", "BASE_SKU_METADATA", "TECH_BMS_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
+    IOT:     ["INIT", "BASE_SKU_METADATA", "TECH_IOT_SCAFFOLD", "REVIEW", "APPROVE", "PUBLISH"],
   }
 };
 
 /**
  * Resolves the full sequence for current context.
- * Strictly enforces (Intent + SKU Type) lookup.
  */
 export function getStepSequence(isRevision: boolean, skuType?: string): WizardStepId[] {
   const intentKey = isRevision ? 'REVISION' : 'GREENFIELD';
