@@ -21,6 +21,18 @@ export const DOC_ARTIFACTS: DocArtifact[] = [
     path: "/docs/SYSTEM_CONTEXT.md" 
   },
   { 
+    id: "s0-sot", 
+    title: "S0 Master Data SoT", 
+    tab: "S0 Master Data", 
+    path: "/docs/v35/S0_MASTER_DATA_SOURCE_OF_TRUTH.md" 
+  },
+  { 
+    id: "s1-master", 
+    title: "S1 Product Master", 
+    tab: "S1 Product Master", 
+    path: "/docs/v35/S1_PRODUCT_MASTER_CONTRACT.md" 
+  },
+  { 
     id: "data-contract", 
     title: "Screen Data Contract", 
     tab: "Data Contract", 

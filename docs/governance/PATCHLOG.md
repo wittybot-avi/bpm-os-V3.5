@@ -4,6 +4,8 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-ARCH-BP-01** | Architecture | S1 Product Master Data | **STABLE** | Refactored S1 to Master Data architecture. Expanded contract and UI to focus on Technical/Compliance profiles. | 2026-01-28 09:30 (IST) |
+| **V35-S0-DOC-PP-05** | Documentation | S0 Master Data Source of Truth | **STABLE** | Formally documented S0 definitional scope, prohibitions, and read-only contracts. Added to Registry. | 2026-01-28 07:30 (IST) |
 | **V35-S0-UX-PP-04** | UX / Capability | System Capability Flags | **STABLE** | Centralized feature toggles (Serialization, IoT, Deep Trace) with scoping (Global/Plant/Line) in S0. | 2026-01-28 07:00 (IST) |
 | **V35-S0-UX-PP-03** | UX Structure | Capability-Centric S0 Organization | **STABLE** | Reorganized System Setup around Plant, Line, Workstation, and Device capabilities. Removed operational instance references. | 2026-01-28 06:30 (IST) |
 | **V35-S0-UX-PP-02** | UX Convergence | S0 Master Data Alignment | **STABLE** | Neutralized S0 language. Replaced operational CTAs with "Provisioning" and "Definition" terminology. | 2026-01-28 06:00 (IST) |
