@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-ARCH-BP-01** | Architecture | S0 Master Data Contract | **STABLE** | Formally codified S0 as Master Data layer. Added invariants and detailed entities. | 2026-01-28 05:30 (IST) |
 | **V35-MD-NAV-BP-01** | Foundation | Rename System Setup to Master Data | **STABLE** | Sidebar taxonomy update only. S0 and S1 screens grouped under new heading. | 2026-01-28 05:00 (IST) |
 
 ## V3.4 Active
