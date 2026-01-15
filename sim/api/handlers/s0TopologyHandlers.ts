@@ -10,6 +10,7 @@
  * @updated V35-S0-CAP-PP-16 (Device Class Mutations)
  * @updated V35-S0-CAP-PP-17 (Capability Overrides)
  * @updated V35-S0-COMP-PP-18 (Regulatory Bindings)
+ * @updated V35-S0-COMP-PP-19 (SOP Profile CRUD)
  */
 
 import type { ApiHandler, ApiResponse, ApiRequest } from "../apiTypes";
@@ -37,11 +38,14 @@ import {
   getRegulatoryFrameworks,
   getComplianceBindings,
   upsertComplianceBinding,
-  removeComplianceBinding
+  removeComplianceBinding,
+  getSopProfiles,
+  addSopProfile,
+  updateSopProfile
 } from "../s0/systemTopology.store";
 import type { Enterprise, Plant, Line, Station, DeviceClass } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityOverride, EffectiveFlag, CapabilityScope } from "../../../domain/s0/capability.types";
-import type { RegulatoryFramework, ComplianceBinding, EffectiveCompliance } from "../../../domain/s0/complianceContext.types";
+import type { RegulatoryFramework, ComplianceBinding, EffectiveCompliance, SOPProfile } from "../../../domain/s0/complianceContext.types";
 
 const ok = (data: any): ApiResponse => ({
   status: 200,
@@ -312,7 +316,7 @@ export const getEffectiveCapabilitiesHandler: ApiHandler = async (req) => {
     const exact = overrides.find(o => o.flagId === flagId && o.scope === scope && o.scopeId === scopeId);
     if (exact) return { ...flag, effectiveValue: exact.value, sourceScope: scope, sourceId: scopeId, isOverridden: true };
 
-    // 2. Fallback to Hierarchy (Station -> Line -> Plant -> Enterprise -> Global)
+    // 2. Fallback to Hierarchy
     if (scope === 'STATION') {
       const station = getStations().find(s => s.id === scopeId);
       if (station) {
@@ -394,6 +398,45 @@ export const listRegulatoryFrameworksHandler: ApiHandler = async () => {
 };
 
 /**
+ * GET /api/s0/compliance/sop-profiles
+ */
+export const listSopProfilesHandler: ApiHandler = async () => {
+  return ok(getSopProfiles());
+};
+
+/**
+ * POST /api/s0/compliance/sop-profiles/create
+ */
+export const createSopProfileHandler: ApiHandler = async (req) => {
+  const body = parseBody<Partial<SOPProfile>>(req);
+  if (!body.code || !body.name || !body.version) return err("BAD_REQUEST", "Code, Name and Version are required");
+
+  const newSop: SOPProfile = {
+    id: `SOP-${Math.random().toString(16).slice(2, 6).toUpperCase()}`,
+    code: body.code,
+    name: body.name,
+    version: body.version,
+    applicableScopes: body.applicableScopes || ["PLANT"]
+  };
+
+  addSopProfile(newSop);
+  return ok(newSop);
+};
+
+/**
+ * PATCH /api/s0/compliance/sop-profiles/update
+ */
+export const updateSopProfileHandler: ApiHandler = async (req) => {
+  const body = parseBody<{ id: string; updates: Partial<SOPProfile> }>(req);
+  if (!body.id) return err("BAD_REQUEST", "SOP Profile ID is required");
+
+  const updated = updateSopProfile(body.id, body.updates);
+  if (!updated) return err("NOT_FOUND", "SOP Profile not found", 404);
+
+  return ok(updated);
+};
+
+/**
  * GET /api/s0/compliance/effective
  */
 export const getEffectiveComplianceHandler: ApiHandler = async (req) => {
@@ -403,6 +446,7 @@ export const getEffectiveComplianceHandler: ApiHandler = async (req) => {
   if (!scope || !scopeId) return err("BAD_REQUEST", "Scope and scopeId are required");
 
   const frameworks = getRegulatoryFrameworks();
+  const sops = getSopProfiles();
   const bindings = getComplianceBindings();
 
   // Resolution Logic: Exact scope or fallback to parent
@@ -419,6 +463,7 @@ export const getEffectiveComplianceHandler: ApiHandler = async (req) => {
   if (!activeBinding) {
     return ok({
       frameworks: [],
+      sopProfiles: [],
       sourceScope: 'GLOBAL',
       sourceId: 'GLOBAL',
       isOverridden: false
@@ -426,9 +471,11 @@ export const getEffectiveComplianceHandler: ApiHandler = async (req) => {
   }
 
   const resolvedFrameworks = frameworks.filter(f => activeBinding?.regulatoryFrameworkIds.includes(f.id));
+  const resolvedSops = sops.filter(s => activeBinding?.sopProfileIds.includes(s.id));
 
   const result: EffectiveCompliance = {
     frameworks: resolvedFrameworks,
+    sopProfiles: resolvedSops,
     sourceScope: activeBinding.scope,
     sourceId: activeBinding.scopeId,
     isOverridden

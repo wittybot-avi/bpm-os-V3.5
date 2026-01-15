@@ -81,7 +81,10 @@ import {
   listRegulatoryFrameworksHandler,
   getEffectiveComplianceHandler,
   setComplianceBindingHandler,
-  removeComplianceBindingHandler
+  removeComplianceBindingHandler,
+  listSopProfilesHandler,
+  createSopProfileHandler,
+  updateSopProfileHandler
 } from "./handlers/s0TopologyHandlers";
 
 export const SIM_API_ROUTES: RouteDef[] = [
@@ -134,9 +137,12 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("DELETE", "EXACT", "/api/s0/capabilities/override", removeCapabilityOverrideHandler),
 
   /**
-   * S0 Compliance Routes (V35-S0-COMP-PP-18)
+   * S0 Compliance Routes (V35-S0-COMP-PP-18 / PP-19)
    */
   route("GET", "EXACT", "/api/s0/compliance/frameworks", listRegulatoryFrameworksHandler),
+  route("GET", "EXACT", "/api/s0/compliance/sop-profiles", listSopProfilesHandler),
+  route("POST", "EXACT", "/api/s0/compliance/sop-profiles/create", createSopProfileHandler),
+  route("PATCH", "EXACT", "/api/s0/compliance/sop-profiles/update", updateSopProfileHandler),
   route("GET", "EXACT", "/api/s0/compliance/effective", getEffectiveComplianceHandler),
   route("POST", "EXACT", "/api/s0/compliance/bind", setComplianceBindingHandler),
   route("DELETE", "EXACT", "/api/s0/compliance/bind", removeComplianceBindingHandler),

@@ -26,6 +26,7 @@ export interface RegulatoryFramework {
  */
 export interface SOPProfile {
   readonly id: EntityId;
+  readonly code: string;
   readonly name: string;
   readonly version: string;
   readonly applicableScopes: readonly CapabilityScope[];
@@ -47,6 +48,7 @@ export interface ComplianceBinding {
  */
 export interface EffectiveCompliance {
   readonly frameworks: readonly RegulatoryFramework[];
+  readonly sopProfiles: readonly SOPProfile[];
   readonly sourceScope: CapabilityScope;
   readonly sourceId: EntityId;
   readonly isOverridden: boolean;

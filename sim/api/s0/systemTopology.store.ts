@@ -7,7 +7,7 @@
 
 import type { Enterprise, Plant, Line, Station, DeviceClass, TopologyAudit } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityFlag, CapabilityOverride } from "../../../domain/s0/capability.types";
-import type { RegulatoryFramework, ComplianceBinding } from "../../../domain/s0/complianceContext.types";
+import type { RegulatoryFramework, ComplianceBinding, SOPProfile } from "../../../domain/s0/complianceContext.types";
 
 const INITIAL_AUDIT: TopologyAudit = {
   createdBy: "SYSTEM_PROVISIONER",
@@ -112,12 +112,17 @@ let REGULATORY_FRAMEWORKS: RegulatoryFramework[] = [
   { id: "RF-BATT-AADHAAR", name: "BATT-AADHAAR-V1", jurisdiction: "INDIA", mandatory: false, description: "Sovereign identity framework for battery tracking." }
 ];
 
+let SOP_PROFILES: SOPProfile[] = [
+  { id: "SOP-ASSY-01", code: "SOP-IND-PK-01", name: "Pack Assembly Protocol (Standard)", version: "V2.4", applicableScopes: ["PLANT", "LINE"] },
+  { id: "SOP-QC-01", code: "SOP-AIS-QC-156", name: "AIS-156 Quality Gate Procedure", version: "V1.8", applicableScopes: ["PLANT", "STATION"] }
+];
+
 let COMPLIANCE_BINDINGS: ComplianceBinding[] = [
   {
     scope: 'ENTERPRISE',
     scopeId: 'ENT-BPM-GLOBAL',
     regulatoryFrameworkIds: ["RF-AIS-156", "RF-UN-383"],
-    sopProfileIds: []
+    sopProfileIds: ["SOP-QC-01"]
   }
 ];
 
@@ -133,6 +138,7 @@ export const getDeviceClasses = (): readonly DeviceClass[] => Object.freeze([...
 export const getCapabilityFlags = (): readonly CapabilityFlag[] => Object.freeze([...CAPABILITY_FLAGS]);
 export const getCapabilityOverrides = (): readonly CapabilityOverride[] => Object.freeze([...CAPABILITY_OVERRIDES]);
 export const getRegulatoryFrameworks = (): readonly RegulatoryFramework[] => Object.freeze([...REGULATORY_FRAMEWORKS]);
+export const getSopProfiles = (): readonly SOPProfile[] => Object.freeze([...SOP_PROFILES]);
 export const getComplianceBindings = (): readonly ComplianceBinding[] => Object.freeze([...COMPLIANCE_BINDINGS]);
 
 export const getEnterpriseById = (id: string) => ENTERPRISES.find(e => e.id === id);
@@ -188,6 +194,16 @@ export const addDeviceClass = (dc: DeviceClass) => {
 export const updateDeviceClass = (id: string, updates: Partial<DeviceClass>) => {
   DEVICE_CLASSES = DEVICE_CLASSES.map(dc => dc.id === id ? { ...dc, ...updates } : dc);
   return DEVICE_CLASSES.find(dc => dc.id === id);
+};
+
+export const addSopProfile = (sop: SOPProfile) => {
+  SOP_PROFILES = [...SOP_PROFILES, sop];
+  return sop;
+};
+
+export const updateSopProfile = (id: string, updates: Partial<SOPProfile>) => {
+  SOP_PROFILES = SOP_PROFILES.map(s => s.id === id ? { ...s, ...updates } : s);
+  return SOP_PROFILES.find(s => s.id === id);
 };
 
 export const upsertOverride = (override: CapabilityOverride) => {
