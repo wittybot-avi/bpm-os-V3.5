@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S0-BP-03** | Foundation | Compliance Taxonomy | **STABLE** | Regulatory & SOP context contracts for S0. Modeled frameworks, SOP profiles, and hierarchical bindings. Types only. | 2026-01-29 11:00 (IST) |
 | **V35-S0-BP-02** | Foundation | Capability Taxonomy | **STABLE** | Capability scope & authorization taxonomy for S0. Defined categories and flags for hierarchical system control. Types only. | 2026-01-29 10:00 (IST) |
 | **V35-S0-BP-01** | Foundation | S0 Topology | **STABLE** | Canonical Enterprise–Plant–Line–Station hierarchy contracts. ID-based relational model defined. Types only. | 2026-01-29 09:00 (IST) |
 | **V35-S1-WIZ-SPEC-FIX-07** | Governance | S1 Wizard Split | **STABLE** | Formally enforced responsibility split in SKU Wizard. BASE step limited to identity/naming/notes; SKU_SPEC step limited to technical definitions. Updated UI headers and hints to reflect strict governance rules. | 2026-01-28 21:00 (IST) |
