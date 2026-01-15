@@ -74,7 +74,10 @@ import {
   updateEnterpriseHandler,
   listDeviceClassesHandler,
   createDeviceClassHandler,
-  updateDeviceClassHandler
+  updateDeviceClassHandler,
+  getEffectiveCapabilitiesHandler,
+  setCapabilityOverrideHandler,
+  removeCapabilityOverrideHandler
 } from "./handlers/s0TopologyHandlers";
 
 export const SIM_API_ROUTES: RouteDef[] = [
@@ -110,7 +113,7 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("GET", "EXACT", "/api/s0/device-classes", listDeviceClassesHandler),
 
   /**
-   * S0 Topology Mutations (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15 / PP-16)
+   * S0 Topology Mutations (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15 / PP-16 / PP-17)
    */
   route("PATCH", "EXACT", "/api/s0/enterprises/update", updateEnterpriseHandler),
   route("POST", "EXACT", "/api/s0/plants/create", createPlantHandler),
@@ -121,6 +124,10 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("PATCH", "EXACT", "/api/s0/stations/update", updateStationHandler),
   route("POST", "EXACT", "/api/s0/device-classes/create", createDeviceClassHandler),
   route("PATCH", "EXACT", "/api/s0/device-classes/update", updateDeviceClassHandler),
+  
+  route("GET", "EXACT", "/api/s0/capabilities/effective", getEffectiveCapabilitiesHandler),
+  route("POST", "EXACT", "/api/s0/capabilities/override", setCapabilityOverrideHandler),
+  route("DELETE", "EXACT", "/api/s0/capabilities/override", removeCapabilityOverrideHandler),
 
   /**
    * SKU Flow (FLOW-001) - Live Simulated Handlers
@@ -139,7 +146,7 @@ export const SIM_API_ROUTES: RouteDef[] = [
   route("POST", "EXACT", "/api/flows/batch/approve", approveBatchFlow),
   route("POST", "EXACT", "/api/flows/batch/start", startBatchFlow),
   route("POST", "EXACT", "/api/flows/batch/complete", completeBatchFlow),
-  route("POST", "EXACT", "/api/flows/batch/cancel", cancelBatchFlow),
+  route("POST", "EXACT", "/api/flows/batch/cancel", cancelDispatch),
   // Bug fix: use EXACT for get
   route("GET", "EXACT", "/api/flows/batch/get", getBatchFlow),
   route("GET", "EXACT", "/api/flows/batch/list", listBatchFlows),

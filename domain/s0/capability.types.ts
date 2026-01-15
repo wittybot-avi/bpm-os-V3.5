@@ -5,10 +5,12 @@
  * @governance S0-ARCH-BP-02
  */
 
+import type { EntityId, IsoDateTime } from "../../types";
+
 /**
  * Hierarchical scope where a capability can be enforced or toggled.
  */
-export type CapabilityScope = 'ENTERPRISE' | 'PLANT' | 'LINE' | 'STATION';
+export type CapabilityScope = 'GLOBAL' | 'ENTERPRISE' | 'PLANT' | 'LINE' | 'STATION';
 
 /**
  * Functional categories for grouping system capabilities.
@@ -24,13 +26,34 @@ export type CapabilityCategory =
 
 /**
  * CapabilityFlag: A specific functional feature toggle within the system.
- * Used to drive conditional logic in MES operational stages.
+ * Defines the global baseline.
  */
 export interface CapabilityFlag {
-  readonly key: string;              // unique machine name (e.g. "STRICT_GATING")
+  readonly id: string;               // unique machine name (e.g. "STRICT_GATING")
+  readonly label: string;
   readonly description: string;      // Human-readable purpose
-  readonly scope: CapabilityScope;   // Hierarchy level of enforcement
   readonly category: CapabilityCategory; 
-  readonly defaultState: boolean;    // Initial value for new nodes
-  readonly requiresApproval: boolean; // If changes require dual-signoff
+  readonly defaultValue: boolean;    // Initial value for new nodes
+}
+
+/**
+ * CapabilityOverride: A localized change to a capability flag at a specific scope.
+ */
+export interface CapabilityOverride {
+  readonly flagId: string;
+  readonly scope: CapabilityScope;
+  readonly scopeId: EntityId;
+  readonly value: boolean;
+  readonly updatedAt: IsoDateTime;
+  readonly updatedBy: string;
+}
+
+/**
+ * Resolved view of a flag in a specific context.
+ */
+export interface EffectiveFlag extends CapabilityFlag {
+  readonly effectiveValue: boolean;
+  readonly sourceScope: CapabilityScope;
+  readonly sourceId?: EntityId;
+  readonly isOverridden: boolean;
 }

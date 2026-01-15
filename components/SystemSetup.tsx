@@ -34,7 +34,10 @@ import {
   Info,
   Save,
   ChevronDown,
-  Edit3
+  Edit3,
+  History,
+  RotateCcw,
+  MapPin
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -43,6 +46,7 @@ import { getS0ActionState, S0ActionId } from '../stages/s0/s0Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
 import { apiFetch } from '../services/apiHarness';
 import type { Enterprise, Plant, Line, Station, DeviceClass } from '../domain/s0/systemTopology.types';
+import type { EffectiveFlag, CapabilityScope } from '../domain/s0/capability.types';
 
 interface SystemSetupProps {
   onNavigate?: (view: NavView) => void;
@@ -54,7 +58,7 @@ const ScopeBadge: React.FC<{ scope: string }> = ({ scope }) => (
   </span>
 );
 
-type ManageCategory = 'ORGANIZATION' | 'LINES' | 'WORKSTATIONS' | 'DEVICES' | 'REGULATORY' | 'USERS' | 'ENTERPRISE' | null;
+type ManageCategory = 'ORGANIZATION' | 'LINES' | 'WORKSTATIONS' | 'DEVICES' | 'REGULATORY' | 'USERS' | 'ENTERPRISE' | 'CAPABILITIES' | null;
 
 export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const { role } = useContext(UserContext);
@@ -82,6 +86,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   
   const [isTopologyLoading, setIsTopologyLoading] = useState(true);
 
+  // Scoped Capabilities State
+  const [effectiveFlags, setEffectiveFlags] = useState<EffectiveFlag[]>([]);
+  const [isFlagsLoading, setIsFlagsLoading] = useState(false);
+
   // CRUD State
   const [plants, setPlants] = useState<Plant[]>([]);
   const [isEntitiesLoading, setIsEntitiesLoading] = useState(false);
@@ -91,6 +99,13 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [editingEnterprise, setEditingEnterprise] = useState<Partial<Enterprise> | null>(null);
   const [editingDeviceClass, setEditingDeviceClass] = useState<Partial<DeviceClass> | null>(null);
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
+
+  // Confirmation Overlay
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // 1. Initial Load: Enterprises
   useEffect(() => {
@@ -118,7 +133,8 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         if (data.ok) {
           setActivePlants(data.data);
           if (data.data.length > 0) {
-            if (!data.data.find((p: any) => p.id === selPlantId)) {
+            const found = data.data.find((p: any) => p.id === selPlantId);
+            if (!found) {
                setSelPlantId(data.data[0].id);
             }
           } else {
@@ -144,7 +160,8 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         if (data.ok) {
           setActiveLines(data.data);
           if (data.data.length > 0) {
-            if (!data.data.find((l: any) => l.id === selLineId)) {
+            const found = data.data.find((l: any) => l.id === selLineId);
+            if (!found) {
                setSelLineId(data.data[0].id);
             }
           } else {
@@ -170,7 +187,8 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         if (data.ok) {
           setActiveStations(data.data);
           if (data.data.length > 0) {
-            if (!data.data.find((s: any) => s.id === selStationId)) {
+            const found = data.data.find((s: any) => s.id === selStationId);
+            if (!found) {
                setSelStationId(data.data[0].id);
             }
           } else {
@@ -183,6 +201,31 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     };
     fetchStations();
   }, [selLineId]);
+
+  // 5. Capability Resolution
+  useEffect(() => {
+    const fetchEffectiveCapabilities = async () => {
+      let scope: CapabilityScope = 'GLOBAL';
+      let scopeId = 'GLOBAL';
+
+      if (selStationId) { scope = 'STATION'; scopeId = selStationId; }
+      else if (selLineId) { scope = 'LINE'; scopeId = selLineId; }
+      else if (selPlantId) { scope = 'PLANT'; scopeId = selPlantId; }
+      else if (selEntId) { scope = 'ENTERPRISE'; scopeId = selEntId; }
+
+      setIsFlagsLoading(true);
+      try {
+        const res = await apiFetch(`/api/s0/capabilities/effective?scope=${scope}&scopeId=${scopeId}`);
+        const data = await res.json();
+        if (data.ok) {
+          setEffectiveFlags(data.data);
+        }
+      } catch (e) { console.error(e); } finally {
+        setIsFlagsLoading(false);
+      }
+    };
+    fetchEffectiveCapabilities();
+  }, [selEntId, selPlantId, selLineId, selStationId]);
 
   // Sync audit events
   useEffect(() => {
@@ -275,16 +318,6 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     }, 1000);
   };
 
-  const handleToggleFlag = (flagId: string) => {
-    if (role !== UserRole.SYSTEM_ADMIN) return;
-    setS0Context(prev => ({
-      ...prev,
-      featureFlags: prev.featureFlags.map(f => 
-        f.id === flagId ? { ...f, isEnabled: !f.isEnabled } : f
-      )
-    }));
-  };
-
   const handleNavToS1 = () => {
     if (onNavigate) onNavigate('sku_blueprint');
   };
@@ -334,6 +367,59 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         if (entData.ok) setEnterprises(entData.data);
       }
     } catch (e) { console.error(e); } finally { setIsFormSubmitting(false); }
+  };
+
+  // Scoped Override Handlers (V35-S0-CAP-PP-17)
+  const toggleFlag = (flag: EffectiveFlag) => {
+    if (role !== UserRole.SYSTEM_ADMIN) return;
+
+    let targetScope: CapabilityScope = 'GLOBAL';
+    let targetId = 'GLOBAL';
+
+    if (selStationId) { targetScope = 'STATION'; targetId = selStationId; }
+    else if (selLineId) { targetScope = 'LINE'; targetId = selLineId; }
+    else if (selPlantId) { targetScope = 'PLANT'; targetId = selPlantId; }
+    else if (selEntId) { targetScope = 'ENTERPRISE'; targetId = selEntId; }
+
+    const isReverting = flag.isOverridden;
+
+    setConfirmAction({
+      title: isReverting ? 'Revert to Inherited State?' : `Override Capability for ${targetScope}?`,
+      message: isReverting 
+        ? `This will remove the localized setting and revert to the value inherited from ${flag.sourceScope}.` 
+        : `This will explicitly ${!flag.effectiveValue ? 'Enable' : 'Disable'} this capability for the current ${targetScope} scope.`,
+      onConfirm: async () => {
+        setIsSimulating(true);
+        try {
+          if (isReverting) {
+             await apiFetch('/api/s0/capabilities/override', {
+               method: 'DELETE',
+               body: JSON.stringify({ flagId: flag.id, scope: targetScope, scopeId: targetId })
+             });
+          } else {
+             await apiFetch('/api/s0/capabilities/override', {
+               method: 'POST',
+               body: JSON.stringify({ flagId: flag.id, scope: targetScope, scopeId: targetId, value: !flag.effectiveValue })
+             });
+          }
+          
+          // Refresh list
+          const res = await apiFetch(`/api/s0/capabilities/effective?scope=${targetScope}&scopeId=${targetId}`);
+          const data = await res.json();
+          if (data.ok) setEffectiveFlags(data.data);
+
+          emitAuditEvent({
+            stageId: 'S0',
+            actionId: 'UPDATE_REGULATIONS',
+            actorRole: role,
+            message: `${isReverting ? 'Reverted' : 'Overrode'} flag ${flag.id} at ${targetScope} scope.`
+          });
+        } catch (e) { console.error(e); } finally {
+          setIsSimulating(false);
+          setConfirmAction(null);
+        }
+      }
+    });
   };
 
   // Plant CRUD
@@ -745,11 +831,11 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             <div className="space-y-4 text-sm flex-1">
                <div className="grid grid-cols-2 gap-2">
                   <div className="bg-slate-50 p-2 rounded">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Facility ID</span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Facility ID</span>
                       <span className="font-mono text-slate-700">{selPlantId || 'N/A'}</span>
                   </div>
                   <div className="bg-slate-50 p-2 rounded">
-                      <span className="text-[10px] text-slate-400 font-bold uppercase block">Region</span>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Region</span>
                       <span className="text-slate-700">{s0Context.region}</span>
                   </div>
                </div>
@@ -794,8 +880,8 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             </div>
           </div>
 
-          {/* 3. System Capability Flags */}
-          <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col md:col-span-2">
+          {/* 3. System Capability Flags (V35-S0-CAP-PP-17) */}
+          <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col md:col-span-2 relative">
             <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
               <div className="flex items-center gap-2 text-slate-700">
                 <Zap size={20} className="text-brand-600" />
@@ -804,20 +890,54 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                   <ScopeBadge scope="MIXED" />
                 </div>
               </div>
+              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase">
+                <Info size={12} /> Scoped Overrides Active
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-               {s0Context.featureFlags.map(flag => (
-                 <div key={flag.id} className={`p-4 rounded-lg border transition-all ${flag.isEnabled ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex items-center gap-2"><span className="font-bold text-slate-800 text-sm">{flag.label}</span><span className="text-[8px] font-bold px-1 py-0.5 rounded border border-slate-200">{flag.scope}</span></div>
-                      <button onClick={() => handleToggleFlag(flag.id)} disabled={role !== UserRole.SYSTEM_ADMIN}>
-                        {flag.isEnabled ? <ToggleRight className="text-brand-600" size={24} /> : <ToggleLeft className="text-slate-300" size={24} />}
-                      </button>
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">{flag.description}</p>
-                 </div>
-               ))}
-            </div>
+
+            {isFlagsLoading ? (
+               <div className="flex-1 flex flex-col items-center justify-center py-12 text-slate-400 gap-2">
+                 <Loader2 size={24} className="animate-spin text-brand-500" />
+                 <span className="text-[10px] font-bold uppercase tracking-widest">Resolving Scoped Flags...</span>
+               </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {effectiveFlags.map(flag => (
+                  <div key={flag.id} className={`p-4 rounded-lg border transition-all ${flag.effectiveValue ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex flex-col gap-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-800 text-sm">{flag.label}</span>
+                            {flag.isOverridden && (
+                              <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 font-bold animate-pulse">OVERRIDDEN</span>
+                            )}
+                          </div>
+                          <span className={`text-[8px] font-bold flex items-center gap-1 ${flag.sourceScope === 'GLOBAL' ? 'text-slate-400' : 'text-brand-600'}`}>
+                            {flag.sourceScope === 'GLOBAL' ? <Globe size={8} /> : <MapPin size={8} />}
+                            Source: {flag.sourceScope} {flag.sourceId && `(${flag.sourceId})`}
+                          </span>
+                        </div>
+                        <button 
+                          onClick={() => toggleFlag(flag)} 
+                          disabled={role !== UserRole.SYSTEM_ADMIN}
+                          className="hover:scale-110 transition-transform active:scale-95"
+                        >
+                          {flag.effectiveValue ? <ToggleRight className="text-brand-600" size={24} /> : <ToggleLeft className="text-slate-300" size={24} />}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">{flag.description}</p>
+                      {flag.isOverridden && (
+                        <button 
+                          onClick={() => toggleFlag(flag)}
+                          className="mt-3 flex items-center gap-1 text-[9px] font-bold text-slate-400 hover:text-brand-600 transition-colors uppercase tracking-widest"
+                        >
+                          <RotateCcw size={10} /> Revert to Inherited
+                        </button>
+                      )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 4. Workstation Capabilities */}
@@ -861,7 +981,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               </div>
               <button onClick={() => openManager('DEVICES')} className="text-[10px] font-bold text-brand-600 hover:text-brand-800 uppercase">Manage Classes</button>
             </div>
-            <div className="space-y-3 flex-1 overflow-y-auto">
+            <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar">
                <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs font-bold text-slate-700"><span>BARCODE_SCANNER</span><span className="font-mono text-slate-400">USB / REST</span></div>
                <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs font-bold text-slate-700"><span>DIGITAL_SCALE</span><span className="font-mono text-slate-400">MQTT</span></div>
             </div>
@@ -982,7 +1102,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                            {plants.map(p => (
                              <div key={p.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center group">
                                 <div className="flex items-center gap-3">
-                                   <div className={`w-2 h-2 rounded-full ${p.status === 'ACTIVE' ? 'bg-green-50' : 'bg-amber-500'}`} />
+                                   <div className={`w-2 h-2 rounded-full ${p.status === 'ACTIVE' ? 'bg-green-500' : 'bg-amber-500'}`} />
                                    <div>
                                       <div className="text-sm font-bold text-slate-800">{p.displayName}</div>
                                       <div className="text-[10px] font-mono text-slate-400 uppercase tracking-tighter">Code: {p.code} • ID: {p.id}</div>
@@ -1036,7 +1156,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                            {activeLines.map(l => (
                              <div key={l.id} className="p-4 hover:bg-slate-50 transition-colors flex justify-between items-center group">
                                 <div className="flex items-center gap-3">
-                                   <div className={`w-2 h-2 rounded-full ${l.status === 'ACTIVE' ? 'bg-green-50' : 'bg-amber-500'}`} />
+                                   <div className={`w-2 h-2 rounded-full ${l.status === 'ACTIVE' ? 'bg-green-500' : 'bg-amber-500'}`} />
                                    <div>
                                       <div className="text-sm font-bold text-slate-800">{l.displayName}</div>
                                       <div className="text-[10px] font-mono text-slate-400 uppercase tracking-tighter">Code: {l.code} • ID: {l.id}</div>
@@ -1253,6 +1373,36 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                </div>
             </footer>
           </div>
+        </div>
+      )}
+
+      {/* CONFIRMATION OVERLAY */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center animate-in fade-in duration-200">
+           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+           <div className="relative bg-white rounded-xl shadow-2xl border border-slate-200 p-8 max-w-md w-full animate-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-4 mb-6">
+                 <div className="p-3 bg-brand-50 text-brand-600 rounded-full">
+                    <ShieldCheck size={28} />
+                 </div>
+                 <h3 className="text-xl font-bold text-slate-800">{confirmAction.title}</h3>
+              </div>
+              <p className="text-slate-600 mb-8 leading-relaxed">{confirmAction.message}</p>
+              <div className="flex gap-4">
+                 <button 
+                  onClick={() => setConfirmAction(null)}
+                  className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-500 hover:bg-slate-50 transition-colors"
+                 >
+                    CANCEL
+                 </button>
+                 <button 
+                  onClick={confirmAction.onConfirm}
+                  className="flex-1 py-3 bg-brand-600 text-white rounded-lg text-sm font-bold hover:bg-brand-700 shadow-md shadow-brand-200 transition-all"
+                 >
+                    CONFIRM
+                 </button>
+              </div>
+           </div>
         </div>
       )}
     </div>

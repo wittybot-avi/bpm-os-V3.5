@@ -6,6 +6,7 @@
  */
 
 import type { Enterprise, Plant, Line, Station, DeviceClass, TopologyAudit } from "../../../domain/s0/systemTopology.types";
+import type { CapabilityFlag, CapabilityOverride } from "../../../domain/s0/capability.types";
 
 const INITIAL_AUDIT: TopologyAudit = {
   createdBy: "SYSTEM_PROVISIONER",
@@ -93,6 +94,19 @@ let DEVICE_CLASSES: DeviceClass[] = [
   }
 ];
 
+const CAPABILITY_FLAGS: CapabilityFlag[] = [
+  { id: 'ENABLE_SERIALIZATION', label: 'Unit Serialization', description: 'Enable unique ID generation at S3.', defaultValue: true, category: 'TRACEABILITY' },
+  { id: 'ENABLE_IOT_BINDING', label: 'IoT Asset Binding', description: 'Link BMS telemetry to Battery ID at S10.', defaultValue: true, category: 'TRACEABILITY' },
+  { id: 'ENABLE_CELL_TRACE', label: 'Deep Cell Traceability', description: 'Track serials down to individual cell units.', defaultValue: false, category: 'TRACEABILITY' },
+  { id: 'ENABLE_DIGITAL_PASSPORT', label: 'Digital Passport (EU)', description: 'Generate carbon footprint & compliance schema.', defaultValue: true, category: 'REGULATORY' },
+  { id: 'STRICT_GATING', label: 'Strict Interlock Gating', description: 'Block stage transitions if gates are locked.', defaultValue: true, category: 'MANUFACTURING' }
+];
+
+let CAPABILITY_OVERRIDES: CapabilityOverride[] = [
+  // Example: Disable serialization for a specific test station
+  // { flagId: 'ENABLE_SERIALIZATION', scope: 'STATION', scopeId: 'STN-DEBUG', value: false, updatedAt: '2026-01-01T00:00:00Z', updatedBy: 'SYSTEM' }
+];
+
 /**
  * STORE ACCESSORS (Read-Only)
  */
@@ -102,6 +116,8 @@ export const getPlants = (): readonly Plant[] => Object.freeze([...PLANTS]);
 export const getLines = (): readonly Line[] => Object.freeze([...LINES]);
 export const getStations = (): readonly Station[] => Object.freeze([...STATIONS]);
 export const getDeviceClasses = (): readonly DeviceClass[] => Object.freeze([...DEVICE_CLASSES]);
+export const getCapabilityFlags = (): readonly CapabilityFlag[] => Object.freeze([...CAPABILITY_FLAGS]);
+export const getCapabilityOverrides = (): readonly CapabilityOverride[] => Object.freeze([...CAPABILITY_OVERRIDES]);
 
 export const getEnterpriseById = (id: string) => ENTERPRISES.find(e => e.id === id);
 export const getPlantById = (id: string) => PLANTS.find(p => p.id === id);
@@ -110,7 +126,7 @@ export const getStationById = (id: string) => STATIONS.find(s => s.id === id);
 export const getDeviceClassById = (id: string) => DEVICE_CLASSES.find(dc => dc.id === id);
 
 /**
- * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15 / PP-16)
+ * STORE MUTATORS (V35-S0-CRUD-PP-11 / PP-13 / PP-14 / PP-15 / PP-16 / PP-17)
  */
 
 export const addPlant = (plant: Plant) => {
@@ -156,4 +172,25 @@ export const addDeviceClass = (dc: DeviceClass) => {
 export const updateDeviceClass = (id: string, updates: Partial<DeviceClass>) => {
   DEVICE_CLASSES = DEVICE_CLASSES.map(dc => dc.id === id ? { ...dc, ...updates } : dc);
   return DEVICE_CLASSES.find(dc => dc.id === id);
+};
+
+export const upsertOverride = (override: CapabilityOverride) => {
+  const existingIndex = CAPABILITY_OVERRIDES.findIndex(
+    o => o.flagId === override.flagId && o.scope === override.scope && o.scopeId === override.scopeId
+  );
+
+  if (existingIndex > -1) {
+    const updated = [...CAPABILITY_OVERRIDES];
+    updated[existingIndex] = override;
+    CAPABILITY_OVERRIDES = updated;
+  } else {
+    CAPABILITY_OVERRIDES = [...CAPABILITY_OVERRIDES, override];
+  }
+  return override;
+};
+
+export const removeOverride = (flagId: string, scope: string, scopeId: string) => {
+  CAPABILITY_OVERRIDES = CAPABILITY_OVERRIDES.filter(
+    o => !(o.flagId === flagId && o.scope === scope && o.scopeId === scopeId)
+  );
 };
