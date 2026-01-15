@@ -22,7 +22,9 @@ import {
   ShieldCheck,
   ToggleLeft,
   ToggleRight,
-  Filter
+  Filter,
+  ChevronRight,
+  Building2
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -34,6 +36,12 @@ import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents
 interface SystemSetupProps {
   onNavigate?: (view: NavView) => void;
 }
+
+const ScopeBadge: React.FC<{ scope: string }> = ({ scope }) => (
+  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold border bg-slate-50 text-slate-400 border-slate-200 tracking-tighter">
+    {scope.toUpperCase()}
+  </span>
+);
 
 export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const { role } = useContext(UserContext);
@@ -129,7 +137,18 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
              <Settings className="text-brand-600" size={24} />
              System Configuration (S0)
            </h1>
-           <p className="text-slate-500 text-sm mt-1">Definition of authorized manufacturing capabilities and system topology.</p>
+           
+           {/* READ-ONLY HIERARCHY BREADCRUMB */}
+           <nav className="flex items-center gap-2 mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 w-fit px-2 py-1 rounded border border-slate-100">
+              <Building2 size={10} className="text-slate-300" />
+              <span>BPM Global Manufacturing</span>
+              <ChevronRight size={10} className="text-slate-200" />
+              <Factory size={10} className="text-slate-300" />
+              <span>{s0Context.plant.name} - Kolkata</span>
+              <ChevronRight size={10} className="text-slate-200" />
+              <Layout size={10} className="text-brand-400" />
+              <span className="text-brand-600">All Nodes</span>
+           </nav>
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="bg-slate-100 text-slate-600 px-3 py-1 rounded text-[10px] font-bold border border-slate-200 uppercase tracking-widest">
@@ -178,7 +197,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
               <Factory size={20} className="text-brand-600" />
-              <h2 className="font-bold">Plant Capabilities</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold">Plant Capabilities</h2>
+                <ScopeBadge scope="PLANT" />
+              </div>
             </div>
             <button 
               onClick={handleEditPlant}
@@ -218,7 +240,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
               <Layout size={20} className="text-brand-600" />
-              <h2 className="font-bold">Line Capabilities</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold">Line Capabilities</h2>
+                <ScopeBadge scope="LINE" />
+              </div>
             </div>
             <button className="text-[10px] font-bold text-brand-600 hover:text-brand-800">
               CONFIGURE
@@ -250,12 +275,15 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* 3. System Capability Flags (NEW) */}
+        {/* 3. System Capability Flags */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col md:col-span-2">
           <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
               <Zap size={20} className="text-brand-600" />
-              <h2 className="font-bold">System Capability Flags</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold">System Capability Flags</h2>
+                <ScopeBadge scope="MIXED" />
+              </div>
             </div>
             <div className="flex items-center gap-2 text-[10px] text-slate-400 font-bold uppercase">
                <ShieldCheck size={12} /> Root Auth Required to Toggle
@@ -307,7 +335,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
               <Wrench size={20} className="text-brand-600" />
-              <h2 className="font-bold">Workstation Capabilities</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold">Workstation Capabilities</h2>
+                <ScopeBadge scope="STATION" />
+              </div>
             </div>
           </div>
 
@@ -351,7 +382,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
               <Activity size={20} className="text-brand-600" />
-              <h2 className="font-bold">Device Class Capabilities</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold">Device Class Capabilities</h2>
+                <ScopeBadge scope="GLOBAL" />
+              </div>
             </div>
             <button className="text-[10px] font-bold text-brand-600 hover:text-brand-800">
               MANAGE CLASSES
@@ -385,7 +419,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2 text-slate-700">
               <Globe size={20} className="text-brand-600" />
-              <h2 className="font-bold">Regulatory & Sovereignty Compliance</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold">Regulatory & Sovereignty Compliance</h2>
+                <ScopeBadge scope="GLOBAL" />
+              </div>
             </div>
             <button 
               onClick={handleSyncRegs}
@@ -417,7 +454,10 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
           <div className="flex items-center gap-2 mb-4 text-slate-700">
             <Users size={20} className="text-brand-600" />
-            <h2 className="font-bold">User Capability Matrix</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="font-bold">User Capability Matrix</h2>
+              <ScopeBadge scope="GLOBAL" />
+            </div>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
