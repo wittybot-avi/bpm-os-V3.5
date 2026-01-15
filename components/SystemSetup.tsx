@@ -1,24 +1,25 @@
 import React, { useContext, useState, useEffect } from 'react';
-import { UserContext, UserRole, APP_VERSION, NavView } from '../types';
+import { UserContext, UserRole, NavView } from '../types';
 import { 
   ShieldAlert, 
   Factory, 
   Settings, 
-  FileText, 
   Globe, 
   Users, 
-  Database,
   Edit2,
   Plus,
   RefreshCw,
   Lock,
   History,
   CheckCircle2,
-  ArrowRight,
   Radar,
   Cpu,
   Layout,
-  Server
+  Server,
+  Wrench,
+  Activity,
+  Zap,
+  ShieldCheck
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -34,7 +35,7 @@ interface SystemSetupProps {
 export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const { role } = useContext(UserContext);
   
-  // Local State for Simulation (instead of static mock)
+  // Local State for Simulation
   const [s0Context, setS0Context] = useState<S0Context>(getMockS0Context());
   const [localEvents, setLocalEvents] = useState<AuditEvent[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
@@ -53,84 +54,31 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     setTimeout(() => {
       const now = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' }) + ' IST';
       setS0Context(prev => ({ ...prev, configLastUpdated: now }));
-      
-      const evt = emitAuditEvent({
+      emitAuditEvent({
         stageId: 'S0',
         actionId: 'EDIT_PLANT_DETAILS',
         actorRole: role,
-        message: 'Updated facility configuration hierarchy'
+        message: 'Updated plant capability profile'
       });
-      setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
     }, 600);
-  };
-
-  const handleAddLine = () => {
-    setIsSimulating(true);
-    setTimeout(() => {
-      setS0Context(prev => ({ ...prev, activeLines: prev.activeLines + 1 }));
-      
-      const evt = emitAuditEvent({
-        stageId: 'S0',
-        actionId: 'MANAGE_LINES',
-        actorRole: role,
-        message: `Provisioned new manufacturing line configuration (Total: ${s0Context.activeLines + 1})`
-      });
-      setLocalEvents(prev => [evt, ...prev]);
-      setIsSimulating(false);
-    }, 800);
   };
 
   const handleSyncRegs = () => {
     setIsSimulating(true);
     setTimeout(() => {
-      const now = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' }) + ' IST';
-      setS0Context(prev => ({ ...prev, configLastUpdated: now }));
-
-      const evt = emitAuditEvent({
+      emitAuditEvent({
         stageId: 'S0',
         actionId: 'UPDATE_REGULATIONS',
         actorRole: role,
-        message: 'Synchronized regulatory master definitions'
+        message: 'Synchronized regulatory capability requirements'
       });
-      setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
     }, 1000);
   };
 
-  const handlePublishSOP = () => {
-    setIsSimulating(true);
-    setTimeout(() => {
-      const nextVer = s0Context.activeSopVersion.split('-')[0] + '-RC' + (parseInt(s0Context.activeSopVersion.split('-RC')[1] || '1') + 1);
-      setS0Context(prev => ({ ...prev, activeSopVersion: nextVer }));
-
-      const evt = emitAuditEvent({
-        stageId: 'S0',
-        actionId: 'SYNC_SOP',
-        actorRole: role,
-        message: `Locked System Baseline Version ${nextVer}`
-      });
-      setLocalEvents(prev => [evt, ...prev]);
-      setIsSimulating(false);
-    }, 1200);
-  };
-
   const handleNavToS1 = () => {
-    if (onNavigate) {
-      emitAuditEvent({
-        stageId: 'S0',
-        actionId: 'NAV_NEXT_STAGE',
-        actorRole: role,
-        message: 'Navigated to S1: SKU Master from S0 Configuration'
-      });
-      onNavigate('sku_blueprint');
-    }
-  };
-
-  const handleNavToControlTower = () => {
-    if (onNavigate) {
-      onNavigate('control_tower');
-    }
+    if (onNavigate) onNavigate('sku_blueprint');
   };
 
   const hasAccess = role === UserRole.SYSTEM_ADMIN || role === UserRole.MANAGEMENT || role === UserRole.COMPLIANCE;
@@ -145,12 +93,6 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     );
   }
 
-  // Pre-calculate action states
-  const editPlantState = getAction('EDIT_PLANT_DETAILS');
-  const manageLinesState = getAction('MANAGE_LINES');
-  const updateRegsState = getAction('UPDATE_REGULATIONS');
-  const syncSopState = getAction('SYNC_SOP');
-
   const isReadyForNext = s0Context.status === 'READY';
 
   return (
@@ -159,17 +101,17 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       <div className="flex items-center justify-between border-b border-slate-200 pb-4">
         <div>
            <div className="flex items-center gap-1 text-xs text-slate-500 mb-1 font-medium uppercase tracking-wider">
-              Master Data <span className="text-slate-300">/</span> System Topology
+              Master Data <span className="text-slate-300">/</span> Factory Capabilities
            </div>
            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
              <Settings className="text-brand-600" size={24} />
              System Configuration (S0)
            </h1>
-           <p className="text-slate-500 text-sm mt-1">Authorized plant topology, capability matrix, and regulatory foundations.</p>
+           <p className="text-slate-500 text-sm mt-1">Definition of authorized manufacturing capabilities and system topology.</p>
         </div>
         <div className="flex flex-col items-end gap-1">
           <div className="bg-slate-100 text-slate-600 px-3 py-1 rounded text-[10px] font-bold border border-slate-200 uppercase tracking-widest">
-            Configuration Layer
+            Capability Layer
           </div>
           <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
             <Server size={10} /> Node State: {s0Context.status}
@@ -180,25 +122,6 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       <StageStateBanner stageId="S0" />
       <PreconditionsPanel stageId="S0" />
 
-      {/* Recent Config Activity Panel */}
-      {localEvents.length > 0 && (
-        <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-6 animate-in slide-in-from-top-2">
-           <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase mb-2">
-              <History size={14} /> System Configuration Log
-           </div>
-           <div className="space-y-2">
-              {localEvents.slice(0, 3).map(evt => (
-                 <div key={evt.id} className="flex items-center gap-3 text-sm bg-white p-2 rounded border border-slate-100 shadow-sm">
-                    <span className="font-mono text-[10px] text-slate-400">{evt.timestamp}</span>
-                    <span className="font-bold text-slate-700 text-xs px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200">{evt.actorRole}</span>
-                    <span className="text-slate-600 flex-1 truncate">{evt.message}</span>
-                    <CheckCircle2 size={14} className="text-green-500" />
-                 </div>
-              ))}
-           </div>
-        </div>
-      )}
-
       {/* Configuration Milestone Guidance */}
       <div className={`bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-in slide-in-from-top-3 ${!onNavigate ? 'hidden' : ''}`}>
         <div className="flex items-start gap-3">
@@ -206,196 +129,220 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             <CheckCircle2 size={20} />
           </div>
           <div>
-            <h3 className="font-bold text-blue-900 text-sm">Configuration Milestone</h3>
+            <h3 className="font-bold text-blue-900 text-sm">Capability Milestone</h3>
             <p className="text-xs text-blue-700 mt-1 max-w-lg">
               {isReadyForNext 
-                ? "Plant topology is validated. You may now define technical SKU specifications in Product Master (S1)." 
-                : "Base configuration is incomplete. Define required facility parameters to unlock product definition."}
+                ? "Factory capability matrix is locked. You may now define technical SKU specifications in S1." 
+                : "Base capabilities are undefined. Define required plant parameters to unlock product definition."}
             </p>
           </div>
         </div>
         <div className="flex gap-3 w-full sm:w-auto">
            <button 
-             onClick={handleNavToControlTower} 
-             className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white border border-blue-200 text-blue-700 rounded-md text-xs font-bold hover:bg-blue-100 transition-colors"
+             onClick={handleNavToS1} 
+             disabled={!isReadyForNext}
+             className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
            >
-             <Radar size={14} /> Control Tower
+             <Cpu size={14} /> SKU Master (S1)
            </button>
-           <div className="flex-1 sm:flex-none flex flex-col items-center">
-             <button 
-               onClick={handleNavToS1} 
-               disabled={!isReadyForNext}
-               className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
-             >
-               <Cpu size={14} /> Open SKU Master (S1)
-             </button>
-             {!isReadyForNext && (
-                <span className="text-[9px] text-red-500 mt-1 font-medium">Config Incomplete</span>
-             )}
-           </div>
         </div>
       </div>
 
-      {/* Grid Layout */}
+      {/* Capability Grid */}
       <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${isSimulating ? 'opacity-70 pointer-events-none' : ''}`}>
         
-        {/* Plant Hierarchy */}
+        {/* 1. Plant Capabilities */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
-              <Factory size={20} />
-              <h2 className="font-bold">Facility Hierarchy</h2>
+              <Factory size={20} className="text-brand-600" />
+              <h2 className="font-bold">Plant Capabilities</h2>
             </div>
             <button 
-              disabled={!editPlantState.enabled}
               onClick={handleEditPlant}
-              className="text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-brand-600 font-bold transition-colors"
-              title={editPlantState.reason}
+              className="text-[10px] font-bold text-brand-600 hover:text-brand-800"
             >
-              <Edit2 size={12} /> PROVISION
+              PROVISION
             </button>
           </div>
           
-          <div className="space-y-3 text-sm flex-1">
-             <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Identity</span>
-                <span className="font-medium text-slate-800">{s0Context.plantName}</span>
+          <div className="space-y-4 text-sm flex-1">
+             <div className="grid grid-cols-2 gap-2">
+                <div className="bg-slate-50 p-2 rounded">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Facility ID</span>
+                    <span className="font-mono text-slate-700">{s0Context.plantId}</span>
+                </div>
+                <div className="bg-slate-50 p-2 rounded">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase block">Region</span>
+                    <span className="text-slate-700">{s0Context.region}</span>
+                </div>
              </div>
-             <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Node Location</span>
-                <span className="font-medium text-slate-800">{s0Context.region}</span>
-             </div>
-             <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Master Record ID</span>
-                <span className="font-mono text-slate-600 text-xs">{s0Context.plantId}</span>
-             </div>
-             <div className="flex justify-between pt-1">
-                <span className="text-slate-500">Last Baseline Update</span>
-                <span className="font-mono text-[10px] text-slate-400">{s0Context.configLastUpdated}</span>
+             
+             <div>
+                <span className="text-[10px] text-slate-400 font-bold uppercase mb-2 block">Supported Tech Stack</span>
+                <div className="flex flex-wrap gap-2">
+                   {s0Context.plant.capabilities.map(cap => (
+                     <span key={cap} className="px-2 py-1 bg-green-50 text-green-700 text-[10px] font-bold border border-green-100 rounded">
+                       {cap}
+                     </span>
+                   ))}
+                </div>
              </div>
           </div>
-          
-          {!editPlantState.enabled && (
-             <DisabledHint reason={editPlantState.reason || 'Blocked'} className="mt-3 justify-end" />
-          )}
         </div>
 
-        {/* Manufacturing Line Definitions */}
+        {/* 2. Line Capabilities */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
-              <Layout size={20} />
-              <h2 className="font-bold">Manufacturing Topology</h2>
+              <Layout size={20} className="text-brand-600" />
+              <h2 className="font-bold">Line Capabilities</h2>
             </div>
-            <button 
-              disabled={!manageLinesState.enabled}
-              onClick={handleAddLine}
-              className="text-xs flex items-center gap-1 px-2 py-1 rounded bg-brand-50 text-brand-700 hover:bg-brand-100 disabled:opacity-50 disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed font-bold transition-colors border border-transparent disabled:border-slate-200"
-              title={manageLinesState.reason}
-            >
-              <Plus size={12} /> ADD LINE CONFIG
+            <button className="text-[10px] font-bold text-brand-600 hover:text-brand-800">
+              CONFIGURE
             </button>
           </div>
 
           <div className="space-y-3 flex-1">
-             <div className="flex items-center justify-between p-3 bg-slate-50 rounded border border-slate-200">
-                <div>
-                   <div className="font-bold text-slate-700 text-xs">Pack Assembly Line A</div>
-                   <div className="text-[10px] text-slate-400">UID: LINE-A | Capability: LFP/NMC</div>
-                </div>
-                <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] rounded-full font-bold">READY</span>
-             </div>
-             <div className="flex items-center justify-between p-3 bg-slate-50 rounded border border-slate-200 opacity-75">
-                <div>
-                   <div className="font-bold text-slate-700 text-xs">Module Assembly Line B</div>
-                   <div className="text-[10px] text-slate-400">UID: LINE-B | Capability: PRISMATIC</div>
-                </div>
-                <span className="px-2 py-0.5 bg-slate-200 text-slate-600 text-[10px] rounded-full font-bold">LOCKED</span>
-             </div>
-             {s0Context.activeLines > 2 && (
-               <div className="p-2 text-center text-[10px] text-slate-500 font-bold uppercase bg-slate-50 rounded border border-dashed border-slate-200">
-                 + {s0Context.activeLines - 2} Additional Definitions Provisioned
+             {s0Context.lines.map(line => (
+               <div key={line.lineId} className="p-3 bg-slate-50 rounded border border-slate-200">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-bold text-slate-800 text-xs">{line.name}</span>
+                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[9px] rounded font-bold uppercase">{line.type}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500 space-y-1">
+                    <div className="flex justify-between">
+                        <span>Provisioned Nodes:</span>
+                        <span className="font-mono font-bold text-slate-700">{line.workstations.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span>Max Throughput Potential:</span>
+                        <span className="font-mono font-bold text-slate-700">24 u/hr</span>
+                    </div>
+                  </div>
                </div>
-             )}
+             ))}
+             <button className="w-full py-2 border-2 border-dashed border-slate-200 rounded text-[10px] font-bold text-slate-400 hover:text-brand-600 transition-colors">
+                + REGISTER NEW LINE PROFILE
+             </button>
           </div>
-
-          {!manageLinesState.enabled && (
-             <DisabledHint reason={manageLinesState.reason || 'Blocked'} className="mt-3 justify-end" />
-          )}
         </div>
 
-        {/* Regulatory Definitions */}
+        {/* 3. Workstation Capabilities */}
         <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
-           <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
             <div className="flex items-center gap-2 text-slate-700">
-              <Globe size={20} />
-              <h2 className="font-bold">Regulatory Framework</h2>
+              <Wrench size={20} className="text-brand-600" />
+              <h2 className="font-bold">Workstation Capabilities</h2>
             </div>
-            <button 
-              disabled={!updateRegsState.enabled}
-              onClick={handleSyncRegs}
-              className="text-xs flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed text-slate-600 font-bold transition-colors"
-              title={updateRegsState.reason}
-            >
-              <RefreshCw size={12} /> SYNC MASTER
+          </div>
+
+          <div className="space-y-4 flex-1">
+             <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                   <ShieldCheck size={14} className="text-green-600" />
+                   <span className="text-xs font-bold text-slate-700 uppercase">Authorized Gating Logic</span>
+                </div>
+                <div className="space-y-1">
+                   <div className="flex justify-between text-[10px]">
+                      <span className="text-slate-500">Scan-to-Proceed</span>
+                      <span className="text-green-600 font-bold">SUPPORTED</span>
+                   </div>
+                   <div className="flex justify-between text-[10px]">
+                      <span className="text-slate-500">Torque-Tool Interlock</span>
+                      <span className="text-green-600 font-bold">SUPPORTED</span>
+                   </div>
+                   <div className="flex justify-between text-[10px]">
+                      <span className="text-slate-500">Automatic EOL Rejection</span>
+                      <span className="text-slate-300 font-bold italic">PLANNED</span>
+                   </div>
+                </div>
+             </div>
+             
+             <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="flex items-center gap-2 mb-2">
+                   <Layout size={14} className="text-brand-600" />
+                   <span className="text-xs font-bold text-slate-700 uppercase">Station Sequence Templates</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                   <span className="px-2 py-0.5 bg-white border border-slate-200 text-[9px] text-slate-600 rounded">Standard LFP-48V Flow</span>
+                   <span className="px-2 py-0.5 bg-white border border-slate-200 text-[9px] text-slate-600 rounded">High Voltage (NMC) Flow</span>
+                </div>
+             </div>
+          </div>
+        </div>
+
+        {/* 4. Device Class Capabilities */}
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
+          <div className="flex items-center justify-between mb-4 border-b border-slate-50 pb-2">
+            <div className="flex items-center gap-2 text-slate-700">
+              <Zap size={20} className="text-brand-600" />
+              <h2 className="font-bold">Device Class Capabilities</h2>
+            </div>
+            <button className="text-[10px] font-bold text-brand-600 hover:text-brand-800">
+              MANAGE CLASSES
             </button>
           </div>
 
-          <div className="flex flex-wrap gap-2 flex-1 content-start">
-             <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold uppercase">AIS-156 Amd 3</span>
-             <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold uppercase">EU-2023/1542</span>
-             <span className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[10px] font-bold uppercase">PLI-ELIGIBLE</span>
-             <span className="px-3 py-1 bg-purple-50 text-purple-700 border border-purple-200 rounded text-[10px] font-bold uppercase">BATT-AADHAAR-V1</span>
-          </div>
-
-          {!updateRegsState.enabled && (
-             <DisabledHint reason={updateRegsState.reason || 'Blocked'} className="mt-3 justify-end" />
-          )}
-        </div>
-
-        {/* System Baseline */}
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
-           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2 text-slate-700">
-              <FileText size={20} />
-              <h2 className="font-bold">System Baseline</h2>
-            </div>
-            <button 
-              disabled={!syncSopState.enabled}
-              onClick={handlePublishSOP}
-              className="text-xs flex items-center gap-1 px-2 py-1 rounded bg-slate-800 text-white hover:bg-slate-900 disabled:opacity-50 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed font-bold transition-colors shadow-sm"
-              title={syncSopState.reason}
-            >
-              <Lock size={12} /> FREEZE CONFIG
-            </button>
-          </div>
-
-           <div className="space-y-3 text-sm flex-1">
-             <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Active SOP Release</span>
-                <span className="font-mono font-bold text-brand-600">{APP_VERSION}</span>
+          <div className="space-y-3 flex-1 overflow-y-auto">
+             <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs">
+                <span className="font-bold text-slate-700">BARCODE_SCANNER</span>
+                <span className="text-slate-500 font-mono">USB / REST</span>
              </div>
-             <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Topology Revision</span>
-                <span className="font-mono text-slate-600 text-xs">{s0Context.activeSopVersion}</span>
+             <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs">
+                <span className="font-bold text-slate-700">DIGITAL_SCALE</span>
+                <span className="text-slate-500 font-mono">MQTT</span>
              </div>
-             <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Config Maturity</span>
-                <span className="font-bold text-green-600 text-[10px] uppercase">Validated</span>
+             <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs">
+                <span className="font-bold text-slate-700">PLC_INTERLOCK</span>
+                <span className="text-slate-500 font-mono">MODBUS-TCP</span>
+             </div>
+             <div className="flex justify-between p-2 bg-slate-50 border border-slate-100 rounded text-xs">
+                <span className="font-bold text-slate-700">TORQUE_TOOL_BT</span>
+                <span className="text-slate-300 font-mono">BTLE (Pending)</span>
              </div>
           </div>
-
-          {!syncSopState.enabled && (
-             <DisabledHint reason={syncSopState.reason || 'Blocked'} className="mt-3 justify-end" />
-          )}
         </div>
 
       </div>
       
-      {/* Role Configuration Map */}
+      {/* Regulatory & Identity Sovereignty */}
+      <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2 text-slate-700">
+              <Globe size={20} className="text-brand-600" />
+              <h2 className="font-bold">Regulatory & Sovereignty Compliance</h2>
+            </div>
+            <button 
+              onClick={handleSyncRegs}
+              className="text-[10px] font-bold text-brand-600"
+            >
+              SYNC MASTER
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-3">
+             <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Identity Sovereignty</span>
+                <span className="text-sm font-bold text-slate-800">BATT-AADHAAR-V1</span>
+                <p className="text-[10px] text-slate-500 mt-1">Authorized for national trace reporting.</p>
+             </div>
+             <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Safety Standard</span>
+                <span className="text-sm font-bold text-slate-800">AIS-156 AMD 3</span>
+                <p className="text-[10px] text-slate-500 mt-1">Gated validation for module welding.</p>
+             </div>
+             <div className="px-4 py-3 bg-slate-50 border border-slate-200 rounded-lg flex-1 min-w-[200px]">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block mb-1">Passport Schema</span>
+                <span className="text-sm font-bold text-slate-800">EU-2023/1542</span>
+                <p className="text-[10px] text-slate-500 mt-1">Authorized for export carbon reporting.</p>
+             </div>
+          </div>
+      </div>
+
+      {/* User Capability Matrix */}
       <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border">
           <div className="flex items-center gap-2 mb-4 text-slate-700">
-            <Users size={20} />
+            <Users size={20} className="text-brand-600" />
             <h2 className="font-bold">User Capability Matrix</h2>
           </div>
           <div className="overflow-x-auto">
@@ -404,24 +351,24 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                 <tr>
                   <th className="px-4 py-3 font-bold uppercase tracking-wider">Role Entity</th>
                   <th className="px-4 py-3 font-bold uppercase tracking-wider">System Access Scope</th>
-                  <th className="px-4 py-3 font-bold uppercase tracking-wider text-right">Provisioned Nodes</th>
+                  <th className="px-4 py-3 font-bold uppercase tracking-wider text-right">Authorized Nodes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 <tr>
                   <td className="px-4 py-3 font-bold">System Admin</td>
-                  <td className="px-4 py-3">Authored Configuration / Topology Control</td>
+                  <td className="px-4 py-3">Global Configuration & Capability Provisioning</td>
                   <td className="px-4 py-3 font-mono text-right">GLOBAL</td>
                 </tr>
                  <tr>
                   <td className="px-4 py-3 font-bold">Management</td>
-                  <td className="px-4 py-3">Performance Audit / Topology Oversight</td>
-                  <td className="px-4 py-3 font-mono text-right">PLANT-1</td>
+                  <td className="px-4 py-3">Performance Audit & Operational Oversight</td>
+                  <td className="px-4 py-3 font-mono text-right">PLANT_SCOPE</td>
                 </tr>
                  <tr>
                   <td className="px-4 py-3 font-bold">Operator</td>
-                  <td className="px-4 py-3">Task Execution / SOP Compliance</td>
-                  <td className="px-4 py-3 font-mono text-right">STATION-LEVEL</td>
+                  <td className="px-4 py-3">Task Execution & SOP Compliance</td>
+                  <td className="px-4 py-3 font-mono text-right">ASSIGNED_NODES</td>
                 </tr>
               </tbody>
             </table>
