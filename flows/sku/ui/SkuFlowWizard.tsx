@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-SPEC-FIX-05 (UX Correctness)
+ * @updated V35-S1-WIZ-SPEC-FIX-07 (Governance Split)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -29,13 +29,11 @@ import {
   ClipboardCheck,
   Ban,
   Activity,
-  FlaskConical,
-  Wind,
-  Cable,
-  // Added missing icons to fix errors on lines 438 and 544
   Monitor,
   Tablet,
-  AlertTriangle
+  Smartphone,
+  AlertTriangle,
+  Fingerprint
 } from 'lucide-react';
 import { FlowShell, FlowStep, FlowFooter } from '../../../components/flow';
 import { 
@@ -95,9 +93,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
   ]);
 
   const roles: SkuFlowRole[] = ["Maker", "Checker", "Approver"];
-  const isMobile = layout === 'mobile';
-  const isDesktop = layout === 'desktop';
-
+  
   // Load existing instance if provided
   useEffect(() => {
     if (instanceId && !model.instanceId) {
@@ -122,19 +118,47 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     }
   };
 
+  /**
+   * Governance Fix V35-SPEC-FIX-07: Strictly used for BASE Step (Identity/Naming).
+   */
   const handleUpdateDraft = (field: keyof SkuDraft, value: any) => {
     if (model.role !== 'Maker' && model.state === 'Draft') return;
-    
     setModel(m => ({
       ...m,
       draft: { ...m.draft, [field]: value },
-      validationErrors: { ...m.validationErrors, [field]: '' }
+      validationErrors: { ...m.validationErrors, [field as string]: '' }
     }));
   };
 
   /**
+   * V35-S1-WIZ-SPEC-FIX-06: Partitions technical specs into its own buffer.
+   */
+  const handleUpdateSpec = (field: string, value: any) => {
+    if (model.role !== 'Maker') return;
+    const type = model.draft.skuType;
+    if (!type) return;
+
+    setModel(m => {
+      const specs = m.draft.specifications || {};
+      const typeSpecs = specs[type] || {};
+      
+      return {
+        ...m,
+        draft: {
+          ...m.draft,
+          specifications: {
+            ...specs,
+            [type]: { ...typeSpecs, [field]: value }
+          }
+        },
+        validationErrors: { ...m.validationErrors, [field]: '' }
+      };
+    });
+  };
+
+  /**
    * specialized handler to prevent technical specification bleed when 
-   * switching taxonomy during the INIT step.
+   * switching taxonomy. 
    */
   const handleTypeChange = (type: SkuType) => {
     if (model.role !== 'Maker') return;
@@ -144,31 +168,9 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
       draft: { 
         ...m.draft, 
         skuType: type,
-        // Reset all optional tech fields
-        chemistry: undefined,
-        formFactor: undefined,
-        nominalVoltage: undefined,
-        capacityAh: undefined,
-        energyKwh: undefined,
-        seriesConfig: undefined,
-        parallelConfig: undefined,
-        cellCount: undefined,
-        moduleCount: undefined,
-        hwVersion: undefined,
-        fwBaseline: undefined,
-        protocol: undefined,
-        commsType: undefined,
-        coolingType: undefined,
-        voltageMin: undefined,
-        voltageMax: undefined,
-        cellTypeRef: undefined,
-        powerSource: undefined,
-        allowedModuleSkus: undefined,
-        requiredBmsSku: undefined,
-        chipset: undefined,
-        supportedChemistries: undefined,
-        firmwarePolicy: undefined,
-        telemetrySchemaVersion: undefined
+        specifications: {
+          [type]: {}
+        }
       },
       validationErrors: {}
     }));
@@ -179,12 +181,18 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
   };
 
   const syncModel = (instance: SkuFlowInstance) => {
+    const type = instance.draft.skuType;
+    const draft = instance.draft;
+    if (type && (!draft.specifications || !draft.specifications[type])) {
+       draft.specifications = { [type]: { ...draft } };
+    }
+
     setModel(m => ({
       ...m,
       instanceId: instance.instanceId,
       state: instance.state,
       step: resolveStepFromState(instance.state),
-      draft: instance.draft,
+      draft,
       comment: instance.rejectionReason || m.comment,
       isSyncing: false,
       error: null,
@@ -198,7 +206,6 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     let message = "Communication failure with simulated API.";
     if (typeof err === 'string') message = err;
     else if (err?.message) message = err.message;
-
     setModel(m => ({ ...m, isSyncing: false, error: message }));
   };
 
@@ -211,11 +218,12 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
       if (!d.skuName) errors.skuName = 'SKU Name is required';
     }
 
-    if (step === 'SKU_SPECIFICATIONS') {
+    if (step === 'SKU_SPECIFICATIONS' && d.skuType) {
       const sections = resolveSpecSchema(d.skuType);
+      const typeSpecs = d.specifications?.[d.skuType] || {};
       sections.forEach(section => {
         section.fields.forEach(field => {
-          if (field.required && !d[field.id]) {
+          if (field.required && !typeSpecs[field.id as string]) {
             errors[field.id as string] = `${field.label} is required`;
           }
         });
@@ -303,23 +311,10 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
   const taskInstruction = useMemo(() => {
     const s = model.state;
     const r = model.role;
-    
-    if (s === 'Draft') {
-      if (r === 'Maker') return "Define technical specifications and release for review.";
-      return `Waiting for ${roles[0]} to submit draft.`;
-    }
-    if (s === 'Review') {
-      if (r === 'Checker') return "Perform Technical Verification and choose Forward or Send Back.";
-      return `Waiting for Technical Review (${roles[1]}).`;
-    }
-    if (s === 'Approved') {
-      if (r === 'Approver') return "Review entire blueprint dossier for final management sign-off.";
-      return `Awaiting Management Authorization (${roles[2]}).`;
-    }
-    if (s === 'Rejected') {
-      if (r === 'Maker') return "Recalibrate specifications based on rejection feedback and resubmit.";
-      return "Flow rejected. Pending Maker recalibration.";
-    }
+    if (s === 'Draft') return r === 'Maker' ? "Define technical specifications and release for review." : `Waiting for Maker to submit draft.`;
+    if (s === 'Review') return r === 'Checker' ? "Perform Technical Verification and choose Forward or Send Back." : `Waiting for Technical Review (Checker).`;
+    if (s === 'Approved') return r === 'Approver' ? "Review entire blueprint dossier for final management sign-off." : `Awaiting Management Authorization (Approver).`;
+    if (s === 'Rejected') return r === 'Maker' ? "Recalibrate specifications based on rejection feedback and resubmit." : "Flow rejected. Pending Maker recalibration.";
     if (s === 'Active') return "Blueprint is active in the catalog.";
     return "Initialize SKU definition.";
   }, [model.state, model.role]);
@@ -335,14 +330,10 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     </div>
   );
 
-  /**
-   * UX Correctness Fix: Only show attributes relevant to the SKU Taxonomy.
-   */
   const Summary = () => {
-    const { skuType, chemistry, nominalVoltage, skuCode, isRevision } = model.draft;
-    const isElectrochemistry = skuType === 'CELL' || skuType === 'MODULE' || skuType === 'PACK';
-    const isVoltageRelevant = skuType === 'CELL' || skuType === 'PACK' || skuType === 'BMS';
-
+    const { skuType, skuCode, isRevision, specifications } = model.draft;
+    const typeSpecs = (skuType && specifications) ? specifications[skuType] : {};
+    
     return (
       <div className="bg-slate-50 p-4 rounded border border-slate-200 shadow-inner grid grid-cols-2 gap-x-6 gap-y-4 text-sm">
         <div>
@@ -353,16 +344,16 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
           <label className="text-[9px] uppercase font-bold text-slate-400">Intent</label>
           <div className="text-slate-600 font-medium">{isRevision ? 'Revision' : 'Greenfield'}</div>
         </div>
-        {isElectrochemistry && chemistry && (
+        {typeSpecs.chemistry && (
           <div>
             <label className="text-[9px] uppercase font-bold text-slate-400">Chemistry</label>
-            <div className="text-slate-600 font-medium">{chemistry}</div>
+            <div className="text-slate-600 font-medium">{typeSpecs.chemistry}</div>
           </div>
         )}
-        {isVoltageRelevant && nominalVoltage && (
+        {typeSpecs.nominalVoltage && (
           <div>
             <label className="text-[9px] uppercase font-bold text-slate-400">Voltage</label>
-            <div className="text-slate-600 font-medium">{nominalVoltage}V</div>
+            <div className="text-slate-600 font-medium">{typeSpecs.nominalVoltage}V</div>
           </div>
         )}
       </div>
@@ -399,15 +390,20 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
   }, [model.step, model.draft.isRevision, model.draft.skuType]);
 
   const renderInputField = (field: SkuSpecField) => {
-    const inputValue = (model.draft[field.id] === true || model.draft[field.id] === false)
-      ? String(model.draft[field.id])
-      : (model.draft[field.id] ?? "");
+    const skuType = model.draft.skuType;
+    if (!skuType) return null;
+    const typeSpecs = model.draft.specifications?.[skuType] || {};
+    const val = typeSpecs[field.id as string];
+
+    const inputValue = (val === true || val === false)
+      ? String(val)
+      : (val ?? "");
 
     const commonProps = {
-      id: field.id,
+      id: field.id as string,
       disabled: model.role !== 'Maker',
       className: `w-full border rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none transition-all ${
-        model.validationErrors[field.id] ? 'border-red-300 bg-red-50' : 'border-slate-300'
+        model.validationErrors[field.id as string] ? 'border-red-300 bg-red-50' : 'border-slate-300'
       } ${model.role !== 'Maker' ? 'bg-slate-50 opacity-80 cursor-not-allowed' : 'bg-white'}`,
       placeholder: field.placeholder || `Enter ${field.label.toLowerCase()}...`,
       value: inputValue as string | number
@@ -415,7 +411,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
 
     if (field.type === 'select') {
       return (
-        <select {...commonProps} onChange={e => handleUpdateDraft(field.id, e.target.value)}>
+        <select {...commonProps} onChange={e => handleUpdateSpec(field.id as string, e.target.value)}>
           <option value="">Select...</option>
           {field.options?.map(opt => <option key={opt} value={opt}>{opt}</option>)}
         </select>
@@ -427,7 +423,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
         {...commonProps}
         type={field.type}
         step={field.type === 'number' ? 'any' : undefined}
-        onChange={e => handleUpdateDraft(field.id, field.type === 'number' ? parseFloat(e.target.value) : e.target.value)}
+        onChange={e => handleUpdateSpec(field.id as string, field.type === 'number' ? parseFloat(e.target.value) : e.target.value)}
       />
     );
   };
@@ -439,7 +435,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
       rightSlot={(
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1.5 text-[9px] font-mono text-slate-400 select-none opacity-50">
-            {isDesktop ? <Monitor size={10} /> : <Tablet size={10} />}
+            {layout === 'desktop' ? <Monitor size={10} /> : <Tablet size={10} />}
             <span className="uppercase">{layout}</span>
           </div>
           <div className="flex bg-slate-200 p-1 rounded-md">
@@ -542,18 +538,12 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                             {preconditions.map(p => (
                                 <div key={p.id} className={`flex items-start gap-4 p-3 rounded-xl border transition-all ${p.status === 'MET' ? 'bg-white border-slate-100 opacity-60' : 'bg-white border-amber-200 shadow-sm'}`}>
                                     <div className="mt-0.5">
-                                        {p.status === 'MET' ? (
-                                            <CheckCircle2 size={16} className="text-green-500" />
-                                        ) : (
-                                            p.severity === 'HARD' ? <Lock size={16} className="text-red-500" /> : <AlertTriangle size={16} className="text-amber-500" />
-                                        )}
+                                        {p.status === 'MET' ? <CheckCircle2 size={16} className="text-green-500" /> : p.severity === 'HARD' ? <Lock size={16} className="text-red-500" /> : <AlertTriangle size={16} className="text-amber-500" />}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2">
                                             <span className="text-xs font-bold text-slate-800">{p.label}</span>
-                                            <span className={`text-[8px] font-bold px-1 py-0.5 rounded border ${p.severity === 'HARD' ? 'bg-red-600 text-red-600 border-red-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
-                                                {p.severity}
-                                            </span>
+                                            <span className={`text-[8px] font-bold px-1 py-0.5 rounded border ${p.severity === 'HARD' ? 'bg-red-600 text-red-600 border-red-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>{p.severity}</span>
                                         </div>
                                         <p className="text-[10px] text-slate-500 mt-0.5 leading-relaxed">{p.description}</p>
                                     </div>
@@ -571,39 +561,48 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
               )}
 
               {model.step === "BASE_SKU_METADATA" && (
-                <FlowStep stepTitle="General Identifiers" stepHint="Establish basic SKU metadata and identification strings.">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto py-8">
-                    <Field label="Canonical SKU Code" id="skuCode" error={model.validationErrors.skuCode}>
-                      <input 
-                        type="text" id="skuCode"
-                        disabled={model.role !== 'Maker'}
-                        className={`w-full border rounded p-3 text-sm font-mono focus:ring-2 focus:ring-brand-500 outline-none transition-all ${model.validationErrors.skuCode ? 'border-red-300 bg-red-50' : 'border-slate-300'} ${model.role !== 'Maker' ? 'bg-slate-50 opacity-80' : ''}`}
-                        placeholder="e.g. BP-LFP-48V-STD"
-                        value={model.draft.skuCode}
-                        onChange={e => handleUpdateDraft('skuCode', e.target.value)}
-                      />
-                    </Field>
-                    <Field label="Display Name" id="skuName" error={model.validationErrors.skuName}>
-                      <input 
-                        type="text" id="skuName"
-                        disabled={model.role !== 'Maker'}
-                        className={`w-full border rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none transition-all ${model.validationErrors.skuName ? 'border-red-300 bg-red-50' : 'border-slate-300'} ${model.role !== 'Maker' ? 'bg-slate-50 opacity-80' : ''}`}
-                        placeholder="e.g. Standard 48V LFP Module"
-                        value={model.draft.skuName}
-                        onChange={e => handleUpdateDraft('skuName', e.target.value)}
-                      />
-                    </Field>
-                    <div className="md:col-span-2">
-                      <Field label="Engineering Notes" id="notes">
-                        <textarea 
-                          id="notes" rows={3}
-                          disabled={model.role !== 'Maker'}
-                          className={`w-full border border-slate-300 rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none ${model.role !== 'Maker' ? 'bg-slate-50 opacity-80' : ''}`}
-                          placeholder="Special assembly instructions or design constraints..."
-                          value={model.draft.notes}
-                          onChange={e => handleUpdateDraft('notes', e.target.value)}
-                        />
-                      </Field>
+                <FlowStep stepTitle="General Identifiers" stepHint="Definitive identification and engineering metadata strings.">
+                  <div className="space-y-8 max-w-3xl mx-auto py-8">
+                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-6">
+                        <div className="flex items-center gap-2 border-b border-slate-100 pb-3 mb-2">
+                            <Fingerprint size={16} className="text-brand-600" />
+                            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-widest">Master Identification</h3>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <Field label="Canonical SKU Code" id="skuCode" error={model.validationErrors.skuCode}>
+                            <input 
+                                type="text" id="skuCode"
+                                disabled={model.role !== 'Maker'}
+                                className={`w-full border rounded p-3 text-sm font-mono focus:ring-2 focus:ring-brand-500 outline-none transition-all ${model.validationErrors.skuCode ? 'border-red-300 bg-red-50' : 'border-slate-300'} ${model.role !== 'Maker' ? 'bg-slate-50 opacity-80' : ''}`}
+                                placeholder="e.g. BP-LFP-48V-STD"
+                                value={model.draft.skuCode}
+                                onChange={e => handleUpdateDraft('skuCode', e.target.value)}
+                            />
+                            </Field>
+                            <Field label="Display Name" id="skuName" error={model.validationErrors.skuName}>
+                            <input 
+                                type="text" id="skuName"
+                                disabled={model.role !== 'Maker'}
+                                className={`w-full border rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none transition-all ${model.validationErrors.skuName ? 'border-red-300 bg-red-50' : 'border-slate-300'} ${model.role !== 'Maker' ? 'bg-slate-50 opacity-80' : ''}`}
+                                placeholder="e.g. Standard 48V LFP Module"
+                                value={model.draft.skuName}
+                                onChange={e => handleUpdateDraft('skuName', e.target.value)}
+                            />
+                            </Field>
+                        </div>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                        <Field label="Engineering & Design Notes" id="notes">
+                            <textarea 
+                            id="notes" rows={4}
+                            disabled={model.role !== 'Maker'}
+                            className={`w-full border border-slate-300 rounded p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none ${model.role !== 'Maker' ? 'bg-slate-50 opacity-80' : ''}`}
+                            placeholder="Detail special assembly instructions, revision triggers, or design constraints..."
+                            value={model.draft.notes}
+                            onChange={e => handleUpdateDraft('notes', e.target.value)}
+                            />
+                        </Field>
                     </div>
                   </div>
                 </FlowStep>
@@ -612,7 +611,7 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
               {model.step === "SKU_SPECIFICATIONS" && (
                 <FlowStep 
                   stepTitle={`${model.draft.skuType} Technical Specification`} 
-                  stepHint={`Immutable technical constants for the ${model.draft.skuType} taxonomy.`}
+                  stepHint={`Authorized technical constants for the ${model.draft.skuType} taxonomy. Strictly no identity fields.`}
                 >
                   <div className="space-y-10 max-w-3xl mx-auto py-4">
                     {resolveSpecSchema(model.draft.skuType).map(section => (
@@ -627,9 +626,9 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
                             <Field 
                               key={field.id} 
                               label={`${field.label}${field.required ? ' *' : ''}`} 
-                              id={field.id} 
+                              id={field.id as string} 
                               icon={field.icon} 
-                              error={model.validationErrors[field.id]}
+                              error={model.validationErrors[field.id as string]}
                             >
                               {renderInputField(field)}
                             </Field>

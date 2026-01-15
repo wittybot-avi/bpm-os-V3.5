@@ -2,7 +2,7 @@
  * SKU Flow Contract (FLOW-001)
  * Canonical definitions for SKU Creation & Blueprint Approval lifecycle.
  * @foundation V34-S1-FLOW-001-BP-01
- * @updated V35-S1-WIZ-SPEC-FIX-04 (Schema Expansion)
+ * @updated V35-S1-WIZ-SPEC-FIX-06 (Data Integrity Partitioning)
  */
 
 import type { ApiResult, EntityId, IsoDateTime } from "../../types";
@@ -12,44 +12,52 @@ export type SkuFlowState = "Draft" | "Review" | "Approved" | "Active" | "Rejecte
 
 export type SkuFlowRole = "Maker" | "Checker" | "Approver";
 
+/**
+ * Technical Specification Partition
+ * Dynamic bucket for SKU-type specific technical parameters.
+ */
+export interface SkuTechnicalSpecs {
+  [key: string]: any;
+}
+
 export interface SkuDraft {
+  // Base Metadata
   skuCode: string;
   skuName: string;
   skuType?: SkuType;
   isRevision: boolean;
   notes?: string;
 
-  // Technical Blueprint - Common & Type Specific
-  chemistry?: string;           // CELL, MODULE, PACK, BMS
-  formFactor?: string;          // CELL, PACK
-  nominalVoltage?: number;      // CELL, MODULE, PACK
-  capacityAh?: number;          // CELL, MODULE, PACK
-  energyKwh?: number;           // PACK
-  seriesConfig?: number;        // MODULE, PACK
-  parallelConfig?: number;      // MODULE, PACK
-  cellCount?: number;           // MODULE
-  moduleCount?: number;         // PACK
-  
-  // Hardware/Software Specific
-  hwVersion?: string;           // BMS, IOT
-  fwBaseline?: string;          // BMS, IOT
-  protocol?: string;            // BMS
-  commsType?: string;           // IOT
-  
-  // Circular/Facility Integration
-  coolingType?: string;         // PACK
-  voltageMin?: number;          // BMS, PACK
-  voltageMax?: number;          // BMS, PACK
-  cellTypeRef?: string;         // MODULE
-  powerSource?: string;         // IOT
+  // V3.5-SPEC-FIX-06: Partitioned Specifications
+  // Ensures data for different types (CELL vs PACK) never collide in the buffer.
+  specifications?: Record<string, SkuTechnicalSpecs>;
 
-  // V3.5-SPEC-FIX-04: New Schema Fields
-  allowedModuleSkus?: string;   // PACK
-  requiredBmsSku?: string;      // PACK
-  chipset?: string;             // BMS
-  supportedChemistries?: string; // BMS
-  firmwarePolicy?: string;      // BMS
-  telemetrySchemaVersion?: string; // IOT
+  // Legacy flat fields maintained for backward compatibility with existing Dossiers
+  // during transition, though the Wizard will now drive the 'specifications' object.
+  chemistry?: string;
+  formFactor?: string;
+  nominalVoltage?: number;
+  capacityAh?: number;
+  energyKwh?: number;
+  seriesConfig?: number;
+  parallelConfig?: number;
+  cellCount?: number;
+  moduleCount?: number;
+  hwVersion?: string;
+  fwBaseline?: string;
+  protocol?: string;
+  commsType?: string;
+  coolingType?: string;
+  voltageMin?: number;
+  voltageMax?: number;
+  cellTypeRef?: string;
+  powerSource?: string;
+  allowedModuleSkus?: string;
+  requiredBmsSku?: string;
+  chipset?: string;
+  supportedChemistries?: string;
+  firmwarePolicy?: string;
+  telemetrySchemaVersion?: string;
 }
 
 export interface BlueprintRef {
