@@ -13,6 +13,7 @@
  * @updated V35-S0-COMP-PP-19 (SOP Profile CRUD)
  * @updated V35-S0-RBAC-PP-20 (User Scopes)
  * @updated V35-S0-RBAC-PP-21 (Permission Preview)
+ * @updated V35-S0-GOV-PP-22 (Audit Logging)
  */
 
 import { UserRole } from "../../../types";
@@ -48,9 +49,11 @@ import {
   updateSopProfile,
   getUsers,
   addUser,
-  updateUser
+  updateUser,
+  addS0AuditLog,
+  getS0AuditLogs
 } from "../s0/systemTopology.store";
-import type { Enterprise, Plant, Line, Station, DeviceClass } from "../../../domain/s0/systemTopology.types";
+import type { Enterprise, Plant, Line, Station, DeviceClass, S0AuditEntry } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityOverride, EffectiveFlag, CapabilityScope } from "../../../domain/s0/capability.types";
 import type { RegulatoryFramework, ComplianceBinding, EffectiveCompliance, SOPProfile } from "../../../domain/s0/complianceContext.types";
 import type { AppUser, EffectivePermissions } from "../../../domain/s0/userManagement.types";
@@ -73,6 +76,24 @@ function parseBody<T>(req: ApiRequest): T {
 }
 
 /**
+ * Audit Helper: Records S0 Activity to the store.
+ */
+function logS0(entry: Omit<S0AuditEntry, 'id' | 'timestamp'>): void {
+  addS0AuditLog({
+    ...entry,
+    id: `audit-${Math.random().toString(16).slice(2, 10).toUpperCase()}`,
+    timestamp: new Date().toISOString()
+  });
+}
+
+/**
+ * GET /api/s0/audit
+ */
+export const getAuditLogsHandler: ApiHandler = async () => {
+  return ok(getS0AuditLogs());
+};
+
+/**
  * GET /api/s0/enterprises
  */
 export const listEnterprises: ApiHandler = async () => {
@@ -87,6 +108,9 @@ export const updateEnterpriseHandler: ApiHandler = async (req) => {
   if (!body.id) return err("BAD_REQUEST", "Enterprise ID is required");
   const updated = updateEnterprise(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Enterprise not found", 404);
+  
+  logS0({ entityType: 'ENTERPRISE', entityId: body.id, action: 'UPDATE', actor: 'API_USER', details: JSON.stringify(body.updates) });
+  
   return ok(updated);
 };
 
@@ -119,6 +143,9 @@ export const createPlantHandler: ApiHandler = async (req) => {
     audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
   addPlant(newPlant);
+  
+  logS0({ entityType: 'PLANT', entityId: newPlant.id, action: 'CREATE', actor: 'API_USER' });
+  
   return ok(newPlant);
 };
 
@@ -130,6 +157,9 @@ export const updatePlantHandler: ApiHandler = async (req) => {
   if (!body.id) return err("BAD_REQUEST", "Plant ID is required");
   const updated = updatePlant(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Plant not found", 404);
+  
+  logS0({ entityType: 'PLANT', entityId: body.id, action: 'UPDATE', actor: 'API_USER', details: JSON.stringify(body.updates) });
+  
   return ok(updated);
 };
 
@@ -166,6 +196,9 @@ export const createLineHandler: ApiHandler = async (req) => {
     audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
   addLine(newLine);
+  
+  logS0({ entityType: 'LINE', entityId: newLine.id, action: 'CREATE', actor: 'API_USER' });
+  
   return ok(newLine);
 };
 
@@ -177,6 +210,9 @@ export const updateLineHandler: ApiHandler = async (req) => {
   if (!body.id) return err("BAD_REQUEST", "Line ID is required");
   const updated = updateLine(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Line not found", 404);
+  
+  logS0({ entityType: 'LINE', entityId: body.id, action: 'UPDATE', actor: 'API_USER', details: JSON.stringify(body.updates) });
+  
   return ok(updated);
 };
 
@@ -213,6 +249,9 @@ export const createStationHandler: ApiHandler = async (req) => {
     audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
   addStation(newStation);
+  
+  logS0({ entityType: 'STATION', entityId: newStation.id, action: 'CREATE', actor: 'API_USER' });
+  
   return ok(newStation);
 };
 
@@ -224,6 +263,9 @@ export const updateStationHandler: ApiHandler = async (req) => {
   if (!body.id) return err("BAD_REQUEST", "Station ID is required");
   const updated = updateStation(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Station not found", 404);
+  
+  logS0({ entityType: 'STATION', entityId: body.id, action: 'UPDATE', actor: 'API_USER', details: JSON.stringify(body.updates) });
+  
   return ok(updated);
 };
 
@@ -253,6 +295,9 @@ export const createDeviceClassHandler: ApiHandler = async (req) => {
     audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
   addDeviceClass(newDc);
+  
+  logS0({ entityType: 'DEVICE_CLASS', entityId: newDc.id, action: 'CREATE', actor: 'API_USER' });
+  
   return ok(newDc);
 };
 
@@ -264,6 +309,9 @@ export const updateDeviceClassHandler: ApiHandler = async (req) => {
   if (!body.id) return err("BAD_REQUEST", "Device Class ID is required");
   const updated = updateDeviceClass(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "Device Class not found", 404);
+  
+  logS0({ entityType: 'DEVICE_CLASS', entityId: body.id, action: 'UPDATE', actor: 'API_USER', details: JSON.stringify(body.updates) });
+  
   return ok(updated);
 };
 
@@ -328,6 +376,9 @@ export const setCapabilityOverrideHandler: ApiHandler = async (req) => {
   if (!body.flagId || !body.scope || !body.scopeId) return err("BAD_REQUEST", "flagId, scope, and scopeId are required");
   const override: CapabilityOverride = { ...body, updatedAt: new Date().toISOString(), updatedBy: "API_USER" };
   upsertOverride(override);
+  
+  logS0({ entityType: 'CAPABILITY', entityId: body.flagId, action: 'OVERRIDE', actor: 'API_USER', details: `${body.scope}:${body.scopeId}=${body.value}` });
+  
   return ok(override);
 };
 
@@ -338,6 +389,9 @@ export const removeCapabilityOverrideHandler: ApiHandler = async (req) => {
   const { flagId, scope, scopeId } = parseBody<{ flagId: string; scope: string; scopeId: string }>(req);
   if (!flagId || !scope || !scopeId) return err("BAD_REQUEST", "Ids are required");
   removeOverride(flagId, scope, scopeId);
+  
+  logS0({ entityType: 'CAPABILITY', entityId: flagId, action: 'REMOVE_OVERRIDE', actor: 'API_USER', details: `${scope}:${scopeId}` });
+  
   return ok({ success: true });
 };
 
@@ -365,6 +419,9 @@ export const createSopProfileHandler: ApiHandler = async (req) => {
     applicableScopes: body.applicableScopes || ["PLANT"]
   };
   addSopProfile(newSop);
+  
+  logS0({ entityType: 'SOP_PROFILE', entityId: newSop.id, action: 'CREATE', actor: 'API_USER' });
+  
   return ok(newSop);
 };
 
@@ -376,6 +433,9 @@ export const updateSopProfileHandler: ApiHandler = async (req) => {
   if (!body.id) return err("BAD_REQUEST", "SOP Profile ID is required");
   const updated = updateSopProfile(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "SOP Profile not found", 404);
+  
+  logS0({ entityType: 'SOP_PROFILE', entityId: body.id, action: 'UPDATE', actor: 'API_USER', details: JSON.stringify(body.updates) });
+  
   return ok(updated);
 };
 
@@ -411,6 +471,9 @@ export const setComplianceBindingHandler: ApiHandler = async (req) => {
   const body = parseBody<ComplianceBinding>(req);
   if (!body.scope || !body.scopeId) return err("BAD_REQUEST", "scope and scopeId are required");
   upsertComplianceBinding(body);
+  
+  logS0({ entityType: 'COMPLIANCE', entityId: body.scopeId, action: 'BIND', actor: 'API_USER', details: `Scope: ${body.scope}` });
+  
   return ok(body);
 };
 
@@ -421,6 +484,9 @@ export const removeComplianceBindingHandler: ApiHandler = async (req) => {
   const { scope, scopeId } = parseBody<{ scope: string; scopeId: string }>(req);
   if (!scope || !scopeId) return err("BAD_REQUEST", "scope and scopeId are required");
   removeComplianceBinding(scope, scopeId);
+  
+  logS0({ entityType: 'COMPLIANCE', entityId: scopeId, action: 'DELETE', actor: 'API_USER', details: `Unbound Scope: ${scope}` });
+  
   return ok({ success: true });
 };
 
@@ -444,6 +510,9 @@ export const createUserHandler: ApiHandler = async (req) => {
     scopes: body.scopes || []
   };
   addUser(newUser);
+  
+  logS0({ entityType: 'USER', entityId: newUser.id, action: 'CREATE', actor: 'API_USER' });
+  
   return ok(newUser);
 };
 
@@ -455,6 +524,9 @@ export const updateUserHandler: ApiHandler = async (req) => {
   if (!body.id) return err("BAD_REQUEST", "User ID is required");
   const updated = updateUser(body.id, body.updates);
   if (!updated) return err("NOT_FOUND", "User not found", 404);
+  
+  logS0({ entityType: 'USER', entityId: body.id, action: 'UPDATE', actor: 'API_USER', details: JSON.stringify(body.updates) });
+  
   return ok(updated);
 };
 

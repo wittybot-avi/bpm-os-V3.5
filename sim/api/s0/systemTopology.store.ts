@@ -6,7 +6,7 @@
  */
 
 import { UserRole } from "../../../types";
-import type { Enterprise, Plant, Line, Station, DeviceClass, TopologyAudit } from "../../../domain/s0/systemTopology.types";
+import type { Enterprise, Plant, Line, Station, DeviceClass, TopologyAudit, S0AuditEntry } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityFlag, CapabilityOverride } from "../../../domain/s0/capability.types";
 import type { RegulatoryFramework, ComplianceBinding, SOPProfile } from "../../../domain/s0/complianceContext.types";
 import type { AppUser } from "../../../domain/s0/userManagement.types";
@@ -147,6 +147,8 @@ let USERS: AppUser[] = [
   }
 ];
 
+let S0_AUDIT_LOGS: S0AuditEntry[] = [];
+
 /**
  * STORE ACCESSORS (Read-Only)
  */
@@ -162,6 +164,7 @@ export const getRegulatoryFrameworks = (): readonly RegulatoryFramework[] => Obj
 export const getSopProfiles = (): readonly SOPProfile[] => Object.freeze([...SOP_PROFILES]);
 export const getComplianceBindings = (): readonly ComplianceBinding[] => Object.freeze([...COMPLIANCE_BINDINGS]);
 export const getUsers = (): readonly AppUser[] => Object.freeze([...USERS]);
+export const getS0AuditLogs = (): readonly S0AuditEntry[] => Object.freeze([...S0_AUDIT_LOGS]);
 
 export const getEnterpriseById = (id: string) => ENTERPRISES.find(e => e.id === id);
 export const getPlantById = (id: string) => PLANTS.find(p => p.id === id);
@@ -172,6 +175,11 @@ export const getDeviceClassById = (id: string) => DEVICE_CLASSES.find(dc => dc.i
 /**
  * STORE MUTATORS
  */
+
+export const addS0AuditLog = (entry: S0AuditEntry) => {
+  S0_AUDIT_LOGS = [entry, ...S0_AUDIT_LOGS].slice(0, 100);
+  return entry;
+};
 
 export const addPlant = (plant: Plant) => {
   PLANTS = [...PLANTS, plant];

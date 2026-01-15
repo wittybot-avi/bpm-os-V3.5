@@ -84,3 +84,17 @@ export interface DeviceClass extends BaseTopologyEntity {
   readonly category: string;
   readonly supportedProtocols: readonly string[];
 }
+
+/**
+ * S0AuditEntry: A record of a management action within the S0 scope.
+ * @version V35-S0-GOV-PP-22
+ */
+export interface S0AuditEntry {
+  readonly id: string;
+  readonly entityType: 'ENTERPRISE' | 'PLANT' | 'LINE' | 'STATION' | 'DEVICE_CLASS' | 'CAPABILITY' | 'COMPLIANCE' | 'SOP_PROFILE' | 'USER';
+  readonly entityId: string;
+  readonly action: 'CREATE' | 'UPDATE' | 'DELETE' | 'BIND' | 'OVERRIDE' | 'REMOVE_OVERRIDE';
+  readonly actor: string;
+  readonly timestamp: IsoDateTime;
+  readonly details?: string;
+}
