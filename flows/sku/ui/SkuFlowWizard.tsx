@@ -1,7 +1,7 @@
 /**
  * SKU Flow Wizard (FLOW-001)
  * A standardized step-wizard for SKU creation lifecycle.
- * @updated V35-S1-WIZ-FIX-06 (Step Pruning & UX Focus)
+ * @updated V35-S1-WIZ-SPEC-FIX-01 (Specification Registry Integration)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -75,6 +75,7 @@ import {
 import { useDeviceLayout } from '../../../hooks/useDeviceLayout';
 import { apiFetch } from '../../../services/apiHarness';
 import { SkuType } from '../../../stages/s1/s1Contract';
+import { resolveSpecSchema } from './spec/skuSpecRegistry';
 
 interface Precondition {
   id: string;
@@ -121,6 +122,13 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
       loadInstance(instanceId);
     }
   }, [instanceId]);
+
+  // V35-S1-WIZ-SPEC-FIX-01: Spec Registry Resolver Effect
+  useEffect(() => {
+    if (model.draft.skuType) {
+      resolveSpecSchema(model.draft.skuType);
+    }
+  }, [model.draft.skuType]);
 
   const loadInstance = async (id: string) => {
     setModel(m => ({ ...m, isLoading: true, error: null }));
