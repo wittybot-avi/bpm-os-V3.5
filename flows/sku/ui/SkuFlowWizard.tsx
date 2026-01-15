@@ -119,11 +119,23 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
   };
 
   const handleApiError = (err: any) => {
-    console.error("SKU Flow API Error:", err);
+    console.error("SKU Flow API Error Context:", err);
+    // Robust error message extraction to prevent [object Object]
+    let message = "Communication failure with simulated API.";
+    if (typeof err === 'string') {
+      message = err;
+    } else if (err?.message && typeof err.message === 'string') {
+      message = err.message;
+    } else if (err?.error?.message && typeof err.error.message === 'string') {
+      message = err.error.message;
+    } else if (err && typeof err === 'object') {
+      message = `Internal Error: ${err.code || 'UNKNOWN_SKU_ERROR'}`;
+    }
+
     setModel(m => ({
       ...m,
       isSyncing: false,
-      error: err?.message || "Communication failure with simulated API."
+      error: message
     }));
   };
 

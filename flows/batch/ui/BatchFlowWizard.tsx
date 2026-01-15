@@ -116,11 +116,23 @@ export const BatchFlowWizard: React.FC<BatchFlowWizardProps> = ({ instanceId, on
   };
 
   const handleApiError = (err: any) => {
-    console.error("Batch Flow API Error:", err);
+    console.error("Batch Flow API Error Context:", err);
+    // Robust error message extraction to prevent [object Object]
+    let message = "Communication failure with simulated API.";
+    if (typeof err === 'string') {
+      message = err;
+    } else if (err?.message && typeof err.message === 'string') {
+      message = err.message;
+    } else if (err?.error?.message && typeof err.error.message === 'string') {
+      message = err.error.message;
+    } else if (err && typeof err === 'object') {
+      message = `Internal Error: ${err.code || 'UNKNOWN_BATCH_ERROR'}`;
+    }
+
     setModel(m => ({
       ...m,
       isSyncing: false,
-      error: err?.message || "Communication failure with simulated API."
+      error: message
     }));
   };
 
@@ -290,7 +302,7 @@ export const BatchFlowWizard: React.FC<BatchFlowWizardProps> = ({ instanceId, on
         {model.error && (
           <div className="px-6 py-2 bg-red-50 text-red-700 text-xs border-b border-red-100 flex items-center gap-2">
             <AlertCircle size={14} className="shrink-0" />
-            <span className="font-medium">{model.error}</span>
+            <span className="font-medium text-red-800">{model.error}</span>
           </div>
         )}
 
@@ -522,10 +534,3 @@ export const BatchFlowWizard: React.FC<BatchFlowWizardProps> = ({ instanceId, on
     </FlowShell>
   );
 };
-
-const PlusIcon = ({ size }: { size: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="5" x2="12" y2="19"></line>
-    <line x1="5" y1="12" x2="19" y2="12"></line>
-  </svg>
-);

@@ -108,11 +108,23 @@ export const FinalQaWizard: React.FC<FinalQaWizardProps> = ({ instanceId, onExit
   };
 
   const handleApiError = (err: any) => {
-    console.error("Final QA API Error:", err);
+    console.error("Final QA Flow API Error Context:", err);
+    // Robust error message extraction to prevent [object Object]
+    let message = "Communication failure with simulated API.";
+    if (typeof err === 'string') {
+      message = err;
+    } else if (err?.message && typeof err.message === 'string') {
+      message = err.message;
+    } else if (err?.error?.message && typeof err.error.message === 'string') {
+      message = err.error.message;
+    } else if (err && typeof err === 'object') {
+      message = `Internal Error: ${err.code || 'UNKNOWN_FINAL_QA_ERROR'}`;
+    }
+
     setModel(m => ({
       ...m,
       isSyncing: false,
-      error: err?.message || "Communication failure with simulated API."
+      error: message
     }));
   };
 
@@ -152,19 +164,16 @@ export const FinalQaWizard: React.FC<FinalQaWizardProps> = ({ instanceId, onExit
     setModel(m => ({ ...m, isSyncing: true, error: null }));
 
     try {
-      // Fix: Explicitly type endpoint as string to allow assignment of different FINAL_QA_FLOW_ENDPOINTS literal values.
       let endpoint: string = FINAL_QA_FLOW_ENDPOINTS.approve;
       let body: any = { instanceId: model.instanceId };
 
       if (decision === "APPROVE") {
         body.approvedBy = model.role;
       } else if (decision === "REJECT") {
-        // Fix: Successfully assign reject endpoint string now that type is string.
         endpoint = FINAL_QA_FLOW_ENDPOINTS.reject;
         body.rejectedBy = model.role;
         body.reason = model.rejectionReason || "Checklist criteria failed.";
       } else {
-        // Fix: Successfully assign rework endpoint string now that type is string.
         endpoint = FINAL_QA_FLOW_ENDPOINTS.rework;
         body.requestedBy = model.role;
         body.notes = model.reworkNotes || "Correction needed in assembly.";
@@ -240,7 +249,7 @@ export const FinalQaWizard: React.FC<FinalQaWizardProps> = ({ instanceId, onExit
         {model.error && (
           <div className="px-6 py-2 bg-red-50 text-red-700 text-xs border-b border-red-100 flex items-center gap-2">
             <AlertCircle size={14} className="shrink-0" />
-            <span className="font-medium">{model.error}</span>
+            <span className="font-medium text-red-800">{model.error}</span>
           </div>
         )}
 
@@ -507,10 +516,3 @@ export const FinalQaWizard: React.FC<FinalQaWizardProps> = ({ instanceId, onExit
     </FlowShell>
   );
 };
-
-const PlusIcon = ({ size }: { size: number }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="12" y1="5" x2="12" y2="19"></line>
-    <line x1="5" y1="12" x2="19" y2="12"></line>
-  </svg>
-);

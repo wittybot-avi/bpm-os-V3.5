@@ -3,7 +3,7 @@
  * 
  * ARCHITECTURAL INVARIANTS:
  * 1. S1 is the authoritative source for PRODUCT MASTER DATA (Blueprints & Specs).
- * 2. S1 definitions must be compatible with facility capabilities defined in S0.
+ * 2. Discriminated union schema enforces type-safety across S1-S17.
  * 3. SKU technical profiles are immutable once "APPROVED".
  * 4. Changes to a published SKU require a new Revision ID.
  * 
@@ -12,119 +12,191 @@
 
 import { EntityId, IsoDateTime } from '../../types';
 
+export type SkuType = 'CELL' | 'MODULE' | 'PACK' | 'BMS' | 'IOT';
+
 /**
- * SKU Technical Profile
- * Core electrical and chemical specifications.
+ * Approval Lifecycle Stages
  */
-export interface SkuTechnicalProfile {
-  chemistry: 'LFP' | 'NMC' | 'LTO' | 'SODIUM_ION';
-  formFactor: 'PRISMATIC' | 'CYLINDRICAL' | 'POUCH';
-  nominalVoltage: number; // Volts
-  nominalCapacity: number; // Ah
-  energyDensity?: number; // Wh/kg
-  configuration: string; // e.g. "16S1P"
+export type BlueprintApprovalStatus = 
+  | 'DRAFT' 
+  | 'ENGINEERING_REVIEW' 
+  | 'QUALITY_SIGNOFF' 
+  | 'APPROVED' 
+  | 'OBSOLETE'
+  | 'REVIEW';
+
+/**
+ * Revision Model
+ */
+export interface RevisionMetadata {
+  id: string; // e.g. "A.1"
+  effectiveDate: IsoDateTime;
+  changeLog: string;
+  isLocked: boolean;
 }
 
 /**
- * SKU Compliance Profile
- * Regulatory tracking requirements for a product line.
+ * Base Blueprint Schema
  */
-export interface SkuComplianceProfile {
-  requiresBatteryAadhaar: boolean;
-  requiresEuPassport: boolean;
-  requiresBisCertification: boolean;
-  un383Certified: boolean;
-  targetMarket: 'DOMESTIC' | 'EXPORT' | 'GLOBAL';
-}
-
-/**
- * SKU Master Data
- * Root entity for a product definition.
- */
-export interface SkuMasterData {
+export interface BaseSkuBlueprint {
   skuId: EntityId;
   skuCode: string;
   name: string;
-  revision: string;
-  technicalProfile: SkuTechnicalProfile;
-  complianceProfile: SkuComplianceProfile;
-  status: 'DRAFT' | 'REVIEW' | 'APPROVED' | 'OBSOLETE';
+  type: SkuType;
+  status: BlueprintApprovalStatus;
+  revision: RevisionMetadata;
+  preconditions: string[]; // List of operational requirements (e.g. "HV_TEST_REQUIRED")
+  // Fix: Added technicalProfile and complianceProfile to support standardized UI rendering
+  technicalProfile: {
+    chemistry?: string;
+    nominalVoltage?: number;
+    nominalCapacity?: number;
+    formFactor?: string;
+    configuration?: string;
+  };
+  complianceProfile: {
+    requiresBatteryAadhaar: boolean;
+    requiresEuPassport: boolean;
+    requiresBisCertification: boolean;
+  };
 }
 
 /**
+ * Type-Specific Profiles
+ */
+export interface CellBlueprint extends BaseSkuBlueprint {
+  type: 'CELL';
+}
+
+export interface ModuleBlueprint extends BaseSkuBlueprint {
+  type: 'MODULE';
+  cellSkuCode?: string;
+  cellCount?: number;
+}
+
+export interface PackBlueprint extends BaseSkuBlueprint {
+  type: 'PACK';
+  moduleSkuCode?: string;
+  moduleCount?: number;
+}
+
+export interface BmsBlueprint extends BaseSkuBlueprint {
+  type: 'BMS';
+  processorType?: string;
+  protocol?: 'CAN' | 'RS485' | 'BTLE';
+}
+
+export interface IotBlueprint extends BaseSkuBlueprint {
+  type: 'IOT';
+  commsType?: '4G' | '5G' | 'NB_IOT' | 'WIFI';
+  hasGps?: boolean;
+}
+
+/**
+ * SKU Master Data Discriminated Union
+ */
+export type SkuMasterData = 
+  | CellBlueprint 
+  | ModuleBlueprint 
+  | PackBlueprint 
+  | BmsBlueprint 
+  | IotBlueprint;
+
+/**
  * S1 Global Context
- * Root aggregate for Product Master Data.
  */
 export interface S1Context {
-  // Metadata
+  activeCatalogId: string;
+  // Fix: Added missing fields used by SKUBlueprint component and s1Guards
   activeRevision: string;
-  lastBlueprintUpdate: IsoDateTime;
-  approvalStatus: 'DRAFT' | 'REVIEW' | 'APPROVED';
-  
-  // Master Entities
+  approvalStatus: string;
+  lastUpdated: IsoDateTime;
   skus: SkuMasterData[];
-  
-  // Stats (Reference only)
   totalSkus: number;
-  complianceReady: boolean;
+  pendingReviewsCount: number;
   engineeringSignoff: string;
 }
 
 /**
- * Returns deterministic mock data for S1 context as Product Master Data.
+ * Returns deterministic mock data for S1 context.
  */
 export const getMockS1Context = (): S1Context => {
-  const defaultSku: SkuMasterData = {
-    skuId: 'SKU-LFP-48V-STD',
-    skuCode: 'BP-LFP-48V-2.5K',
-    name: 'E-Scooter Standard Pack',
-    revision: 'A.3',
+  const commonRev: RevisionMetadata = {
+    id: 'A.3',
+    effectiveDate: '2026-01-20T00:00:00Z',
+    changeLog: 'Initial production release baseline.',
+    isLocked: true
+  };
+
+  const cell: CellBlueprint = {
+    skuId: 'SKU-CELL-01',
+    skuCode: 'C-LFP-21700-50',
+    name: '50Ah LFP Cylindrical Cell',
+    type: 'CELL',
     status: 'APPROVED',
+    revision: commonRev,
+    preconditions: ['OCV_SAMPLING_REQUIRED'],
     technicalProfile: {
       chemistry: 'LFP',
-      formFactor: 'CYLINDRICAL',
-      nominalVoltage: 48,
+      nominalVoltage: 3.2,
       nominalCapacity: 50,
-      configuration: '16S1P'
+      formFactor: 'CYLINDRICAL'
     },
     complianceProfile: {
       requiresBatteryAadhaar: true,
       requiresEuPassport: false,
-      requiresBisCertification: true,
-      un383Certified: true,
-      targetMarket: 'DOMESTIC'
+      requiresBisCertification: true
     }
   };
 
-  const performanceSku: SkuMasterData = {
-    skuId: 'SKU-NMC-800V-HV',
-    skuCode: 'BP-NMC-800V-75K',
-    name: 'EV High Performance Pack',
-    revision: 'B.1',
-    status: 'DRAFT',
+  const pack: PackBlueprint = {
+    skuId: 'SKU-PACK-01',
+    skuCode: 'BP-LFP-48V-2.5K',
+    name: 'E-Scooter Standard Pack',
+    type: 'PACK',
+    status: 'APPROVED',
+    revision: commonRev,
+    preconditions: ['HV_INSULATION_TEST', 'BMS_BIND_REQUIRED'],
     technicalProfile: {
-      chemistry: 'NMC',
-      formFactor: 'PRISMATIC',
-      nominalVoltage: 800,
-      nominalCapacity: 94,
-      configuration: '192S1P'
+      chemistry: 'LFP',
+      nominalVoltage: 48,
+      nominalCapacity: 50,
+      formFactor: 'PACK',
+      configuration: '16S1P'
     },
     complianceProfile: {
       requiresBatteryAadhaar: true,
       requiresEuPassport: true,
-      requiresBisCertification: false,
-      un383Certified: false,
-      targetMarket: 'EXPORT'
+      requiresBisCertification: true
+    }
+  };
+
+  const bms: BmsBlueprint = {
+    skuId: 'SKU-BMS-01',
+    skuCode: 'BMS-LV-V1',
+    name: 'Standard LV BMS Master',
+    type: 'BMS',
+    status: 'APPROVED',
+    revision: commonRev,
+    preconditions: ['FIRMWARE_VERIFY_REQUIRED'],
+    technicalProfile: {
+      configuration: 'N/A'
+    },
+    complianceProfile: {
+      requiresBatteryAadhaar: false,
+      requiresEuPassport: false,
+      requiresBisCertification: false
     }
   };
 
   return {
-    totalSkus: 2,
-    activeRevision: 'V3.5-CATALOG-01',
-    lastBlueprintUpdate: '2026-01-28 09:00 IST',
+    activeCatalogId: 'V3.5-CATALOG-2026-01',
+    activeRevision: 'A.3',
     approvalStatus: 'APPROVED',
-    complianceReady: true,
-    engineeringSignoff: 'ENG-LEAD-SR-01',
-    skus: [defaultSku, performanceSku]
+    lastUpdated: '2026-01-28T09:30:00Z',
+    skus: [cell, pack, bms],
+    totalSkus: 3,
+    pendingReviewsCount: 0,
+    engineeringSignoff: 'Dr. Sarah Chen'
   };
 };

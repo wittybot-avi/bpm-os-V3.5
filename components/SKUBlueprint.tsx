@@ -1,4 +1,3 @@
-
 import React, { useContext, useState, useEffect } from 'react';
 import { UserContext, UserRole, NavView } from '../types';
 import { 
@@ -164,7 +163,7 @@ export const SKUBlueprint: React.FC<SKUBlueprintProps> = ({ onNavigate }) => {
               <span>{showWizard ? 'EXIT WIZARD' : 'PROVISION NEW SKU'}</span>
             </button>
           </div>
-          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2">
+          <div className="text-[10px] text-slate-400 font-mono flex items-center gap-2 mt-1">
             <Database size={10} /> 
             <span>Catalog: {s1Context.activeRevision}</span>
             <span className="text-slate-300">|</span>
@@ -243,7 +242,8 @@ export const SKUBlueprint: React.FC<SKUBlueprintProps> = ({ onNavigate }) => {
                         }`}
                      >
                         <div className="flex justify-between items-start mb-2">
-                           <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{sku.revision}</span>
+                           {/* Fix: Accessing id property of revision metadata */}
+                           <span className="text-[10px] font-mono font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">{sku.revision.id}</span>
                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase border ${
                              sku.status === 'APPROVED' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'
                            }`}>{sku.status}</span>
@@ -268,7 +268,8 @@ export const SKUBlueprint: React.FC<SKUBlueprintProps> = ({ onNavigate }) => {
                     <p className="text-sm text-slate-600 font-medium">{selectedSku.name}</p>
                     <div className="flex items-center gap-3 mt-2">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white border px-2 py-0.5 rounded">ID: {selectedSku.skuId}</span>
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white border px-2 py-0.5 rounded">REV: {selectedSku.revision}</span>
+                      {/* Fix: Accessing id property of revision metadata */}
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-white border px-2 py-0.5 rounded">REV: {selectedSku.revision.id}</span>
                     </div>
                   </div>
                 </div>
@@ -374,8 +375,8 @@ export const SKUBlueprint: React.FC<SKUBlueprintProps> = ({ onNavigate }) => {
                      </div>
                      <div className="flex justify-between">
                         <span>HV_TEST_STATION_REQUIRED</span>
-                        <span className={selectedSku.technicalProfile.nominalVoltage > 60 ? 'text-amber-400' : 'text-slate-500'}>
-                          {selectedSku.technicalProfile.nominalVoltage > 60 ? 'REQUIRED' : 'NOT_REQUIRED'}
+                        <span className={(selectedSku.technicalProfile.nominalVoltage || 0) > 60 ? 'text-amber-400' : 'text-slate-500'}>
+                          {(selectedSku.technicalProfile.nominalVoltage || 0) > 60 ? 'REQUIRED' : 'NOT_REQUIRED'}
                         </span>
                      </div>
                   </div>

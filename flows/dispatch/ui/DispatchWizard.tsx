@@ -32,7 +32,6 @@ import {
 } from 'lucide-react';
 import { FlowShell, FlowStep, FlowFooter } from '../../../components/flow';
 import { useDeviceLayout } from '../../../hooks/useDeviceLayout';
-// Fix: Corrected imports - DispatchFlowInstance and DISPATCH_FLOW_ENDPOINTS come from parent index, not local model. Added DispatchDraft for handleUpdateDraft.
 import { 
   type DispatchRole, 
   type DispatchFlowState, 
@@ -115,15 +114,26 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
   };
 
   const handleApiError = (err: any) => {
-    console.error("Dispatch API Error:", err);
+    console.error("Dispatch Flow API Error Context:", err);
+    // Robust error message extraction to prevent [object Object]
+    let message = "Communication failure with simulated API.";
+    if (typeof err === 'string') {
+      message = err;
+    } else if (err?.message && typeof err.message === 'string') {
+      message = err.message;
+    } else if (err?.error?.message && typeof err.error.message === 'string') {
+      message = err.error.message;
+    } else if (err && typeof err === 'object') {
+      message = `Internal Error: ${err.code || 'UNKNOWN_DISPATCH_ERROR'}`;
+    }
+
     setModel(m => ({
       ...m,
       isSyncing: false,
-      error: err?.message || "Communication failure with simulated API."
+      error: message
     }));
   };
 
-  // Fix: Added missing handleUpdateDraft function used by input fields.
   const handleUpdateDraft = (field: keyof DispatchDraft, value: any) => {
     setModel(m => ({
       ...m,
@@ -286,7 +296,7 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
         {model.error && (
           <div className="px-6 py-2 bg-red-50 text-red-700 text-xs border-b border-red-100 flex items-center gap-2">
             <AlertCircle size={14} className="shrink-0" />
-            <span className="font-medium">{model.error}</span>
+            <span className="font-medium text-red-800">{model.error}</span>
           </div>
         )}
 
@@ -424,209 +434,4 @@ export const DispatchWizard: React.FC<DispatchWizardProps> = ({ instanceId, onEx
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Vehicle Number</label>
-                        <input 
-                          type="text"
-                          className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none font-mono uppercase"
-                          placeholder="XX-00-XX-0000"
-                          value={model.vehicleInput || ""}
-                          onChange={e => setModel(m => ({ ...m, vehicleInput: e.target.value }))}
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Driver Name</label>
-                        <input 
-                          type="text"
-                          className="w-full border border-slate-300 rounded p-2.5 text-sm focus:ring-2 focus:ring-brand-500 outline-none"
-                          placeholder="Enter Driver Name"
-                          value={model.driverInput || ""}
-                          onChange={e => setModel(m => ({ ...m, driverInput: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div className="p-4 bg-slate-900 text-white rounded-xl border border-slate-700 h-full flex flex-col justify-center items-center gap-3">
-                        <ClipboardCheck size={32} className="text-brand-400" />
-                        <div className="text-center">
-                          <div className="text-sm font-bold tracking-tight">GATE PASS READY</div>
-                          <div className="text-[10px] text-slate-400 font-mono mt-1">GP-2026-{(Math.random()*10000).toFixed(0)}</div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {model.role !== 'Logistics' && (
-                    <div className="mt-6 p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-center gap-2">
-                      <AlertTriangle size={14} />
-                      <span>Switch role to <strong>Logistics</strong> to confirm physical dispatch.</span>
-                    </div>
-                  )}
-                </FlowStep>
-              )}
-
-              {model.step === "DELIVERY" && (
-                <FlowStep 
-                  stepTitle="Delivery Confirmation" 
-                  stepHint="Record final handover proof at destination."
-                >
-                  <div className="flex flex-col items-center py-10">
-                    <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-6 animate-pulse shadow-lg border-2 border-blue-500/20">
-                      <Truck size={40} />
-                    </div>
-                    <h3 className="text-2xl font-bold text-slate-800 uppercase tracking-tight">Consignment in Transit</h3>
-                    <p className="text-slate-500 text-sm mt-2 font-mono">{model.draft.consignmentId} → {model.draft.destination}</p>
-
-                    <div className="mt-10 w-full max-w-md bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                       <div className="p-4 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-widest text-center">Handover Authentication</div>
-                       <div className="p-6 flex flex-col items-center gap-4">
-                          <div className="w-full flex items-center gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg">
-                            <Fingerprint size={24} className="text-slate-400" />
-                            <div className="flex-1">
-                              <label className="block text-[9px] font-bold text-slate-400 uppercase mb-0.5">Verification Code / OTP</label>
-                              <input 
-                                type="text" 
-                                className="w-full bg-transparent border-none p-0 text-lg font-mono font-bold text-slate-700 outline-none placeholder:text-slate-200 tracking-[0.5em]" 
-                                placeholder="000000"
-                                maxLength={6}
-                                defaultValue="884210"
-                              />
-                            </div>
-                          </div>
-                          <p className="text-[10px] text-slate-400 italic">Simulated Verification: Input pre-filled for pilot.</p>
-                       </div>
-                    </div>
-                  </div>
-                  {model.role !== 'Logistics' && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded text-slate-600 text-xs mt-4 flex gap-2">
-                      <Info size={14} className="text-amber-500 shrink-0" />
-                      <span>Switch role to <strong>Logistics</strong> to confirm delivery handover.</span>
-                    </div>
-                  )}
-                </FlowStep>
-              )}
-
-              {model.step === "COMPLETION" && (
-                <FlowStep 
-                  stepTitle="Flow Finalized" 
-                  stepHint="The custody chain has been updated in the System of Record."
-                >
-                  <div className="flex flex-col items-center py-12 text-center">
-                    <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-6 shadow-xl animate-in zoom-in duration-500 ${
-                      model.state === "Closed" ? "bg-slate-900 text-brand-400 border-4 border-brand-900" : "bg-green-100 text-green-600 border-4 border-green-50"
-                    }`}>
-                      {model.state === "Closed" ? <ShieldCheck size={48} /> : <CheckCircle2 size={48} />}
-                    </div>
-
-                    <h3 className="text-2xl font-bold text-slate-800 uppercase tracking-tight">
-                      Custody Chain {model.state === "Closed" ? "Closed" : "Transferred"}
-                    </h3>
-                    
-                    <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-lg text-left">
-                      <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">New Custodian</div>
-                        <div className="text-sm font-bold text-slate-800">{model.draft.customerName}</div>
-                      </div>
-                      <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
-                        <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Status</div>
-                        <div className="text-sm font-bold text-green-600 flex items-center gap-1.5">
-                          <CheckCircle2 size={14} /> Delivered & Verified
-                        </div>
-                      </div>
-                    </div>
-
-                    <p className="text-slate-500 max-w-md mt-8 text-sm leading-relaxed">
-                      Consignment <strong>{model.draft.consignmentId}</strong> has reached its destination. 
-                      Digital Twin telemetry now belongs to the customer instance.
-                    </p>
-                  </div>
-                </FlowStep>
-              )}
-            </>
-          )}
-        </div>
-
-        <FlowFooter 
-          left={
-            <button 
-              onClick={onExit}
-              className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-800 transition-colors"
-            >
-              Exit Flow
-            </button>
-          }
-          right={
-            <div className="flex items-center gap-3">
-              {model.step === "DRAFT" && (
-                <button 
-                  onClick={handleNext}
-                  disabled={!model.draft.customerName || !model.draft.destination || model.role !== 'SCM' || model.isSyncing}
-                  className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
-                >
-                  Next: Commercial Approval <ChevronRight size={16} />
-                </button>
-              )}
-
-              {model.step === "APPROVAL" && (
-                <>
-                  <button onClick={() => setModel(m => ({ ...m, step: "DRAFT" }))} className="px-4 py-2 text-sm font-bold text-slate-500">Back</button>
-                  <button 
-                    onClick={handleNext}
-                    disabled={model.role !== 'Finance' || model.isSyncing}
-                    className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
-                  >
-                    Approve & Authorize <ShieldCheck size={16} />
-                  </button>
-                </>
-              )}
-
-              {model.step === "EXECUTION" && (
-                <>
-                  <button onClick={() => setModel(m => ({ ...m, step: "APPROVAL" }))} className="px-4 py-2 text-sm font-bold text-slate-500">Back</button>
-                  <button 
-                    onClick={handleNext}
-                    disabled={model.role !== 'Logistics' || !model.transporterInput || !model.vehicleInput || model.isSyncing}
-                    className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
-                  >
-                    Confirm Dispatch <LogOut size={16} />
-                  </button>
-                </>
-              )}
-
-              {model.step === "DELIVERY" && (
-                <button 
-                  onClick={handleNext}
-                  disabled={model.role !== 'Logistics' || model.isSyncing}
-                  className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 disabled:opacity-50 transition-all shadow-sm"
-                >
-                  Verify Handover <CheckCircle2 size={16} />
-                </button>
-              )}
-
-              {model.step === "COMPLETION" && (
-                <>
-                   {model.state === 'Delivered' ? (
-                     <button 
-                        onClick={handleFinalize}
-                        disabled={model.isSyncing}
-                        className="flex items-center justify-center gap-2 px-6 py-2 bg-slate-800 text-white rounded font-bold text-sm hover:bg-slate-900 transition-all shadow-sm"
-                      >
-                        Close & Archive Flow <Lock size={16} />
-                      </button>
-                   ) : (
-                      <button 
-                        onClick={handleReset}
-                        className="flex items-center justify-center gap-2 px-6 py-2 bg-brand-600 text-white rounded font-bold text-sm hover:bg-brand-700 transition-all shadow-sm"
-                      >
-                        Start New Dispatch <Plus size={16} />
-                      </button>
-                   )}
-                </>
-              )}
-            </div>
-          }
-        />
-      </div>
-    </FlowShell>
-  );
-};
+                        <label className="block text-[10px

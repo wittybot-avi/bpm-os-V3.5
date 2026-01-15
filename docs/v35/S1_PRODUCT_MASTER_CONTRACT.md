@@ -3,25 +3,46 @@
 **Status:** ARCHITECTURE FROZEN
 **Scope:** Stage S1 Product Definitions
 **Version:** V3.5-S1-ARCH
+**Patch ID:** V35-S1-ARCH-BP-01
 
-## 1. Definition of Product Master
-In BPM-OS, Stage S1 manages the **Product Master Data**. It defines the technical "DNA" of the battery packs that the factory (defined in S0) is capable of producing.
+## 1. SKU Taxonomy
+BPM-OS V3.5 enforces a strict taxonomy for all system entities. Every SKU must belong to one of the following canonical types:
 
-### Entities within S1:
-1.  **SKU:** The root commercial and technical identifier.
-2.  **Technical Profile:** Electrical (V, Ah), chemical (LFP/NMC), and mechanical (Config) constants.
-3.  **Compliance Profile:** Regulatory requirements (Aadhaar, EU Passport, BIS) specific to the SKU.
-4.  **BOM Blueprint:** Linkages to required raw materials and component classes.
+| Type | Definition | Key Attributes |
+|:---|:---|:---|
+| **CELL** | Basic chemical energy unit. | Chemistry, Form Factor, Ah. |
+| **MODULE** | Grouped cells with busbars. | Cell Count, Configuration (S/P). |
+| **PACK** | Integrated battery assembly. | Energy (kWh), Voltage, Market. |
+| **BMS** | Battery Management System controller. | Processor, Protocol. |
+| **IOT** | Telemetry and tracking hardware. | Comms (4G/5G), GPS. |
 
-## 2. Invariants & Guardrails
-- **Cross-Stage Validation:** S1 SKUs must be validated against S0 Facility Capabilities. (e.g. An 800V pack cannot be released if S0 defines no HV_TESTING capability).
-- **Revision Control:** Any change to a technical constant (e.g. increasing capacity from 50Ah to 52Ah) requires a formal Revision bump.
-- **Blueprint Lock:** Once a SKU is used in a Batch Plan (S4), its technical master record is locked to prevent retrospective data drift.
+## 2. Blueprint Schema (Discriminated Union)
+To ensure type-safety in downstream stages (S2–S17), the SKU Master Data is implemented as a discriminated union.
 
-## 3. Implementation in V3.5
-As of `V35-S1-ARCH-BP-01`, the S1 context has been refactored from simple counters to structured `SkuMasterData` objects. The UI now prioritizes **Technical Profiles** and **Compliance Matrix** visibility.
+### Common Metadata
+Every blueprint contains:
+- `skuId`: Global UUID.
+- `skuCode`: Human-readable identifier.
+- `revision`: Structured model (ID, ChangeLog, Lock status).
+- `status`: Approval lifecycle stage.
+- `preconditions`: Required operational flags for MES automation.
 
-## 4. Downstream Impact
-- **S2 (Procurement):** Uses S1 SKU codes to bind Purchase Orders.
-- **S9 (Registry):** Uses S1 Blueprints as the schema for the Digital Twin.
-- **S17 (Audit):** Uses S1 Compliance Profiles to verify that all required evidence (Aadhaar IDs, Test Logs) exists for every unit.
+### Type-Specific Profiles
+Attributes specific to the physical nature of the SKU (e.g. `chemistry` for cells, `processorType` for BMS) are isolated to their respective union members.
+
+## 3. Revision Control Model
+- **Locking:** Once a revision is marked `isLocked: true`, it cannot be modified.
+- **Iteration:** Any change to a locked technical constant requires a new Revision ID (e.g. A.1 -> A.2).
+- **History:** The registry maintains all historical revisions for forensic trace integrity.
+
+## 4. Approval Stages
+1. **DRAFT:** Work in progress by Engineering.
+2. **ENGINEERING_REVIEW:** Internal technical validation.
+3. **QUALITY_SIGNOFF:** Compliance and safety verification.
+4. **APPROVED:** Released for Procurement (S2) and Production (S4).
+5. **OBSOLETE:** End-of-life; cannot be used in new batches.
+
+## 5. Downstream Impact
+- **S4 (Planning):** Validates batch configuration against the `PackBlueprint`.
+- **S10 (BMS Prov):** Injects `BmsBlueprint` firmware parameters.
+- **S17 (Audit):** Compares physical unit data against the `preconditions` defined in the Blueprint.
