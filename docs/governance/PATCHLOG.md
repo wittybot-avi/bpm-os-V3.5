@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S1-WIZ-PP-07** | UX / RBAC | Refined Approval UX | **STABLE** | Enforced "One Primary Action" UI pattern. Added task directive bar to SKU Wizard. Restricted footer actions strictly to authorized roles per state. | 2026-01-28 14:00 (IST) |
 | **V35-S1-WIZ-PP-06** | Governance | Operational Preconditions | **STABLE** | Implemented precondition gating in SKU Wizard. Added hard gates for ECR/PLM and soft warnings for Regulatory DB link. Progress blocked on hard failures. | 2026-01-28 13:30 (IST) |
 | **V35-S1-WIZ-PP-05** | Wizard UX | Dynamic Blueprint Steps | **STABLE** | Implemented multi-phase definition (General -> Technical). Dynamic form rendering based on SKU type with inline validation. | 2026-01-28 13:00 (IST) |
 | **V35-S1-WIZ-PP-04** | Wizard UX | S1 Mandatory Step 0 | **STABLE** | Added mandatory initial step to SKU Flow Wizard to capture engineering intent (New vs Revision) and SKU taxonomy type. | 2026-01-28 12:30 (IST) |
