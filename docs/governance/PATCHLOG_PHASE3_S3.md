@@ -8,6 +8,8 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S3-PP-19to20-MERGED** | Governance / UX | S3 Closure, Preconditions, S4 Unlock | **STABLE** | Finalized S3 module. Implemented authoritative operational preconditions (Gates) for receipt closure. Added S4 Handover contract generation (`S3OutputContract`). Stabilized UX with section focus and scroll fixes. | 2026-02-02 19:30 (IST) |
+| **V35-S3-PP-18** | Governance | S3 Close Rules | **STABLE** | Implemented deterministic receipt outcome rules (Accepted/Partial/Rejected). Added validation logic `validateClosure` ensuring labels, QC, and putaway are complete before allowing closure. | 2026-02-02 18:30 (IST) |
 | **V35-S3-PP-17** | Feature | S3 Putaway Assignment | **STABLE** | Added Putaway tab for assigning storage locations (Warehouse/Zone/Bin) to accepted/held/rejected units. Includes bulk assignment controls and audit logging. Only active when receipt is in post-inspection state. | 2026-02-02 18:00 (IST) |
 | **V35-S3-PP-16** | Feature | S3 QC Decision Panel | **STABLE** | Implemented interactive QC Inspection modal. Allows QA/Admin to disposition units (Accept/Hold/Reject) with required reason logging. Added specific unit state transitions for QC flows and integrated with S3 Audit log. | 2026-02-02 17:30 (IST) |
 | **V35-S3-PP-15** | Feature | S3 Label Printing | **STABLE** | Implemented label print workflow for trackable units. Added "Print Pending" bulk action in line items and granular "Reprint/Void" actions in management modal. Extended unit model with `labelStatus` and print audit logging. | 2026-02-02 17:00 (IST) |

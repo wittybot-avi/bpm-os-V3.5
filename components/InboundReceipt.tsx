@@ -1,15 +1,56 @@
 
 import React, { useEffect, useState, useContext, useMemo } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon, Printer, Ban, RotateCcw, ThumbsUp, ThumbsDown, PauseCircle, Archive, MapPin } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon, Printer, Ban, RotateCcw, ThumbsUp, ThumbsDown, PauseCircle, Archive, MapPin, Maximize2, Minimize2, ListChecks, Lock, ExternalLink } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
 import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, validateClosure, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit, UnitState, LabelStatus } from '../stages/s3/contracts';
 import { getNextUnitState, canTransitionUnit, transitionUnit } from '../stages/s3/contracts/s3StateMachine';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
 import { s3ListOpenOrdersFromS2, S3MockOrder, s3ListSuppliers, S3Supplier } from '../sim/api/s3/s3S2Adapter';
+import { saveS3Output } from '../sim/api/s3/s3Outbound.contract';
 
 interface InboundReceiptProps {
   onNavigate?: (view: NavView) => void;
 }
+
+// --- PRECONDITION TYPES ---
+type PreconditionStatus = 'MET' | 'PENDING' | 'BLOCKED';
+interface Precondition {
+  id: string;
+  label: string;
+  status: PreconditionStatus;
+  description: string;
+}
+
+// --- SECTION COMPONENT ---
+const Section: React.FC<{ 
+    title: string; 
+    icon: React.ElementType; 
+    isFocused: boolean; 
+    onToggleFocus: () => void; 
+    children: React.ReactNode; 
+    className?: string;
+    rightSlot?: React.ReactNode;
+}> = ({ title, icon: Icon, isFocused, onToggleFocus, children, className = '', rightSlot }) => {
+    return (
+        <div className={`bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col transition-all duration-300 ${isFocused ? 'fixed inset-4 z-50 shadow-2xl ring-2 ring-brand-500' : 'relative'} ${className}`}>
+            <div className="p-3 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-2">
+                    <Icon size={16} className="text-slate-500" />
+                    <h3 className="font-bold text-slate-700 text-xs uppercase tracking-wider">{title}</h3>
+                </div>
+                <div className="flex items-center gap-2">
+                    {rightSlot}
+                    <button onClick={onToggleFocus} className="text-slate-400 hover:text-brand-600 transition-colors p-1 rounded hover:bg-slate-200">
+                        {isFocused ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                    </button>
+                </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4 custom-scrollbar bg-white">
+                {children}
+            </div>
+        </div>
+    );
+};
 
 export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) => {
   const { role } = useContext(UserContext);
@@ -29,6 +70,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
 
   // Detail View State
   const [activeTab, setActiveTab] = useState<'LINES' | 'EVIDENCE' | 'PUTAWAY'>('LINES');
+  const [focusedSectionId, setFocusedSectionId] = useState<string | null>(null);
   
   // Validation State
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
@@ -105,6 +147,107 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           setShowTraceMapping(false);
       }
   }, [activeReceipt]);
+
+  // --- PRECONDITIONS LOGIC (Reactive) ---
+  const preconditions: Precondition[] = useMemo(() => {
+      if (!activeReceipt) return [];
+
+      const p: Precondition[] = [];
+
+      // 1. PO Linked or Valid Manual
+      const isManual = !activeReceipt.poId;
+      // For Manual receipts, we implicitly trust them if created, or check for audit logs.
+      // S2 logic usually handles PO creation. If Receipt exists, it's linked or valid manual.
+      p.push({
+          id: 'PO_LINKED',
+          label: isManual ? 'Manual Receipt Authorization' : 'Purchase Order Linkage',
+          status: 'MET',
+          description: isManual ? 'Receipt created manually with audit reason.' : `Linked to PO ${activeReceipt.poId}`
+      });
+
+      // 2. Invoice Captured
+      const hasInvoice = !!activeReceipt.invoiceNo && activeReceipt.invoiceNo.length > 0;
+      p.push({
+          id: 'INVOICE_CAPTURED',
+          label: 'Commercial Invoice',
+          status: hasInvoice ? 'MET' : 'PENDING',
+          description: hasInvoice ? `Captured: ${activeReceipt.invoiceNo}` : 'Invoice number missing in Evidence.'
+      });
+
+      // 3. Serials Generated & Verified (Trackable items only)
+      let trackableCount = 0;
+      let verifiedCount = 0;
+      let generatedCount = 0;
+      
+      activeReceipt.lines.forEach(l => {
+          if (l.trackability === ItemTrackability.TRACKABLE) {
+              trackableCount += (l.qtyReceived || 0); // Use received qty as target
+              if (l.units) {
+                  generatedCount += l.units.length;
+                  verifiedCount += l.units.filter(u => u.state === UnitState.VERIFIED || u.state === UnitState.ACCEPTED || u.state === UnitState.QC_HOLD || u.state === UnitState.REJECTED).length;
+              }
+          }
+      });
+
+      if (trackableCount === 0) {
+          p.push({ id: 'SERIALS', label: 'Serialization', status: 'MET', description: 'No trackable items.' });
+      } else {
+          const allGenerated = generatedCount >= trackableCount;
+          const allVerified = verifiedCount >= generatedCount && generatedCount > 0;
+          
+          let status: PreconditionStatus = 'PENDING';
+          if (allGenerated && allVerified) status = 'MET';
+          else if (!allGenerated) status = 'BLOCKED'; // Must generate first
+
+          p.push({
+              id: 'SERIALS',
+              label: 'Serialization & Verification',
+              status,
+              description: `${verifiedCount}/${trackableCount} units verified.`
+          });
+      }
+
+      // 4. QC Completed
+      let pendingQC = 0;
+      activeReceipt.lines.forEach(l => {
+          if (l.trackability === ItemTrackability.TRACKABLE && l.units) {
+               // Units that are verified but not dispositioned
+               pendingQC += l.units.filter(u => u.state === UnitState.VERIFIED).length;
+          }
+      });
+      p.push({
+          id: 'QC_COMPLETED',
+          label: 'Quality Control',
+          status: pendingQC === 0 ? 'MET' : 'PENDING',
+          description: pendingQC === 0 ? 'All verifications dispositioned.' : `${pendingQC} units pending QC decision.`
+      });
+
+      // 5. Putaway Assigned
+      let unassigned = 0;
+      let totalUnits = 0;
+      activeReceipt.lines.forEach(l => {
+          if (l.units) {
+              totalUnits += l.units.length;
+              // Check if accepted/hold/rejected units have putaway
+              unassigned += l.units.filter(u => 
+                  (u.state === UnitState.ACCEPTED || u.state === UnitState.QC_HOLD || u.state === UnitState.REJECTED) && 
+                  (!u.putaway?.bin)
+              ).length;
+          }
+      });
+
+      p.push({
+          id: 'PUTAWAY',
+          label: 'Storage Assignment',
+          status: unassigned === 0 ? 'MET' : 'PENDING',
+          description: unassigned === 0 ? 'All processed units assigned.' : `${unassigned} units awaiting putaway.`
+      });
+
+      return p;
+
+  }, [activeReceipt]);
+
+  const allPreconditionsMet = preconditions.every(p => p.status === 'MET');
 
   const handleSelectReceipt = (id: string) => {
     s3SetActiveReceipt(id);
@@ -869,7 +1012,17 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
               setValidationResult(closureValidation); // Show errors in UI
               return;
           }
+
+          // GATE: Check preconditions
+          if (!allPreconditionsMet) {
+             alert('All Operational Preconditions must be met before closing the receipt.');
+             return;
+          }
+
           nextState = ReceiptState.CLOSED;
+
+          // EMIT S4 UNLOCK CONTRACT
+          saveS3Output(activeReceipt);
       }
       else {
           // Default linear progression
@@ -880,6 +1033,19 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       if (nextState) {
           try {
               const updatedReceipt = transitionReceipt(activeReceipt, nextState, role, 'User', 'Advanced via UI');
+              // Append unlock log if closing
+              if (nextState === ReceiptState.CLOSED) {
+                 updatedReceipt.audit.push({
+                     id: `aud-${Date.now()}-S4`,
+                     ts: new Date().toISOString(),
+                     actorRole: role,
+                     actorLabel: 'System',
+                     eventType: 'S3_CLOSED_AND_UNLOCKED_FOR_S4',
+                     refType: 'RECEIPT',
+                     refId: activeReceipt.id,
+                     message: 'Receipt closed. S3 contract emitted for S4 Production.'
+                 });
+              }
               s3UpsertReceipt(updatedReceipt);
               setValidationResult(null); 
               setRefreshKey(k => k + 1);
@@ -1012,6 +1178,8 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
 
   const canCreate = canS3(role, 'CREATE_RECEIPT');
   const canEdit = activeReceipt ? canS3(role, 'EDIT_RECEIPT', activeReceipt.state) : false;
+  const isReadOnly = activeReceipt?.state === ReceiptState.CLOSED;
+
   const isAdmin = role === UserRole.SYSTEM_ADMIN;
   const isQA = role === UserRole.QA_ENGINEER;
   const canQC = isQA || isAdmin;
@@ -1045,12 +1213,12 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                         </span>
                         <button 
                            onClick={() => handleToggleTrackability(line.id)}
-                           disabled={!isAdmin}
+                           disabled={!isAdmin || isReadOnly}
                            className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase border flex items-center gap-1 ${
                                isTrackable 
                                ? 'bg-blue-50 text-blue-700 border-blue-200' 
                                : 'bg-slate-50 text-slate-500 border-slate-200'
-                           } ${isAdmin ? 'hover:bg-opacity-80 cursor-pointer' : 'cursor-default'}`}
+                           } ${isAdmin && !isReadOnly ? 'hover:bg-opacity-80 cursor-pointer' : 'cursor-default'}`}
                            title={isAdmin ? "Click to toggle Trackability (Admin)" : "Trackability Status"}
                         >
                             {isTrackable ? <ScanBarcode size={10} /> : <Package size={10} />}
@@ -1084,7 +1252,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                 placeholder="Supplier Lot No."
                                 value={buffer.lotRef || ''}
                                 onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], lotRef: e.target.value}}))}
-                                disabled={!canEdit}
+                                disabled={!canEdit || isReadOnly}
                             />
                             <Tag size={12} className="absolute right-2 top-2 text-slate-400" />
                         </div>
@@ -1096,11 +1264,11 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                             className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500"
                             value={buffer.qtyReceived}
                             onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], qtyReceived: parseInt(e.target.value) || 0}}))}
-                            disabled={!canEdit}
+                            disabled={!canEdit || isReadOnly}
                         />
                     </div>
                     <div>
-                        {canEdit && (
+                        {canEdit && !isReadOnly && (
                             <button 
                                 onClick={() => handleUpdateLine(line.id)}
                                 className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded border border-slate-200 transition-colors"
@@ -1119,7 +1287,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                               <span className="text-xs font-bold text-slate-600">Serials: {unitsGenerated} / {buffer.qtyReceived}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            {unitsGenerated > 0 && canEdit && (
+                            {unitsGenerated > 0 && canEdit && !isReadOnly && (
                                 <button
                                     onClick={() => handleOpenSerialEntry(line.id)}
                                     className="bg-white border border-slate-300 text-slate-600 text-[10px] font-bold px-2 py-1 rounded shadow-sm hover:bg-slate-50 flex items-center gap-1"
@@ -1132,19 +1300,17 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                 <button
                                     onClick={() => handleOpenQC(line.id)}
                                     className={`text-[10px] font-bold px-2 py-1 rounded shadow-sm flex items-center gap-1 ${
-                                        canQC 
+                                        canQC && !isReadOnly
                                         ? 'bg-purple-600 text-white hover:bg-purple-700'
                                         : 'bg-white border border-slate-300 text-slate-500 cursor-not-allowed opacity-50' 
                                     }`}
-                                    disabled={!canQC && !isAdmin} // Viewers might need read-only access? Let's just disable action for now or enable for read-only
-                                    // Actually, let's enable for everyone to view, but only QC can act.
-                                    // We'll handle read-only inside.
+                                    disabled={(!canQC && !isAdmin) || isReadOnly}
                                 >
                                     <ShieldCheck size={10} /> Inspect
                                 </button>
                             )}
                             
-                            {buffer.qtyReceived > unitsGenerated && !isGenOpen && (
+                            {buffer.qtyReceived > unitsGenerated && !isGenOpen && !isReadOnly && (
                                 <button 
                                     onClick={() => handleOpenGeneration(line.id, unitsGenerated, buffer.qtyReceived)}
                                     className="bg-brand-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm hover:bg-brand-700 flex items-center gap-1"
@@ -1163,7 +1329,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                  <div className="flex items-center gap-1 text-green-600 font-bold" title="Printed"><CheckCircle2 size={10} /> {printedCount}</div>
                                  {voidedCount > 0 && <div className="flex items-center gap-1 text-red-600 font-bold" title="Voided"><Ban size={10} /> {voidedCount}</div>}
                              </div>
-                             {notPrintedCount > 0 && canEdit && (
+                             {notPrintedCount > 0 && canEdit && !isReadOnly && (
                                  <button 
                                     onClick={() => handlePrintAllPending(line.id)}
                                     className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-100 flex items-center gap-1"
@@ -1233,10 +1399,46 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
            </h1>
            <p className="text-slate-500 text-sm mt-1">Manage material intake, unique serialization, and initial quality checks.</p>
         </div>
+        {activeReceipt && activeReceipt.state === ReceiptState.CLOSED && (
+           <div className="bg-slate-800 text-white px-3 py-1 rounded-full text-xs font-bold border border-slate-600 flex items-center gap-2">
+              <Lock size={12} /> CLOSED / READ-ONLY
+           </div>
+        )}
       </div>
 
+      {/* OPERATIONAL PRECONDITIONS PANEL */}
+      {activeReceipt && (
+          <Section 
+             title="Operational Preconditions" 
+             icon={ListChecks} 
+             isFocused={focusedSectionId === 'PRECONDITIONS'} 
+             onToggleFocus={() => setFocusedSectionId(focusedSectionId === 'PRECONDITIONS' ? null : 'PRECONDITIONS')}
+             className="mb-6"
+             rightSlot={
+                 <div className="text-[10px] font-mono text-slate-400">
+                    {preconditions.filter(p => p.status === 'MET').length}/{preconditions.length} MET
+                 </div>
+             }
+          >
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                  {preconditions.map(p => (
+                      <div key={p.id} className={`p-3 rounded-lg border flex flex-col gap-2 ${p.status === 'MET' ? 'bg-green-50/50 border-green-200' : p.status === 'BLOCKED' ? 'bg-red-50/50 border-red-200' : 'bg-amber-50/50 border-amber-200'}`}>
+                          <div className="flex items-center justify-between">
+                              <span className={`text-[10px] font-bold uppercase ${p.status === 'MET' ? 'text-green-700' : p.status === 'BLOCKED' ? 'text-red-700' : 'text-amber-700'}`}>{p.status}</span>
+                              {p.status === 'MET' ? <CheckCircle2 size={14} className="text-green-600" /> : p.status === 'BLOCKED' ? <Ban size={14} className="text-red-600" /> : <AlertCircle size={14} className="text-amber-600" />}
+                          </div>
+                          <div>
+                              <div className="text-xs font-bold text-slate-700 leading-tight">{p.label}</div>
+                              <div className="text-[10px] text-slate-500 mt-1 leading-tight">{p.description}</div>
+                          </div>
+                      </div>
+                  ))}
+              </div>
+          </Section>
+      )}
+
       {/* Procurement Intake Panel */}
-      {canCreate && (
+      {canCreate && !activeReceipt && (
         <div className={`border rounded-lg p-3 shadow-sm transition-colors ${intakeMode === 'MANUAL' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}>
             <div className="flex items-start gap-4">
                 <div className={`p-2 rounded mt-0.5 ${intakeMode === 'MANUAL' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'}`}>
@@ -1396,23 +1598,28 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
             
             {/* Actions: Validate & Advance */}
             <div className="flex flex-col items-end gap-2">
-                <div className="flex items-center gap-2">
-                    <button 
-                        onClick={handleValidate}
-                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-md text-xs font-bold hover:bg-slate-50 flex items-center gap-2 shadow-sm transition-colors"
-                    >
-                        <ShieldCheck size={14} /> Validate
-                    </button>
-                    {nextStateLabel && (
+                {!isReadOnly && (
+                    <div className="flex items-center gap-2">
                         <button 
-                            onClick={handleAdvanceState}
-                            disabled={!validationResult?.ok && activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE} // Allow closing to trigger validation
-                            className="px-4 py-1.5 bg-brand-600 border border-brand-700 text-white rounded-md text-xs font-bold hover:bg-brand-700 flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            onClick={handleValidate}
+                            className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-md text-xs font-bold hover:bg-slate-50 flex items-center gap-2 shadow-sm transition-colors"
                         >
-                            <PlayCircle size={14} /> {nextStateLabel}
+                            <ShieldCheck size={14} /> Validate
                         </button>
-                    )}
-                </div>
+                        {nextStateLabel && (
+                            <div className="flex flex-col items-end">
+                                <button 
+                                    onClick={handleAdvanceState}
+                                    disabled={(!validationResult?.ok && activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && activeReceipt.state !== ReceiptState.REJECTED) || (activeReceipt.state === ReceiptState.PUTAWAY_COMPLETE && !allPreconditionsMet)}
+                                    className="px-4 py-1.5 bg-brand-600 border border-brand-700 text-white rounded-md text-xs font-bold hover:bg-brand-700 flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={!allPreconditionsMet && (activeReceipt.state === ReceiptState.PUTAWAY_COMPLETE || activeReceipt.state === ReceiptState.REJECTED) ? "Unmet Preconditions" : "Advance Workflow"}
+                                >
+                                    <PlayCircle size={14} /> {nextStateLabel}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
                 {validationResult && !validationResult.ok && (
                     <span className="text-[10px] text-red-600 font-bold flex items-center gap-1 animate-pulse">
                         <AlertTriangle size={10} /> Fix {validationResult.errors.length} validation errors
@@ -1420,19 +1627,6 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                 )}
             </div>
         </div>
-      )}
-
-      {/* Verification Gate Hint */}
-      {activeReceipt && hasUnverifiedUnits && activeReceipt.state !== ReceiptState.DRAFT && (
-          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-3 shadow-sm animate-in fade-in">
-              <AlertOctagon size={16} className="text-amber-600 mt-0.5" />
-              <div>
-                  <h4 className="text-xs font-bold text-amber-800 uppercase">Verification Incomplete</h4>
-                  <p className="text-[11px] text-amber-700 mt-0.5">
-                      <strong>{getUnverifiedCount()}</strong> trackable units have not been verified. Receipt cannot proceed to Quality Control until all units are marked VERIFIED.
-                  </p>
-              </div>
-          </div>
       )}
 
       {/* Main Grid */}
@@ -1528,11 +1722,12 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                           {activeTab === 'EVIDENCE' && (
                               <div className="space-y-6 animate-in fade-in slide-in-from-right-2">
                                   {/* Doc Fields */}
-                                  <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                                      <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-2">
-                                          <FileText size={16} className="text-blue-600" />
-                                          <h3 className="font-bold text-slate-700 text-sm">Commercial Documentation</h3>
-                                      </div>
+                                  <Section 
+                                      title="Commercial Documentation" 
+                                      icon={FileText} 
+                                      isFocused={focusedSectionId === 'EVIDENCE_DOCS'} 
+                                      onToggleFocus={() => setFocusedSectionId(focusedSectionId === 'EVIDENCE_DOCS' ? null : 'EVIDENCE_DOCS')}
+                                  >
                                       <div className="grid grid-cols-2 gap-4 mb-4">
                                           <div>
                                               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Invoice No</label>
@@ -1540,7 +1735,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                 className="w-full text-sm p-2 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none"
                                                 value={evidenceBuffer.invoiceNo || ''}
                                                 onChange={e => setEvidenceBuffer(prev => ({ ...prev, invoiceNo: e.target.value }))}
-                                                disabled={!canEdit}
+                                                disabled={!canEdit || isReadOnly}
                                                 placeholder="e.g. INV-2026-991"
                                               />
                                           </div>
@@ -1551,7 +1746,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                 className="w-full text-sm p-2 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none"
                                                 value={evidenceBuffer.invoiceDate || ''}
                                                 onChange={e => setEvidenceBuffer(prev => ({ ...prev, invoiceDate: e.target.value }))}
-                                                disabled={!canEdit}
+                                                disabled={!canEdit || isReadOnly}
                                               />
                                           </div>
                                           <div>
@@ -1560,7 +1755,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                 className="w-full text-sm p-2 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none"
                                                 value={evidenceBuffer.packingListRef || ''}
                                                 onChange={e => setEvidenceBuffer(prev => ({ ...prev, packingListRef: e.target.value }))}
-                                                disabled={!canEdit}
+                                                disabled={!canEdit || isReadOnly}
                                                 placeholder="e.g. PKL-001"
                                               />
                                           </div>
@@ -1570,33 +1765,34 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                 className="w-full text-sm p-2 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none"
                                                 value={evidenceBuffer.transportDocRef || ''}
                                                 onChange={e => setEvidenceBuffer(prev => ({ ...prev, transportDocRef: e.target.value }))}
-                                                disabled={!canEdit}
+                                                disabled={!canEdit || isReadOnly}
                                                 placeholder="e.g. BL-7721"
                                               />
                                           </div>
                                       </div>
-                                      {canEdit && (
+                                      {canEdit && !isReadOnly && (
                                           <div className="flex justify-end">
                                               <button onClick={handleSaveEvidence} className="flex items-center gap-2 px-3 py-1.5 bg-brand-600 text-white text-xs font-bold rounded hover:bg-brand-700 shadow-sm">
                                                   <Save size={12} /> Save Changes
                                               </button>
                                           </div>
                                       )}
-                                  </div>
+                                  </Section>
 
                                   {/* Attachments */}
-                                  <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                                      <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
-                                          <div className="flex items-center gap-2">
-                                              <Paperclip size={16} className="text-slate-500" />
-                                              <h3 className="font-bold text-slate-700 text-sm">Attachments</h3>
-                                          </div>
-                                          {canEdit && (
+                                  <Section 
+                                      title="Attachments" 
+                                      icon={Paperclip}
+                                      isFocused={focusedSectionId === 'EVIDENCE_ATTACHMENTS'}
+                                      onToggleFocus={() => setFocusedSectionId(focusedSectionId === 'EVIDENCE_ATTACHMENTS' ? null : 'EVIDENCE_ATTACHMENTS')}
+                                      rightSlot={
+                                          canEdit && !isReadOnly && (
                                               <button onClick={handleAddAttachment} className="text-xs text-brand-600 font-bold hover:underline flex items-center gap-1">
                                                   <Plus size={12} /> Attach Document
                                               </button>
-                                          )}
-                                      </div>
+                                          )
+                                      }
+                                  >
                                       <div className="space-y-2">
                                           {activeReceipt.attachments && activeReceipt.attachments.length > 0 ? activeReceipt.attachments.map(att => (
                                               <div key={att.id} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-100 rounded">
@@ -1615,7 +1811,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                               <div className="text-center py-4 text-xs text-slate-400 italic">No attachments yet.</div>
                                           )}
                                       </div>
-                                  </div>
+                                  </Section>
                               </div>
                           )}
 
@@ -1624,18 +1820,20 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                   
                                   {/* Serialization Evidence Summary Card */}
                                   {evidenceSummary && (
-                                    <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm mb-2">
-                                        <div className="flex justify-between items-center mb-3">
-                                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
-                                                <Link size={14} className="text-blue-600" /> Serialization Evidence Summary
-                                            </h4>
+                                    <Section
+                                        title="Serialization Evidence Summary"
+                                        icon={Link}
+                                        isFocused={focusedSectionId === 'EVIDENCE_SUMMARY'}
+                                        onToggleFocus={() => setFocusedSectionId(focusedSectionId === 'EVIDENCE_SUMMARY' ? null : 'EVIDENCE_SUMMARY')}
+                                        rightSlot={
                                             <button 
                                               onClick={() => setShowTraceMapping(true)}
                                               className="text-xs font-bold text-brand-600 hover:text-brand-800 flex items-center gap-1 bg-brand-50 px-2 py-1 rounded hover:bg-brand-100 transition-colors"
                                             >
-                                                <FileSearch size={12} /> View Trace Mapping
+                                                <FileSearch size={12} /> Trace Map
                                             </button>
-                                        </div>
+                                        }
+                                    >
                                         <div className="grid grid-cols-4 gap-4 text-center">
                                             <div className="p-2 bg-slate-50 rounded border border-slate-100">
                                                 <div className="text-[10px] text-slate-400 font-bold uppercase">Total Units</div>
@@ -1660,31 +1858,16 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                 </div>
                                             </div>
                                         </div>
-                                        {/* Sample Data */}
-                                        {mappedEvidenceData.length > 0 && (
-                                            <div className="mt-3 pt-3 border-t border-slate-100">
-                                                <div className="text-[10px] text-slate-400 mb-2 uppercase font-bold">Sample Traceability Linkage</div>
-                                                <div className="space-y-1">
-                                                    {mappedEvidenceData.slice(0, 3).map(u => (
-                                                        <div key={u.unitId} className="flex justify-between items-center text-[10px] font-mono text-slate-600 bg-slate-50 px-2 py-1 rounded">
-                                                            <span>{u.enterpriseSerial}</span>
-                                                            <span className="text-slate-400">→</span>
-                                                            <span className={u.lotRef === 'N/A' ? 'text-red-400' : 'text-blue-600'}>LOT: {u.lotRef}</span>
-                                                            <span className="text-slate-400">→</span>
-                                                            <span className={u.invoiceNo === 'PENDING' ? 'text-amber-500' : 'text-green-600'}>INV: {u.invoiceNo}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
+                                    </Section>
                                   )}
 
                                   {/* Trackable Items */}
-                                  <div>
-                                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                          <ScanBarcode size={14} /> Trackable Items (Serialization Required)
-                                      </h4>
+                                  <Section
+                                      title="Trackable Items (Serialization Required)"
+                                      icon={ScanBarcode}
+                                      isFocused={focusedSectionId === 'LINES_TRACKABLE'}
+                                      onToggleFocus={() => setFocusedSectionId(focusedSectionId === 'LINES_TRACKABLE' ? null : 'LINES_TRACKABLE')}
+                                  >
                                       <div className="space-y-3">
                                           {trackableLines.length > 0 ? trackableLines.map(renderLineItem) : (
                                               <div className="p-4 text-center text-xs text-slate-400 italic border border-dashed border-slate-200 rounded">
@@ -1692,13 +1875,15 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                               </div>
                                           )}
                                       </div>
-                                  </div>
+                                  </Section>
 
                                   {/* Non-Trackable Items */}
-                                  <div>
-                                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
-                                          <Package size={14} /> Bulk / Non-Trackable Items
-                                      </h4>
+                                  <Section
+                                      title="Bulk / Non-Trackable Items"
+                                      icon={Package}
+                                      isFocused={focusedSectionId === 'LINES_BULK'}
+                                      onToggleFocus={() => setFocusedSectionId(focusedSectionId === 'LINES_BULK' ? null : 'LINES_BULK')}
+                                  >
                                       <div className="space-y-3">
                                           {nonTrackableLines.length > 0 ? nonTrackableLines.map(renderLineItem) : (
                                               <div className="p-4 text-center text-xs text-slate-400 italic border border-dashed border-slate-200 rounded">
@@ -1706,7 +1891,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                               </div>
                                           )}
                                       </div>
-                                  </div>
+                                  </Section>
 
                                   {activeReceipt.lines.length === 0 && (
                                       <div className="p-12 text-center text-slate-400 text-sm flex flex-col items-center gap-2">
@@ -1720,108 +1905,110 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                           {activeTab === 'PUTAWAY' && (
                               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 h-full flex flex-col">
                                   {/* Putaway Filters & Summary */}
-                                  <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-4">
-                                      <div className="flex items-center justify-between">
-                                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                              <Archive className="text-cyan-600" size={20} /> Putaway Assignment
-                                          </h3>
-                                          <div className="text-xs text-slate-500 font-mono">
+                                  <Section
+                                    title="Putaway Assignment"
+                                    icon={Archive}
+                                    isFocused={focusedSectionId === 'PUTAWAY_ASSIGN'}
+                                    onToggleFocus={() => setFocusedSectionId(focusedSectionId === 'PUTAWAY_ASSIGN' ? null : 'PUTAWAY_ASSIGN')}
+                                    rightSlot={
+                                        <div className="text-xs text-slate-500 font-mono">
                                               Assigned: <span className="font-bold text-green-600">{assignedCount}</span> / {mappedEvidenceData.length}
                                           </div>
-                                      </div>
+                                    }
+                                  >
                                       
-                                      <div className="flex gap-2">
+                                      <div className="flex gap-2 mb-4">
                                           <button onClick={() => setPutawayFilter('ALL')} className={`px-3 py-1 rounded-full text-xs font-bold ${putawayFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>All</button>
                                           <button onClick={() => setPutawayFilter('ACCEPTED')} className={`px-3 py-1 rounded-full text-xs font-bold ${putawayFilter === 'ACCEPTED' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Available (Accepted)</button>
                                           <button onClick={() => setPutawayFilter('HOLD')} className={`px-3 py-1 rounded-full text-xs font-bold ${putawayFilter === 'HOLD' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}>On Hold</button>
                                           <button onClick={() => setPutawayFilter('REJECTED')} className={`px-3 py-1 rounded-full text-xs font-bold ${putawayFilter === 'REJECTED' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Rejected</button>
                                       </div>
-                                  </div>
 
-                                  {/* Assignment Controls */}
-                                  {activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && activeReceipt.state !== ReceiptState.CLOSED && (
-                                    <div className="bg-white p-4 rounded-lg border border-cyan-200 shadow-sm bg-cyan-50/30">
-                                        <div className="grid grid-cols-4 gap-4 items-end">
-                                            <div>
-                                                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Warehouse</label>
-                                                <select className="w-full text-xs p-2 border border-slate-300 rounded bg-white" value={targetLocation.warehouse} onChange={e => setTargetLocation(p => ({...p, warehouse: e.target.value}))}>
-                                                    <option>Main Warehouse</option>
-                                                    <option>Overflow Annex</option>
-                                                    <option>Returns Center</option>
-                                                </select>
+                                      {/* Assignment Controls */}
+                                      {activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && activeReceipt.state !== ReceiptState.CLOSED && !isReadOnly && (
+                                        <div className="bg-cyan-50/30 p-4 rounded-lg border border-cyan-200 mb-4">
+                                            <div className="grid grid-cols-4 gap-4 items-end">
+                                                <div>
+                                                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Warehouse</label>
+                                                    <select className="w-full text-xs p-2 border border-slate-300 rounded bg-white" value={targetLocation.warehouse} onChange={e => setTargetLocation(p => ({...p, warehouse: e.target.value}))}>
+                                                        <option>Main Warehouse</option>
+                                                        <option>Overflow Annex</option>
+                                                        <option>Returns Center</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Zone</label>
+                                                    <select className="w-full text-xs p-2 border border-slate-300 rounded bg-white" value={targetLocation.zone} onChange={e => setTargetLocation(p => ({...p, zone: e.target.value}))}>
+                                                        <option>Zone A (Fast)</option>
+                                                        <option>Zone B (Bulk)</option>
+                                                        <option>Zone C (Cold)</option>
+                                                        <option>Zone Q (Quarantine)</option>
+                                                        <option>Zone R (Returns)</option>
+                                                    </select>
+                                                </div>
+                                                <div>
+                                                    <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Bin Location</label>
+                                                    <input className="w-full text-xs p-2 border border-slate-300 rounded" placeholder="e.g. A-01-04" value={targetLocation.bin} onChange={e => setTargetLocation(p => ({...p, bin: e.target.value}))} />
+                                                </div>
+                                                <button 
+                                                    onClick={handleAssignPutaway}
+                                                    disabled={!canPutaway || putawaySelection.size === 0}
+                                                    className="bg-cyan-600 text-white text-xs font-bold py-2 rounded shadow-sm hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                >
+                                                    <MapPin size={14} /> Assign ({putawaySelection.size})
+                                                </button>
                                             </div>
-                                            <div>
-                                                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Zone</label>
-                                                <select className="w-full text-xs p-2 border border-slate-300 rounded bg-white" value={targetLocation.zone} onChange={e => setTargetLocation(p => ({...p, zone: e.target.value}))}>
-                                                    <option>Zone A (Fast)</option>
-                                                    <option>Zone B (Bulk)</option>
-                                                    <option>Zone C (Cold)</option>
-                                                    <option>Zone Q (Quarantine)</option>
-                                                    <option>Zone R (Returns)</option>
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Bin Location</label>
-                                                <input className="w-full text-xs p-2 border border-slate-300 rounded" placeholder="e.g. A-01-04" value={targetLocation.bin} onChange={e => setTargetLocation(p => ({...p, bin: e.target.value}))} />
-                                            </div>
-                                            <button 
-                                                onClick={handleAssignPutaway}
-                                                disabled={!canPutaway || putawaySelection.size === 0}
-                                                className="bg-cyan-600 text-white text-xs font-bold py-2 rounded shadow-sm hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                            >
-                                                <MapPin size={14} /> Assign ({putawaySelection.size})
-                                            </button>
                                         </div>
-                                    </div>
-                                  )}
+                                      )}
 
-                                  {/* Unit Table */}
-                                  <div className="flex-1 bg-white border border-slate-200 rounded-lg overflow-hidden flex flex-col">
-                                      <div className="flex-1 overflow-auto">
-                                          <table className="w-full text-left text-xs">
-                                              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 sticky top-0 z-10">
-                                                  <tr>
-                                                      <th className="px-4 py-2 w-10 text-center">
-                                                          <input type="checkbox" onChange={handlePutawaySelectAll} checked={putawayData.length > 0 && putawaySelection.size === putawayData.length} />
-                                                      </th>
-                                                      <th className="px-4 py-2 font-bold uppercase">Serial Number</th>
-                                                      <th className="px-4 py-2 font-bold uppercase">Item</th>
-                                                      <th className="px-4 py-2 font-bold uppercase text-center">Status</th>
-                                                      <th className="px-4 py-2 font-bold uppercase">Current Location</th>
-                                                  </tr>
-                                              </thead>
-                                              <tbody className="divide-y divide-slate-100">
-                                                  {putawayData.map(u => (
-                                                      <tr key={u.unitId} className={`hover:bg-slate-50 ${putawaySelection.has(u.unitId) ? 'bg-cyan-50/50' : ''}`}>
-                                                          <td className="px-4 py-2 text-center">
-                                                              <input type="checkbox" checked={putawaySelection.has(u.unitId)} onChange={() => handlePutawaySelectionToggle(u.unitId)} />
-                                                          </td>
-                                                          <td className="px-4 py-2 font-mono text-slate-700">{u.enterpriseSerial}</td>
-                                                          <td className="px-4 py-2 text-slate-600">{u.itemName} <span className="text-slate-400 text-[10px]">({u.itemCategory})</span></td>
-                                                          <td className="px-4 py-2 text-center">
-                                                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(u.status)}`}>{u.status}</span>
-                                                          </td>
-                                                          <td className="px-4 py-2">
-                                                              {u.putaway?.bin ? (
-                                                                  <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-slate-600">
-                                                                      {u.putaway.warehouse?.split(' ')[0]}/{u.putaway.zone?.split(' ')[1]}/{u.putaway.bin}
-                                                                  </span>
-                                                              ) : <span className="text-slate-300 italic">-</span>}
-                                                          </td>
+                                      {/* Unit Table */}
+                                      <div className="border border-slate-200 rounded-lg overflow-hidden flex flex-col max-h-[400px]">
+                                          <div className="overflow-auto">
+                                              <table className="w-full text-left text-xs">
+                                                  <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 sticky top-0 z-10">
+                                                      <tr>
+                                                          <th className="px-4 py-2 w-10 text-center">
+                                                              <input type="checkbox" onChange={handlePutawaySelectAll} checked={putawayData.length > 0 && putawaySelection.size === putawayData.length} disabled={isReadOnly} />
+                                                          </th>
+                                                          <th className="px-4 py-2 font-bold uppercase">Serial Number</th>
+                                                          <th className="px-4 py-2 font-bold uppercase">Item</th>
+                                                          <th className="px-4 py-2 font-bold uppercase text-center">Status</th>
+                                                          <th className="px-4 py-2 font-bold uppercase">Current Location</th>
                                                       </tr>
-                                                  ))}
-                                                  {putawayData.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400 italic">No units match filter criteria.</td></tr>}
-                                              </tbody>
-                                          </table>
+                                                  </thead>
+                                                  <tbody className="divide-y divide-slate-100">
+                                                      {putawayData.map(u => (
+                                                          <tr key={u.unitId} className={`hover:bg-slate-50 ${putawaySelection.has(u.unitId) ? 'bg-cyan-50/50' : ''}`}>
+                                                              <td className="px-4 py-2 text-center">
+                                                                  <input type="checkbox" checked={putawaySelection.has(u.unitId)} onChange={() => handlePutawaySelectionToggle(u.unitId)} disabled={isReadOnly} />
+                                                              </td>
+                                                              <td className="px-4 py-2 font-mono text-slate-700">{u.enterpriseSerial}</td>
+                                                              <td className="px-4 py-2 text-slate-600">{u.itemName} <span className="text-slate-400 text-[10px]">({u.itemCategory})</span></td>
+                                                              <td className="px-4 py-2 text-center">
+                                                                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(u.status)}`}>{u.status}</span>
+                                                              </td>
+                                                              <td className="px-4 py-2">
+                                                                  {u.putaway?.bin ? (
+                                                                      <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-slate-600">
+                                                                          {u.putaway.warehouse?.split(' ')[0]}/{u.putaway.zone?.split(' ')[1]}/{u.putaway.bin}
+                                                                      </span>
+                                                                  ) : <span className="text-slate-300 italic">-</span>}
+                                                              </td>
+                                                          </tr>
+                                                      ))}
+                                                      {putawayData.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400 italic">No units match filter criteria.</td></tr>}
+                                                  </tbody>
+                                              </table>
+                                          </div>
                                       </div>
-                                  </div>
+                                  </Section>
                                   
                                   {/* Complete Action */}
                                   {activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && activeReceipt.state !== ReceiptState.CLOSED && activeReceipt.state !== ReceiptState.REJECTED && (
                                     <div className="flex justify-end pt-2">
                                         <button 
                                             onClick={handleCompletePutaway}
-                                            disabled={assignedCount < mappedEvidenceData.length || !canPutaway}
+                                            disabled={assignedCount < mappedEvidenceData.length || !canPutaway || isReadOnly}
                                             className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                                             title={assignedCount < mappedEvidenceData.length ? "Assign all units first" : "Finalize Putaway"}
                                         >
@@ -2016,3 +2203,203 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                     onChange={(e) => {
                                                         const newVal = e.target.value;
                                                         setSerialBuffer(prev => prev.map((u, i) => i === idx ? { ...u, supplierSerialRef: newVal } : u));
+                                                        setSerialErrors([]); // Clear errors on edit
+                                                    }}
+                                                    disabled={isVoided}
+                                                 />
+                                             </td>
+                                             <td className="px-3 py-2 text-center">
+                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(unit.state)}`}>
+                                                     {unit.state}
+                                                 </span>
+                                             </td>
+                                             <td className="px-3 py-2 text-center">
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                                    unit.labelStatus === LabelStatus.PRINTED ? 'bg-green-50 text-green-700 border-green-200' :
+                                                    unit.labelStatus === LabelStatus.VOIDED ? 'bg-red-50 text-red-700 border-red-200' :
+                                                    'bg-slate-50 text-slate-400 border-slate-200'
+                                                }`}>
+                                                    {unit.labelStatus === LabelStatus.NOT_PRINTED ? '-' : unit.labelStatus}
+                                                </span>
+                                             </td>
+                                             <td className="px-3 py-2 text-center flex items-center justify-center gap-2">
+                                                 {nextState && !isVoided && (
+                                                     <button 
+                                                        onClick={() => handleUnitTransitionInModal(idx, nextState)}
+                                                        disabled={!canAdvance}
+                                                        className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] font-bold text-slate-600 hover:bg-white hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                                                        title={`Advance to ${nextState}`}
+                                                     >
+                                                        {nextState === UnitState.VERIFIED ? <ShieldCheck size={10} /> : <ArrowRightCircle size={10} />}
+                                                     </button>
+                                                 )}
+                                                 {canPrint && !isVoided && (
+                                                     <>
+                                                        <button 
+                                                            onClick={() => handleImmediateUnitAction(idx, 'REPRINT')}
+                                                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                            title="Reprint Label"
+                                                        >
+                                                            <RotateCcw size={12} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleImmediateUnitAction(idx, 'VOID')}
+                                                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                            title="Void Label"
+                                                        >
+                                                            <Ban size={12} />
+                                                        </button>
+                                                     </>
+                                                 )}
+                                             </td>
+                                         </tr>
+                                        );
+                                     })}
+                                 </tbody>
+                             </table>
+                         </div>
+                    </div>
+
+                    {/* Validation Errors */}
+                    {serialErrors.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700 space-y-1">
+                            <div className="flex items-center gap-2 font-bold mb-1">
+                                <AlertCircle size={14} /> Validation Failed
+                            </div>
+                            <ul className="list-disc pl-5">
+                                {serialErrors.slice(0, 5).map((err, i) => (
+                                    <li key={i}>{err}</li>
+                                ))}
+                                {serialErrors.length > 5 && <li>...and {serialErrors.length - 5} more.</li>}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+
+                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-lg">
+                    <button 
+                        onClick={() => setSerialEntryLineId(null)}
+                        className="px-4 py-2 text-slate-600 font-bold text-xs hover:bg-slate-200 rounded transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={handleSaveUnits}
+                        className="px-4 py-2 bg-green-600 text-white font-bold text-xs rounded hover:bg-green-700 shadow-sm transition-colors flex items-center gap-2"
+                    >
+                        <Save size={14} /> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+      
+      {/* QC Decision Modal */}
+      {qcLineId && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setQcLineId(null)} />
+            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-lg">
+                    <div className="flex items-center gap-2">
+                        <ShieldCheck className="text-purple-600" size={20} />
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-800">Quality Control Inspection</h3>
+                            <p className="text-xs text-slate-500">
+                                {activeReceipt?.lines.find(l => l.id === qcLineId)?.itemName}
+                            </p>
+                        </div>
+                    </div>
+                    <button onClick={() => setQcLineId(null)} className="text-slate-400 hover:text-slate-600">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {/* Filters */}
+                    <div className="flex gap-2 mb-4">
+                        <button onClick={() => setQcFilter('ALL')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>All</button>
+                        <button onClick={() => setQcFilter('PENDING')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'PENDING' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Pending (Verified)</button>
+                        <button onClick={() => setQcFilter('HOLD')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'HOLD' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}>On Hold</button>
+                        <button onClick={() => setQcFilter('FINAL')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'FINAL' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Finalized</button>
+                    </div>
+
+                    {/* Unit List */}
+                    <div className="border border-slate-200 rounded overflow-hidden">
+                         <table className="w-full text-left text-xs">
+                             <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                                 <tr>
+                                     <th className="px-3 py-2 w-12 text-center">#</th>
+                                     <th className="px-3 py-2">Enterprise Serial</th>
+                                     <th className="px-3 py-2 text-center">Status</th>
+                                     <th className="px-3 py-2 text-center">QC Decision</th>
+                                     <th className="px-3 py-2">Reason / Notes</th>
+                                     <th className="px-3 py-2 text-center">Action</th>
+                                 </tr>
+                             </thead>
+                             <tbody className="divide-y divide-slate-100">
+                                 {qcBuffer.filter(u => {
+                                     if (qcFilter === 'ALL') return true;
+                                     if (qcFilter === 'PENDING') return u.state === UnitState.VERIFIED;
+                                     if (qcFilter === 'HOLD') return u.state === UnitState.QC_HOLD;
+                                     if (qcFilter === 'FINAL') return u.state === UnitState.ACCEPTED || u.state === UnitState.REJECTED;
+                                     return true;
+                                 }).map((unit, idx) => {
+                                    const canAct = canQC; 
+                                    return (
+                                     <tr key={unit.id} className="hover:bg-slate-50">
+                                         <td className="px-3 py-2 text-center text-slate-400">{idx + 1}</td>
+                                         <td className="px-3 py-2 font-mono text-slate-600">{unit.enterpriseSerial}</td>
+                                         <td className="px-3 py-2 text-center">
+                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(unit.state)}`}>
+                                                 {unit.state}
+                                             </span>
+                                         </td>
+                                         <td className="px-3 py-2 text-center font-bold">
+                                             {unit.qcDecision || '-'}
+                                         </td>
+                                         <td className="px-3 py-2 text-slate-500 italic truncate max-w-xs" title={unit.qcReason}>
+                                             {unit.qcReason || '-'}
+                                         </td>
+                                         <td className="px-3 py-2 text-center">
+                                            {(unit.state === UnitState.VERIFIED || unit.state === UnitState.QC_HOLD) && canAct ? (
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <button onClick={() => handleApplyQCDecision(unit.id, 'ACCEPT')} className="p-1 text-slate-300 hover:text-green-600 hover:bg-green-50 rounded" title="Accept"><ThumbsUp size={14} /></button>
+                                                    <button onClick={() => handleApplyQCDecision(unit.id, 'HOLD')} className="p-1 text-slate-300 hover:text-amber-600 hover:bg-amber-50 rounded" title="Hold"><PauseCircle size={14} /></button>
+                                                    <button onClick={() => handleApplyQCDecision(unit.id, 'REJECT')} className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded" title="Reject"><ThumbsDown size={14} /></button>
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-300 text-[10px]">-</span>
+                                            )}
+                                         </td>
+                                     </tr>
+                                    );
+                                 })}
+                                 {qcBuffer.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-400 italic">No units available for inspection.</td></tr>}
+                             </tbody>
+                         </table>
+                    </div>
+                </div>
+
+                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-lg">
+                    <button 
+                        onClick={() => setQcLineId(null)}
+                        className="px-4 py-2 text-slate-600 font-bold text-xs hover:bg-slate-200 rounded transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    {canQC && (
+                        <button 
+                            onClick={handleSaveQC}
+                            className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded hover:bg-purple-700 shadow-sm transition-colors flex items-center gap-2"
+                        >
+                            <Save size={14} /> Commit Decisions
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
