@@ -444,7 +444,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     });
   };
 
-  const Field = ({ label, children }: { label: string, children: React.ReactNode }) => (
+  const Field = ({ label, children }: { label: string, children?: React.ReactNode }) => (
     <div className="space-y-1.5">
       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{label}</label>
       {children}

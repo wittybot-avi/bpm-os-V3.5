@@ -13,8 +13,8 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-// Fix: Explicitly importing and extending Component ensures properties like props and setState are correctly recognized.
-class ErrorBoundary extends Component<Props, State> {
+// Fix: Explicitly importing and extending React.Component ensures properties like props and setState are correctly recognized.
+class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,

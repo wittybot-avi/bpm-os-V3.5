@@ -5,9 +5,17 @@ import { getActiveContext, ActiveContext } from '../utils/activeContext';
 
 interface StageStateBannerProps {
   stageId: string;
+  labelOverride?: string;
+  reasonOverride?: string;
+  nextActionOverride?: string;
 }
 
-export const StageStateBanner: React.FC<StageStateBannerProps> = ({ stageId }) => {
+export const StageStateBanner: React.FC<StageStateBannerProps> = ({ 
+  stageId,
+  labelOverride,
+  reasonOverride,
+  nextActionOverride
+}) => {
   const [context, setContext] = useState<ActiveContext | null>(null);
 
   useEffect(() => {
@@ -57,13 +65,13 @@ export const StageStateBanner: React.FC<StageStateBannerProps> = ({ stageId }) =
       <div className={`px-4 py-2 rounded-md border flex flex-col sm:flex-row sm:items-center justify-between text-xs gap-2 ${getStyle(status.state)} ${context ? 'rounded-tl-none' : 'mt-0'}`}>
         <div className="flex items-center gap-2">
            <Icon size={14} className="shrink-0" />
-           <span className="font-bold uppercase tracking-wider">{stageId} STATE: {status.state}</span>
+           <span className="font-bold uppercase tracking-wider">{stageId} STATE: {labelOverride || status.state}</span>
            <span className="hidden sm:inline opacity-50">|</span>
-           <span className="font-medium opacity-90">{status.reason}</span>
+           <span className="font-medium opacity-90">{reasonOverride || status.reason}</span>
         </div>
         <div className="flex items-center gap-2 opacity-80 sm:text-right">
            <span className="font-bold uppercase text-[10px]">NEXT ACTION:</span>
-           <span className="font-mono">{status.nextAction}</span>
+           <span className="font-mono">{nextActionOverride || status.nextAction}</span>
         </div>
       </div>
     </div>

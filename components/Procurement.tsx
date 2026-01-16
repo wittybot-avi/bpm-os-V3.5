@@ -92,6 +92,23 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   // Guard Logic
   const getAction = (actionId: S2ActionId) => getS2ActionState(role, s2Context, actionId);
 
+  // Derive display values from detailed state
+  const stateLabel = s2Context.procurementStatus.replace('S2_', '').replace(/_/g, ' ');
+  let stateReason = 'Processing';
+  let stateNext = 'Wait';
+
+  switch (s2Context.procurementStatus) {
+    case 'S2_DRAFT': stateReason = 'Drafting PO'; stateNext = 'Submit for Approval'; break;
+    case 'S2_RFQ_ISSUED': stateReason = 'RFQ Sent to Vendor'; stateNext = 'Wait for Response'; break;
+    case 'S2_VENDOR_RESPONSE_RECEIVED': stateReason = 'Vendor Replied'; stateNext = 'Evaluate Commercials'; break;
+    case 'S2_COMMERCIAL_EVALUATION': stateReason = 'Evaluating Terms'; stateNext = 'Submit for Approval'; break;
+    case 'S2_WAITING_APPROVAL': stateReason = 'Pending Mgmt Sign-off'; stateNext = 'Approve PO'; break;
+    case 'S2_APPROVED': stateReason = 'Approved by Mgmt'; stateNext = 'Issue to Vendor'; break;
+    case 'S2_PO_ISSUED': stateReason = 'PO Issued'; stateNext = 'Wait for Acknowledgement'; break;
+    case 'S2_PO_ACKNOWLEDGED': stateReason = 'Vendor Acknowledged'; stateNext = 'Close Cycle'; break;
+    case 'S2_LOCKED': stateReason = 'Cycle Closed'; stateNext = 'Proceed to S3'; break;
+  }
+
   // Action Handlers
   const handleCreatePo = () => {
     setIsSimulating(true);
@@ -100,7 +117,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
       setS2Context(prev => ({ 
         ...prev, 
         activePoCount: prev.activePoCount + 1,
-        procurementStatus: 'RAISING_PO',
+        procurementStatus: 'S2_DRAFT', // Explicitly start at DRAFT
         lastPoCreatedAt: now
       }));
       
@@ -120,7 +137,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     setTimeout(() => {
       setS2Context(prev => ({ 
         ...prev, 
-        procurementStatus: 'WAITING_APPROVAL',
+        procurementStatus: 'S2_WAITING_APPROVAL',
         pendingApprovalsCount: prev.pendingApprovalsCount + 1 
       }));
       
@@ -140,7 +157,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     setTimeout(() => {
       setS2Context(prev => ({ 
         ...prev, 
-        procurementStatus: 'APPROVED',
+        procurementStatus: 'S2_APPROVED',
         pendingApprovalsCount: Math.max(0, prev.pendingApprovalsCount - 1)
       }));
       
@@ -158,8 +175,10 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   const handleIssuePo = () => {
     setIsSimulating(true);
     setTimeout(() => {
-      // Status remains APPROVED or could transition to ISSUED if we had that state.
-      // We will just emit the event to show progress.
+      setS2Context(prev => ({ 
+        ...prev, 
+        procurementStatus: 'S2_PO_ISSUED' 
+      }));
       
       const evt = emitAuditEvent({
         stageId: 'S2',
@@ -177,7 +196,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     setTimeout(() => {
       setS2Context(prev => ({ 
         ...prev, 
-        procurementStatus: 'IDLE'
+        procurementStatus: 'S2_LOCKED' // Final state
       }));
       
       const evt = emitAuditEvent({
@@ -190,6 +209,17 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
       setIsSimulating(false);
     }, 800);
   };
+
+  // Simulating the vendor interaction flow for demo richness
+  useEffect(() => {
+    if (s2Context.procurementStatus === 'S2_PO_ISSUED') {
+      const timer = setTimeout(() => {
+        setS2Context(prev => ({ ...prev, procurementStatus: 'S2_PO_ACKNOWLEDGED' }));
+      }, 3000); // 3s delay to simulate acknowledgement
+      return () => clearTimeout(timer);
+    }
+  }, [s2Context.procurementStatus]);
+
 
   // Navigation Handlers
   const handleNavToS3 = () => {
@@ -218,7 +248,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   const closeCycleState = getAction('CLOSE_PROCUREMENT_CYCLE');
 
   // Logic for Next Step
-  const isReadyForNext = s2Context.procurementStatus === 'APPROVED';
+  const isReadyForNext = s2Context.procurementStatus === 'S2_PO_ACKNOWLEDGED' || s2Context.procurementStatus === 'S2_LOCKED';
 
   // RBAC Access Check
   const hasAccess = 
@@ -272,14 +302,20 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
             <span className="text-slate-300">|</span>
             <span>Pending: {s2Context.pendingApprovalsCount}</span>
             <span className="text-slate-300">|</span>
-            <span className={`font-bold ${s2Context.procurementStatus === 'APPROVED' ? 'text-green-600' : 'text-blue-600'}`}>
-              {s2Context.procurementStatus}
+            <span className={`font-bold ${s2Context.procurementStatus === 'S2_APPROVED' ? 'text-green-600' : 'text-blue-600'}`}>
+              {s2Context.procurementStatus.replace('S2_', '')}
             </span>
           </div>
         </div>
       </div>
 
-      <StageStateBanner stageId="S2" />
+      <StageStateBanner 
+        stageId="S2" 
+        labelOverride={stateLabel}
+        reasonOverride={stateReason}
+        nextActionOverride={stateNext}
+      />
+      
       <PreconditionsPanel stageId="S2" />
 
       {/* Recent Local Activity Panel */}
@@ -312,7 +348,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
             <p className="text-xs text-blue-700 mt-1 max-w-lg">
               {isReadyForNext 
                 ? "Procurement cycle complete. Proceed to Inbound Receipt (S3) to process incoming materials." 
-                : "Procurement active. Complete approval cycle to unlock Inbound Logistics."}
+                : "Procurement active. Complete approval and issuance cycle to unlock Inbound Logistics."}
             </p>
           </div>
         </div>
@@ -332,7 +368,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                <Truck size={14} /> Go to S3: Inbound
              </button>
              {!isReadyForNext && (
-                <span className="text-[9px] text-red-500 mt-1 font-medium">Wait for Approval</span>
+                <span className="text-[9px] text-red-500 mt-1 font-medium">Wait for PO Ack</span>
              )}
            </div>
         </div>
@@ -346,7 +382,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
             </div>
             <div>
                <h3 className="font-bold text-slate-800 text-sm">Active Order Cycle</h3>
-               <p className="text-xs text-slate-500">Status: <span className="font-bold">{s2Context.procurementStatus}</span></p>
+               <p className="text-xs text-slate-500">Status: <span className="font-bold">{stateLabel}</span></p>
             </div>
          </div>
 
@@ -400,7 +436,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                             onClick={handleCloseCycle}
                             className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-slate-200 border border-slate-700 rounded hover:bg-slate-700 text-xs font-bold transition-colors"
                         >
-                            <RotateCcw size={14} /> Reset
+                            <RotateCcw size={14} /> Close
                         </button>
                     </div>
                 </>

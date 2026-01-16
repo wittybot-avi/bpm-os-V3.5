@@ -3,12 +3,23 @@
  * Defines the data shape for the Procurement context.
  */
 
+export type S2State =
+  | 'S2_DRAFT'
+  | 'S2_RFQ_ISSUED'
+  | 'S2_VENDOR_RESPONSE_RECEIVED'
+  | 'S2_COMMERCIAL_EVALUATION'
+  | 'S2_WAITING_APPROVAL'
+  | 'S2_APPROVED'
+  | 'S2_PO_ISSUED'
+  | 'S2_PO_ACKNOWLEDGED'
+  | 'S2_LOCKED';
+
 export interface S2Context {
   activePoCount: number;
   pendingApprovalsCount: number;
   vendorCatalogCount: number;
   lastPoCreatedAt: string;
-  procurementStatus: 'IDLE' | 'RAISING_PO' | 'WAITING_APPROVAL' | 'APPROVED';
+  procurementStatus: S2State;
   blueprintDependency: 'OK' | 'BLOCKED';
 }
 
@@ -21,6 +32,6 @@ export const getMockS2Context = (): S2Context => ({
   pendingApprovalsCount: 2,
   vendorCatalogCount: 14,
   lastPoCreatedAt: '2026-01-16 11:45 IST',
-  procurementStatus: 'WAITING_APPROVAL',
+  procurementStatus: 'S2_WAITING_APPROVAL',
   blueprintDependency: 'OK'
 });

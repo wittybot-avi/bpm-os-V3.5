@@ -24,7 +24,7 @@ export interface ActionState {
  * S2 Action Guard
  * Determines if a specific action is allowed based on Role and Context.
  * 
- * Flow: IDLE -> RAISING_PO -> WAITING_APPROVAL -> APPROVED -> ISSUED/CLOSED
+ * Flow: DRAFT -> (RFQ/EVAL) -> WAITING_APPROVAL -> APPROVED -> ISSUED -> LOCKED
  */
 export const getS2ActionState = (role: UserRole, context: S2Context, action: S2ActionId): ActionState => {
   const isAdmin = role === UserRole.SYSTEM_ADMIN;
@@ -39,36 +39,49 @@ export const getS2ActionState = (role: UserRole, context: S2Context, action: S2A
   switch (action) {
     case 'CREATE_PO':
       if (!isProcurement) return { enabled: false, reason: 'Requires Procurement Role' };
-      // Can start a PO if IDLE or RAISING (to edit)
-      if (context.procurementStatus !== 'IDLE' && context.procurementStatus !== 'RAISING_PO') {
+      // Can start a PO if IDLE (LOCKED/initial) or Draft/RFQ stages (to edit)
+      if (
+        context.procurementStatus === 'S2_WAITING_APPROVAL' || 
+        context.procurementStatus === 'S2_APPROVED' || 
+        context.procurementStatus === 'S2_PO_ISSUED' ||
+        context.procurementStatus === 'S2_PO_ACKNOWLEDGED'
+      ) {
          return { enabled: false, reason: 'PO already in workflow' };
       }
       return { enabled: true };
 
     case 'SUBMIT_PO_FOR_APPROVAL':
       if (!isProcurement) return { enabled: false, reason: 'Requires Procurement Role' };
-      if (context.procurementStatus !== 'RAISING_PO') {
+      if (
+        context.procurementStatus !== 'S2_DRAFT' && 
+        context.procurementStatus !== 'S2_RFQ_ISSUED' &&
+        context.procurementStatus !== 'S2_VENDOR_RESPONSE_RECEIVED' &&
+        context.procurementStatus !== 'S2_COMMERCIAL_EVALUATION'
+      ) {
         return { enabled: false, reason: 'No Active Draft PO' };
       }
       return { enabled: true };
 
     case 'APPROVE_PO':
       if (!isManagement) return { enabled: false, reason: 'Requires Management Role' };
-      if (context.procurementStatus !== 'WAITING_APPROVAL') {
+      if (context.procurementStatus !== 'S2_WAITING_APPROVAL') {
         return { enabled: false, reason: 'No PO pending approval' };
       }
       return { enabled: true };
 
     case 'ISSUE_PO_TO_VENDOR':
       if (!isProcurement) return { enabled: false, reason: 'Requires Procurement Role' };
-      if (context.procurementStatus !== 'APPROVED') {
+      if (context.procurementStatus !== 'S2_APPROVED') {
         return { enabled: false, reason: 'PO not approved' };
       }
       return { enabled: true };
 
     case 'CLOSE_PROCUREMENT_CYCLE':
       if (!isManagement) return { enabled: false, reason: 'Requires Management Role' };
-      if (context.procurementStatus !== 'APPROVED') {
+      if (
+        context.procurementStatus !== 'S2_PO_ISSUED' && 
+        context.procurementStatus !== 'S2_PO_ACKNOWLEDGED'
+      ) {
         return { enabled: false, reason: 'Cycle incomplete' };
       }
       return { enabled: true };

@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S2-STATE-PP-01** | Feature | S2 State Machine | **STABLE** | Introduced authoritative S2 state machine with states (DRAFT -> LOCKED). Updated S2 Contract, Guards, and UI to reflect granular procurement status. Enhanced StageStateBanner to support overrides. | 2026-02-01 10:30 (IST) |
 | **V35-S0-HOTFIX-PP-35** | Hotfix | Effective Capability Flags | **STABLE** | Implements hierarchical capability evaluation (Line > Plant > Global). Capability card now displays explicit "Source" labeling. Toggles on the landing page intelligently create/update overrides based on the active organizational context. | 2026-01-30 23:59 (IST) |
 | **V35-S0-HOTFIX-PP-34** | Hotfix | User Matrix Sync | **STABLE** | Enhances User Matrix card with total counts, role-based badges, and immediate reactivity to CRUD events in the management drawer. Fixed infinite loading indicators. | 2026-01-30 23:45 (IST) |
 | **V35-S0-HOTFIX-PP-33** | Hotfix | Compliance Card Chips & Binding | **STABLE** | Improves S0 Compliance card rendering with chip lists and overflow (3 + N) logic. Adds "Auto-bind to current context" to the Regulatory management form for immediate visibility. Synchronizes frameworks and SOPs with active organizational context. | 2026-01-30 23:30 (IST) |

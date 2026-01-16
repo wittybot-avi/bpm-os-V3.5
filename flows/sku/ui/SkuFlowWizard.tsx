@@ -319,7 +319,15 @@ export const SkuFlowWizard: React.FC<SkuFlowWizardProps> = ({ instanceId, onExit
     return "Initialize SKU definition.";
   }, [model.state, model.role]);
 
-  const Field = ({ label, id, error, children, icon: Icon }: { label: string, id: string, error?: string, children: React.ReactNode, icon?: React.ElementType }) => (
+  interface FieldProps {
+    label: string;
+    id: string;
+    error?: string;
+    children?: React.ReactNode;
+    icon?: React.ElementType;
+  }
+
+  const Field: React.FC<FieldProps> = ({ label, id, error, children, icon: Icon }) => (
     <div className="space-y-1.5">
       <label htmlFor={id} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
         {Icon && <Icon size={10} className="text-slate-400" />}
