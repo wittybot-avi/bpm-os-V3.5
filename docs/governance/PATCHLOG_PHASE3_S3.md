@@ -8,4 +8,5 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S3-PP-02** | Foundation | S3 State Machine | **STABLE** | Implemented pure functional state machine for Receipt transitions (Draft -> Closed). Added `transitionReceipt` reducer and updated guards. | 2026-02-02 10:30 (IST) |
 | **V35-S3-PP-01** | Foundation | S3 Type System | **STABLE** | Created foundational contracts for Receipts, Lines, and Units in `stages/s3/contracts`. Added default generators and guard placeholders. No UI impact. | 2026-02-02 10:00 (IST) |
