@@ -8,5 +8,6 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S3-PP-03** | Foundation | S3 Sim Store | **STABLE** | Implemented persistent simulation store for S3 Receipts (`sim/api/s3/s3Inbound.store.ts`) with seed data and localStorage support. Added API-like handler wrappers. | 2026-02-02 11:00 (IST) |
 | **V35-S3-PP-02** | Foundation | S3 State Machine | **STABLE** | Implemented pure functional state machine for Receipt transitions (Draft -> Closed). Added `transitionReceipt` reducer and updated guards. | 2026-02-02 10:30 (IST) |
 | **V35-S3-PP-01** | Foundation | S3 Type System | **STABLE** | Created foundational contracts for Receipts, Lines, and Units in `stages/s3/contracts`. Added default generators and guard placeholders. No UI impact. | 2026-02-02 10:00 (IST) |
