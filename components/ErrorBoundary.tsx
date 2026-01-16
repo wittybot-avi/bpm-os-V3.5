@@ -1,4 +1,3 @@
-
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { ShieldAlert, RefreshCw, LayoutDashboard, FileText, Copy, Terminal } from 'lucide-react';
 import { NavView, PATCH_ID } from '../types';
@@ -14,11 +13,11 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-class ErrorBoundary extends Component<Props, State> {
+export default class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
-    errorInfo: null,
+    errorInfo: null
   };
 
   public static getDerivedStateFromError(error: Error): State {
@@ -26,117 +25,104 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("BPM-OS Runtime Error:", error, errorInfo);
-    this.setState({ errorInfo });
+    console.error("Uncaught error:", error, errorInfo);
+    this.setState({
+      error: error,
+      errorInfo: errorInfo
+    });
   }
 
-  private handleReload = () => {
-    window.location.reload();
+  private handleReset = () => {
+    this.setState({ hasError: false, error: null, errorInfo: null });
   };
 
-  private handleDashboard = () => {
-    const { onNavigate } = this.props;
-    if (onNavigate) {
-      onNavigate('dashboard');
-      this.setState({ hasError: false, error: null, errorInfo: null });
+  private handleGoHome = () => {
+    this.handleReset();
+    if (this.props.onNavigate) {
+        this.props.onNavigate('dashboard');
     } else {
-      window.location.reload();
+        window.location.reload();
     }
-  };
-
-  private handleDocs = () => {
-    const { onNavigate } = this.props;
-    if (onNavigate) {
-      onNavigate('documentation');
-      this.setState({ hasError: false, error: null, errorInfo: null });
-    }
-  };
-
-  private copyErrorDetails = () => {
-    const { error, errorInfo } = this.state;
-    const details = `BPM-OS ERROR REPORT\nPatch: ${PATCH_ID}\nTime: ${new Date().toISOString()}\n\nMessage: ${error?.message}\n\nStack:\n${errorInfo?.componentStack || error?.stack || 'No stack trace available.'}`;
-    navigator.clipboard.writeText(details).then(() => {
-        alert("Error details copied to clipboard.");
-    });
-  };
+  }
 
   public render() {
-    const { hasError, error } = this.state;
-    const { children } = this.props;
-
-    if (hasError) {
+    if (this.state.hasError) {
       return (
-        <div className="h-screen w-full flex items-center justify-center bg-slate-50 text-slate-900 p-6">
-          <div className="max-w-xl w-full bg-white shadow-2xl rounded-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
+          <div className="max-w-3xl w-full bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+            <div className="bg-red-50 p-6 border-b border-red-100 flex items-start gap-4">
+                <div className="p-3 bg-red-100 rounded-full text-red-600 shrink-0">
+                    <ShieldAlert size={32} />
+                </div>
+                <div>
+                    <h1 className="text-xl font-bold text-red-900">System Application Error</h1>
+                    <p className="text-red-700 mt-1">
+                        The application encountered an unexpected state and has suspended execution for safety.
+                    </p>
+                </div>
+            </div>
             
-            {/* Header */}
-            <div className="bg-red-50 border-b border-red-100 p-6 flex items-center gap-4">
-              <div className="p-3 bg-red-100 rounded-full text-red-600">
-                 <ShieldAlert size={32} />
-              </div>
-              <div>
-                 <h1 className="text-xl font-bold text-red-900">System Encountered an Error</h1>
-                 <p className="text-sm text-red-700 mt-1">The application has caught a runtime exception. This incident has been logged locally.</p>
-              </div>
+            <div className="p-6 space-y-6">
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-bold text-slate-700 uppercase tracking-wider">
+                        <Terminal size={14} /> Diagnostic Trace
+                    </div>
+                    <div className="bg-slate-900 text-slate-200 p-4 rounded-lg font-mono text-xs overflow-auto max-h-64 border border-slate-700 relative group">
+                        <button 
+                            onClick={() => navigator.clipboard.writeText(this.state.error?.toString() + "\n" + this.state.errorInfo?.componentStack)}
+                            className="absolute top-2 right-2 p-1.5 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Copy Stack Trace"
+                        >
+                            <Copy size={12} />
+                        </button>
+                        <div className="text-red-400 font-bold mb-2">
+                            {this.state.error?.toString()}
+                        </div>
+                        <div className="opacity-75 whitespace-pre-wrap">
+                            {this.state.errorInfo?.componentStack}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="p-3 bg-slate-50 rounded border border-slate-100">
+                        <span className="text-slate-400 text-xs font-bold uppercase block mb-1">Patch Version</span>
+                        <span className="font-mono text-slate-700">{PATCH_ID}</span>
+                    </div>
+                    <div className="p-3 bg-slate-50 rounded border border-slate-100">
+                        <span className="text-slate-400 text-xs font-bold uppercase block mb-1">Session Timestamp</span>
+                        <span className="font-mono text-slate-700">{new Date().toISOString()}</span>
+                    </div>
+                </div>
             </div>
 
-            {/* Actions */}
-            <div className="p-6 bg-white space-y-4">
-               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <button
-                    onClick={this.handleReload}
-                    className="flex items-center justify-center gap-2 bg-slate-900 text-white px-4 py-3 rounded-lg hover:bg-slate-800 transition-colors font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2"
-                  >
-                    <RefreshCw size={18} />
-                    Reload Application
-                  </button>
-                  
-                  <button
-                    onClick={this.handleDashboard}
-                    className="flex items-center justify-center gap-2 bg-brand-50 text-brand-700 border border-brand-200 px-4 py-3 rounded-lg hover:bg-brand-100 transition-colors font-medium focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2"
-                  >
-                    <LayoutDashboard size={18} />
-                    Return to Dashboard
-                  </button>
-               </div>
-
-               <button
-                  onClick={this.handleDocs}
-                  className="w-full flex items-center justify-center gap-2 text-slate-500 hover:text-slate-800 py-2 text-sm font-medium transition-colors"
-               >
-                  <FileText size={16} />
-                  Consult System Documentation
-               </button>
+            <div className="bg-slate-50 p-6 border-t border-slate-200 flex justify-between items-center">
+                <div className="flex gap-3">
+                    <button 
+                        onClick={this.handleReset}
+                        className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 rounded-lg text-slate-700 font-medium hover:bg-slate-50 transition-colors shadow-sm"
+                    >
+                        <RefreshCw size={16} />
+                        Try Again
+                    </button>
+                    <button 
+                        onClick={this.handleGoHome}
+                        className="flex items-center gap-2 px-4 py-2 bg-brand-600 text-white border border-brand-700 rounded-lg font-medium hover:bg-brand-700 transition-colors shadow-sm"
+                    >
+                        <LayoutDashboard size={16} />
+                        Return to Dashboard
+                    </button>
+                </div>
+                <button className="flex items-center gap-2 text-slate-500 hover:text-slate-800 text-sm font-medium transition-colors">
+                    <FileText size={16} />
+                    Report Issue
+                </button>
             </div>
-
-            {/* Technical Details */}
-            <div className="bg-slate-50 p-6 border-t border-slate-200">
-               <div className="flex justify-between items-center mb-2">
-                  <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
-                     <Terminal size={12} /> Debug Context
-                  </span>
-                  <button 
-                    onClick={this.copyErrorDetails}
-                    className="text-xs flex items-center gap-1 text-brand-600 hover:text-brand-800 font-medium"
-                  >
-                     <Copy size={12} /> Copy Details
-                  </button>
-               </div>
-               <div className="bg-slate-900 rounded p-3 text-xs font-mono text-red-300 overflow-auto max-h-32 border border-slate-700 shadow-inner">
-                  {error?.toString()}
-               </div>
-               <div className="mt-2 text-[10px] text-slate-400 text-right">
-                  Build: {PATCH_ID}
-               </div>
-            </div>
-
           </div>
         </div>
       );
     }
 
-    return children;
+    return this.props.children;
   }
 }
-
-export default ErrorBoundary;

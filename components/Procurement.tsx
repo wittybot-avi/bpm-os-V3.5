@@ -39,7 +39,11 @@ import {
   Award,
   Server,
   UserCog,
-  User
+  User,
+  Paperclip,
+  Save,
+  Edit,
+  Download
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -69,10 +73,14 @@ interface Supplier {
 interface CommercialTerm {
   id: string;
   skuRef: string;
+  supplierId: string;
   moq: string;
   leadTime: string;
   priceBand: string;
+  validFrom: string;
+  validTo: string;
   contractStatus: 'Active' | 'Draft' | 'Expired';
+  attachments: string[]; // Mocked file names
 }
 
 const SUPPLIERS: Supplier[] = [
@@ -157,9 +165,31 @@ const SKU_TYPE_SUPPLIER_MAP: Record<string, string[]> = {
   'MODULE': ['Cells', 'Mechanical'], // Could be either depending on sub-assembly
 };
 
-const TERMS: CommercialTerm[] = [
-  { id: 'tm-001', skuRef: 'BP-LFP-48V-2.5K', moq: '5,000 Units', leadTime: '12 Weeks', priceBand: '$125 - $140 / kWh', contractStatus: 'Active' },
-  { id: 'tm-002', skuRef: 'BP-LTO-24V-1K', moq: '1,000 Units', leadTime: '16 Weeks', priceBand: '$350 - $380 / kWh', contractStatus: 'Draft' },
+const INITIAL_TERMS: CommercialTerm[] = [
+  { 
+    id: 'tm-001', 
+    skuRef: 'BP-LFP-48V-2.5K', 
+    supplierId: 'sup-001',
+    moq: '5,000 Units', 
+    leadTime: '12 Weeks', 
+    priceBand: '$125 - $140 / kWh', 
+    validFrom: '2026-01-01',
+    validTo: '2026-12-31',
+    contractStatus: 'Active',
+    attachments: ['MSA_2026_Signed.pdf']
+  },
+  { 
+    id: 'tm-002', 
+    skuRef: 'BP-LTO-24V-1K', 
+    supplierId: 'sup-003',
+    moq: '1,000 Units', 
+    leadTime: '16 Weeks', 
+    priceBand: '$350 - $380 / kWh', 
+    validFrom: '2026-02-01',
+    validTo: '2026-06-30',
+    contractStatus: 'Draft',
+    attachments: []
+  },
 ];
 
 interface ProcurementProps {
@@ -182,6 +212,10 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   const [availableSkus, setAvailableSkus] = useState<SkuMasterData[]>([]);
   const [editingSkuId, setEditingSkuId] = useState<string | null>(null);
   
+  // Commercial Terms State
+  const [commercialTerms, setCommercialTerms] = useState<CommercialTerm[]>(INITIAL_TERMS);
+  const [editingTerm, setEditingTerm] = useState<Partial<CommercialTerm> | null>(null);
+
   // Drill-down State
   const [viewingSupplier, setViewingSupplier] = useState<Supplier | null>(null);
   
@@ -391,6 +425,63 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   const handleInspectSupplier = (e: React.MouseEvent, supplier: Supplier) => {
     e.stopPropagation();
     setViewingSupplier(supplier);
+  };
+
+  // --- Terms CRUD Handlers ---
+
+  const handleCreateTerm = () => {
+    setEditingTerm({
+      id: `tm-${Date.now()}`,
+      skuRef: availableSkus[0]?.skuCode || '',
+      supplierId: SUPPLIERS[0].id,
+      moq: '1000 Units',
+      leadTime: '4 Weeks',
+      priceBand: '$100 - $110 / Unit',
+      validFrom: new Date().toISOString().split('T')[0],
+      validTo: new Date(new Date().setFullYear(new Date().getFullYear() + 1)).toISOString().split('T')[0],
+      contractStatus: 'Draft',
+      attachments: []
+    });
+  };
+
+  const handleEditTerm = (term: CommercialTerm) => {
+    setEditingTerm({ ...term });
+  };
+
+  const handleDeleteTerm = (id: string) => {
+    setCommercialTerms(prev => prev.filter(t => t.id !== id));
+  };
+
+  const handleSaveTerm = () => {
+    if (!editingTerm) return;
+    setCommercialTerms(prev => {
+      const idx = prev.findIndex(t => t.id === editingTerm.id);
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = editingTerm as CommercialTerm;
+        return updated;
+      }
+      return [...prev, editingTerm as CommercialTerm];
+    });
+    setEditingTerm(null);
+  };
+
+  const handleAddAttachment = () => {
+    const name = window.prompt("Simulate File Upload\nEnter attachment name (e.g. Contract.pdf):");
+    if (name && editingTerm) {
+      setEditingTerm(prev => ({
+        ...prev,
+        attachments: [...(prev?.attachments || []), name]
+      }));
+    }
+  };
+
+  const handleRemoveAttachment = (name: string) => {
+    if (!editingTerm) return;
+    setEditingTerm(prev => ({
+      ...prev,
+      attachments: prev?.attachments?.filter(f => f !== name)
+    }));
   };
 
   // --- Core Action Handlers ---
@@ -1214,7 +1305,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
         </div>
 
         {/* Right Col: Summary & Terms */}
-        <div className="col-span-4 bg-white rounded-lg shadow-sm border border-industrial-border flex flex-col overflow-hidden">
+        <div className="col-span-4 bg-white rounded-lg shadow-sm border border-industrial-border flex flex-col overflow-hidden relative">
           <div className="flex border-b border-slate-100 bg-slate-50">
              <button 
                 onClick={() => setRightTab('LINES')}
@@ -1230,7 +1321,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
              </button>
           </div>
 
-          <div className="overflow-y-auto flex-1 p-4 space-y-4 custom-scrollbar">
+          <div className="overflow-y-auto flex-1 p-4 space-y-4 custom-scrollbar bg-white">
              {rightTab === 'LINES' && (
                 <div className="flex flex-col h-full">
                   <div className="space-y-3 flex-1">
@@ -1291,12 +1382,29 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                 </div>
              )}
 
-             {rightTab === 'TERMS' && (
+             {rightTab === 'TERMS' && !editingTerm && (
                 <>
-                    {TERMS.map((term) => (
-                    <div key={term.id} className="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-xs font-bold text-slate-500 uppercase">Active Contracts</h3>
+                      <button onClick={handleCreateTerm} className="text-[10px] flex items-center gap-1 text-brand-600 font-bold hover:text-brand-800">
+                        <Plus size={12} /> New Term
+                      </button>
+                    </div>
+                    {commercialTerms.length === 0 ? (
+                      <div className="text-center py-8 text-slate-400 text-xs italic">
+                        No commercial terms defined.
+                      </div>
+                    ) : commercialTerms.map((term) => (
+                    <div key={term.id} className="border border-slate-200 rounded-lg p-4 bg-slate-50 relative group">
+                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                           <button onClick={() => handleEditTerm(term)} className="p-1 hover:bg-slate-200 rounded text-slate-500"><Edit size={12}/></button>
+                           <button onClick={() => handleDeleteTerm(term.id)} className="p-1 hover:bg-red-100 text-red-500 rounded"><Trash2 size={12}/></button>
+                        </div>
                         <div className="flex justify-between items-start mb-3">
-                            <span className="text-xs font-mono font-bold text-slate-500">{term.skuRef}</span>
+                            <div className="flex flex-col">
+                              <span className="text-xs font-mono font-bold text-slate-700">{term.skuRef}</span>
+                              <span className="text-[10px] text-slate-500">{SUPPLIERS.find(s=>s.id === term.supplierId)?.name}</span>
+                            </div>
                             <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase border ${
                             term.contractStatus === 'Active' ? 'bg-green-50 text-green-700 border-green-200' :
                             term.contractStatus === 'Draft' ? 'bg-slate-50 text-slate-600 border-slate-200' :
@@ -1321,6 +1429,10 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                             </div>
                             </div>
                         </div>
+                        <div className="mt-3 pt-2 border-t border-slate-200 flex justify-between items-center text-[10px] text-slate-400">
+                           <span>Valid: {term.validFrom} - {term.validTo}</span>
+                           {term.attachments.length > 0 && <Paperclip size={12} className="text-slate-500" />}
+                        </div>
                     </div>
                     ))}
                     
@@ -1329,6 +1441,99 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                     <p>Commercial terms displayed are for demonstration purposes. Actual pricing is retrieved securely from the ERP backend (mocked).</p>
                     </div>
                 </>
+             )}
+
+             {rightTab === 'TERMS' && editingTerm && (
+               <div className="flex flex-col h-full animate-in slide-in-from-right duration-200">
+                 <div className="flex justify-between items-center mb-4 border-b border-slate-100 pb-2">
+                   <h3 className="font-bold text-slate-700 text-sm">
+                     {editingTerm.id?.startsWith('tm-') ? 'Edit Term' : 'New Term'}
+                   </h3>
+                   <button onClick={() => setEditingTerm(null)} className="text-slate-400 hover:text-slate-600"><X size={16}/></button>
+                 </div>
+                 
+                 <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">SKU</label>
+                      <select 
+                        className="w-full text-xs p-2 rounded border border-slate-300 bg-white"
+                        value={editingTerm.skuRef}
+                        onChange={(e) => setEditingTerm(prev => ({ ...prev, skuRef: e.target.value }))}
+                      >
+                         <option value="">Select SKU</option>
+                         {availableSkus.map(s => <option key={s.skuCode} value={s.skuCode}>{s.skuCode}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Supplier</label>
+                      <select 
+                        className="w-full text-xs p-2 rounded border border-slate-300 bg-white"
+                        value={editingTerm.supplierId}
+                        onChange={(e) => setEditingTerm(prev => ({ ...prev, supplierId: e.target.value }))}
+                      >
+                         {SUPPLIERS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Status</label>
+                      <select 
+                        className="w-full text-xs p-2 rounded border border-slate-300 bg-white"
+                        value={editingTerm.contractStatus}
+                        onChange={(e) => setEditingTerm(prev => ({ ...prev, contractStatus: e.target.value as any }))}
+                      >
+                         <option value="Draft">Draft</option>
+                         <option value="Active">Active</option>
+                         <option value="Expired">Expired</option>
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                       <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Price Band</label>
+                          <input type="text" className="w-full text-xs p-2 rounded border border-slate-300" value={editingTerm.priceBand} onChange={(e) => setEditingTerm(prev => ({...prev, priceBand: e.target.value}))} />
+                       </div>
+                       <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">MOQ</label>
+                          <input type="text" className="w-full text-xs p-2 rounded border border-slate-300" value={editingTerm.moq} onChange={(e) => setEditingTerm(prev => ({...prev, moq: e.target.value}))} />
+                       </div>
+                    </div>
+                    <div>
+                        <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Lead Time</label>
+                        <input type="text" className="w-full text-xs p-2 rounded border border-slate-300" value={editingTerm.leadTime} onChange={(e) => setEditingTerm(prev => ({...prev, leadTime: e.target.value}))} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                       <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Valid From</label>
+                          <input type="date" className="w-full text-xs p-2 rounded border border-slate-300" value={editingTerm.validFrom} onChange={(e) => setEditingTerm(prev => ({...prev, validFrom: e.target.value}))} />
+                       </div>
+                       <div>
+                          <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Valid To</label>
+                          <input type="date" className="w-full text-xs p-2 rounded border border-slate-300" value={editingTerm.validTo} onChange={(e) => setEditingTerm(prev => ({...prev, validTo: e.target.value}))} />
+                       </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                       <div className="flex justify-between items-center mb-2">
+                          <label className="text-[10px] uppercase font-bold text-slate-500">Attachments</label>
+                          <button onClick={handleAddAttachment} className="text-[10px] text-brand-600 font-bold hover:underline flex items-center gap-1"><Paperclip size={10} /> Add</button>
+                       </div>
+                       <div className="space-y-1">
+                          {editingTerm.attachments && editingTerm.attachments.length > 0 ? (
+                            editingTerm.attachments.map((file, i) => (
+                              <div key={i} className="flex justify-between items-center text-xs bg-white p-1.5 rounded border border-slate-100">
+                                 <span className="truncate max-w-[150px]">{file}</span>
+                                 <button onClick={() => handleRemoveAttachment(file)} className="text-red-400 hover:text-red-600"><X size={12}/></button>
+                              </div>
+                            ))
+                          ) : <span className="text-[10px] text-slate-400 italic">No files attached.</span>}
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="pt-4 mt-auto flex gap-2">
+                    <button onClick={() => setEditingTerm(null)} className="flex-1 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded border border-transparent hover:border-slate-200">Cancel</button>
+                    <button onClick={handleSaveTerm} className="flex-1 py-2 bg-brand-600 text-white rounded text-xs font-bold hover:bg-brand-700 flex items-center justify-center gap-2 shadow-sm"><Save size={14}/> Save Term</button>
+                 </div>
+               </div>
              )}
           </div>
         </div>
