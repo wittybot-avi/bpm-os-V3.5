@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState, useContext } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2 } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
-import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions } from '../stages/s3/contracts';
+import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units } from '../stages/s3/contracts';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
 import { s3ListOpenOrdersFromS2, S3MockOrder, s3ListSuppliers, S3Supplier } from '../sim/api/s3/s3S2Adapter';
 
@@ -35,6 +35,9 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   // Edit Buffers
   const [evidenceBuffer, setEvidenceBuffer] = useState<Partial<S3Receipt>>({});
   const [lineBuffers, setLineBuffers] = useState<Record<string, Partial<S3ReceiptLine>>>({});
+
+  // Serial Generation State
+  const [genPanel, setGenPanel] = useState<{ lineId: string, mode: 'RANGE' | 'POOL', count: number } | null>(null);
 
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -75,6 +78,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           });
           setLineBuffers(initialLines);
           setValidationResult(null); // Clear validation when switching receipts
+          setGenPanel(null);
       }
   }, [activeReceipt]);
 
@@ -265,7 +269,6 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       } as S3Receipt;
 
       s3UpsertReceipt(updatedReceipt);
-      // Invalidate previous validation on data change
       setValidationResult(null); 
       setRefreshKey(k => k + 1);
   };
@@ -307,12 +310,62 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       setRefreshKey(k => k + 1);
   };
 
+  const handleOpenGeneration = (lineId: string, currentUnits: number, qtyReceived: number) => {
+      setGenPanel({
+          lineId,
+          mode: 'RANGE',
+          count: Math.max(0, qtyReceived - currentUnits)
+      });
+  };
+
+  const handleConfirmGeneration = () => {
+      if (!activeReceipt || !genPanel) return;
+
+      const line = activeReceipt.lines.find(l => l.id === genPanel.lineId);
+      if (!line) return;
+
+      // Start sequence could be managed properly, for now using a random seed based on line count
+      const startSeq = (line.units?.length || 0) + 1000 + Math.floor(Math.random() * 5000);
+      const newUnits = generateS3Units(line.id, line.category, genPanel.count, startSeq, genPanel.mode);
+
+      const updatedLines = activeReceipt.lines.map(l => {
+          if (l.id === genPanel.lineId) {
+              return {
+                  ...l,
+                  units: [...(l.units || []), ...newUnits]
+              };
+          }
+          return l;
+      });
+
+      const updatedReceipt = {
+          ...activeReceipt,
+          lines: updatedLines,
+          audit: [
+              {
+                  id: `aud-${Date.now()}`,
+                  ts: new Date().toISOString(),
+                  actorRole: role,
+                  actorLabel: 'User',
+                  eventType: 'SERIALS_GENERATED',
+                  refType: 'LINE',
+                  refId: genPanel.lineId,
+                  message: `Generated ${genPanel.count} serials (${genPanel.mode})`
+              },
+              ...activeReceipt.audit
+          ]
+      } as S3Receipt;
+
+      s3UpsertReceipt(updatedReceipt);
+      setGenPanel(null);
+      setRefreshKey(k => k + 1);
+  };
+
   const handleValidate = () => {
       if (!activeReceipt) return;
       const result = validateReceipt(activeReceipt, role);
       setValidationResult(result);
       
-      // Log validation event
       const updatedReceipt = {
           ...activeReceipt,
           audit: [
@@ -337,8 +390,6 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const handleAdvanceState = () => {
       if (!activeReceipt || !validationResult?.ok) return;
       
-      // Determine next state based on allowed transitions
-      // Simplified: Just take the first allowed next state for this demo
       const allowed = allowedReceiptTransitions[activeReceipt.state];
       if (!allowed || allowed.length === 0) return;
       
@@ -385,7 +436,6 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const allowedNext = activeReceipt ? allowedReceiptTransitions[activeReceipt.state] : [];
   const nextStateLabel = allowedNext && allowedNext.length > 0 ? getReceiptNextActions(activeReceipt.state) : null;
 
-  // Split lines for rendering
   const trackableLines = activeReceipt?.lines.filter(l => l.trackability === ItemTrackability.TRACKABLE) || [];
   const nonTrackableLines = activeReceipt?.lines.filter(l => l.trackability === ItemTrackability.NON_TRACKABLE) || [];
 
@@ -393,6 +443,8 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
     const buffer = lineBuffers[line.id] || {};
     const isTrackable = line.trackability === ItemTrackability.TRACKABLE;
     const hasError = validationResult?.errors.some(e => e.refId === line.id);
+    const unitsGenerated = line.units?.length || 0;
+    const isGenOpen = genPanel?.lineId === line.id;
     
     return (
         <div key={line.id} className={`p-3 border rounded-lg bg-white shadow-sm ${hasError ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`}>
@@ -402,7 +454,6 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                         <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase border ${getCategoryColor(line.category)}`}>
                             {line.category}
                         </span>
-                        {/* Admin Toggle for Trackability */}
                         <button 
                            onClick={() => handleToggleTrackability(line.id)}
                            disabled={!isAdmin}
@@ -432,7 +483,6 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                 </div>
             </div>
             
-            {/* Lot Info & Qty Edit Section */}
             <div className="mt-3 pt-3 border-t border-slate-100">
                 <div className="grid grid-cols-4 gap-2 items-end">
                     <div className="col-span-2">
@@ -471,25 +521,59 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                         )}
                     </div>
                 </div>
-                {/* Advanced Fields (Mfg Date) - Optional */}
+                
                 {isTrackable && (
-                   <div className="grid grid-cols-2 gap-2 mt-2">
-                      <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Mfg Date</label>
-                          <input 
-                              type="date"
-                              className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500"
-                              value={buffer.mfgDate || ''}
-                              onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], mfgDate: e.target.value}}))}
-                              disabled={!canEdit}
-                          />
+                   <div className="mt-3 bg-slate-50 rounded border border-slate-200 p-2">
+                      <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-2">
+                              <Barcode size={14} className="text-slate-500" />
+                              <span className="text-xs font-bold text-slate-600">Serials: {unitsGenerated} / {buffer.qtyReceived}</span>
+                          </div>
+                          {buffer.qtyReceived > unitsGenerated && !isGenOpen && (
+                             <button 
+                               onClick={() => handleOpenGeneration(line.id, unitsGenerated, buffer.qtyReceived)}
+                               className="bg-brand-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm hover:bg-brand-700 flex items-center gap-1"
+                             >
+                                <Plus size={10} /> Generate
+                             </button>
+                          )}
                       </div>
-                   </div>
-                )}
-                {/* Hint for Trackable */}
-                {isTrackable && buffer.qtyReceived > 0 && (
-                   <div className="mt-2 text-[10px] text-amber-600 flex items-center gap-1 bg-amber-50 px-2 py-1 rounded">
-                      <ScanBarcode size={10} /> Serials required before QC Pending
+                      
+                      {isGenOpen && (
+                          <div className="mt-2 pt-2 border-t border-slate-200 animate-in fade-in slide-in-from-top-1">
+                              <div className="grid grid-cols-2 gap-2 mb-2">
+                                  <div>
+                                      <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Count</label>
+                                      <input 
+                                          type="number" 
+                                          className="w-full text-xs p-1 rounded border border-slate-300"
+                                          value={genPanel?.count}
+                                          onChange={e => setGenPanel(prev => prev ? {...prev, count: parseInt(e.target.value) || 0} : null)}
+                                      />
+                                  </div>
+                                  <div>
+                                      <label className="block text-[9px] uppercase font-bold text-slate-400 mb-1">Mode</label>
+                                      <div className="flex rounded border border-slate-300 overflow-hidden">
+                                          <button onClick={() => setGenPanel(p => p ? {...p, mode: 'RANGE'} : null)} className={`flex-1 text-[9px] font-bold py-1 ${genPanel?.mode === 'RANGE' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-500'}`}>RANGE</button>
+                                          <button onClick={() => setGenPanel(p => p ? {...p, mode: 'POOL'} : null)} className={`flex-1 text-[9px] font-bold py-1 ${genPanel?.mode === 'POOL' ? 'bg-slate-200 text-slate-800' : 'bg-white text-slate-500'}`}>POOL</button>
+                                      </div>
+                                  </div>
+                              </div>
+                              <div className="flex justify-end gap-2">
+                                  <button onClick={() => setGenPanel(null)} className="text-[10px] font-bold text-slate-500 hover:bg-slate-100 px-2 py-1 rounded">Cancel</button>
+                                  <button onClick={handleConfirmGeneration} className="text-[10px] font-bold bg-green-600 text-white px-3 py-1 rounded shadow-sm hover:bg-green-700">Confirm</button>
+                              </div>
+                          </div>
+                      )}
+                      
+                      {unitsGenerated > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1 max-h-16 overflow-y-auto">
+                              {line.units?.slice(0, 10).map(u => (
+                                  <span key={u.id} className="text-[9px] bg-white border border-slate-200 px-1 rounded text-slate-500 font-mono">{u.enterpriseSerial}</span>
+                              ))}
+                              {(line.units?.length || 0) > 10 && <span className="text-[9px] text-slate-400 italic">+{unitsGenerated - 10} more</span>}
+                          </div>
+                      )}
                    </div>
                 )}
             </div>

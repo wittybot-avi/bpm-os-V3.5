@@ -5,7 +5,9 @@ import {
   S3ReceiptLine, 
   ReceiptState, 
   ItemTrackability, 
-  ItemCategory 
+  ItemCategory,
+  S3SerializedUnit,
+  UnitState 
 } from './s3Types';
 
 // --- Generators ---
@@ -19,6 +21,45 @@ export const makeReceiptCode = (sequence: number): string => {
 export const makeEnterpriseSerial = (prefix: string = 'BP', typeCode: string, sequence: number): string => {
   const seqStr = sequence.toString().padStart(7, '0');
   return `${prefix}-${typeCode}-${seqStr}`;
+};
+
+export const generateS3Units = (
+  lineId: string,
+  category: ItemCategory,
+  count: number,
+  startSequence: number,
+  mode: 'RANGE' | 'POOL' = 'RANGE'
+): S3SerializedUnit[] => {
+  const units: S3SerializedUnit[] = [];
+  const typeCode = mapCategoryToSerialCode(category);
+  
+  // Simulate Pool random access if POOL mode, else sequential
+  const baseSeq = mode === 'POOL' ? startSequence + 5000 : startSequence;
+
+  for (let i = 0; i < count; i++) {
+    const seq = baseSeq + i;
+    const serial = makeEnterpriseSerial('BP', typeCode, seq);
+    
+    units.push({
+      id: `unit-${Date.now()}-${i}`,
+      enterpriseSerial: serial,
+      lineId,
+      state: UnitState.CREATED,
+      printedCount: 0
+    });
+  }
+  return units;
+};
+
+const mapCategoryToSerialCode = (cat: ItemCategory): string => {
+  switch (cat) {
+    case 'CELL': return 'CEL';
+    case 'BMS': return 'BMS';
+    case 'IOT': return 'IOT';
+    case 'MODULE': return 'MOD';
+    case 'PACK': return 'PCK';
+    default: return 'MAT';
+  }
 };
 
 export const makeDemoReceipt = (): S3Receipt => {
