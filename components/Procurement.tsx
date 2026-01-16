@@ -1,3 +1,4 @@
+
 import React, { useContext, useState, useEffect } from 'react';
 import { UserContext, UserRole, NavView } from '../types';
 import { 
@@ -19,23 +20,24 @@ import {
   RotateCcw,
   ArrowRight,
   Radar,
-  Lock
+  Lock,
+  Calendar,
+  FileEdit,
+  X,
+  PackagePlus,
+  Trash2,
+  List,
+  AlertTriangle
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
 import { DisabledHint } from './DisabledHint';
-import { getMockS2Context, S2Context, ActiveOrderContext } from '../stages/s2/s2Contract';
+import { getMockS2Context, S2Context, ActiveOrderContext, ActiveOrderItem } from '../stages/s2/s2Contract';
 import { getS2ActionState, S2ActionId } from '../stages/s2/s2Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
+import { getMockS1Context, SkuMasterData } from '../stages/s1/s1Contract';
 
 // Mock Data Types
-interface ApprovedSKU {
-  id: string;
-  code: string;
-  chemistry: string;
-  preferredSupplier: string;
-}
-
 interface Supplier {
   id: string;
   name: string;
@@ -53,12 +55,6 @@ interface CommercialTerm {
   priceBand: string;
   contractStatus: 'Active' | 'Draft' | 'Expired';
 }
-
-// Mock Data
-const APPROVED_SKUS: ApprovedSKU[] = [
-  { id: 'sku-001', code: 'BP-LFP-48V-2.5K', chemistry: 'LFP', preferredSupplier: 'CellGlobal Dynamics' },
-  { id: 'sku-003', code: 'BP-LTO-24V-1K', chemistry: 'LTO', preferredSupplier: 'NanoTech Energy' },
-];
 
 const SUPPLIERS: Supplier[] = [
   { id: 'sup-001', name: 'CellGlobal Dynamics', type: 'Cells', status: 'Approved', region: 'APAC', rating: 'A+' },
@@ -84,12 +80,36 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   const [localEvents, setLocalEvents] = useState<AuditEvent[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
   
+  // Tabs State
+  const [leftTab, setLeftTab] = useState<'S1' | 'MANUAL'>('S1');
+  const [rightTab, setRightTab] = useState<'LINES' | 'TERMS'>('LINES');
+
+  // S1 SKU Data State
+  const [availableSkus, setAvailableSkus] = useState<SkuMasterData[]>([]);
+  const [editingSkuId, setEditingSkuId] = useState<string | null>(null);
+  
+  // Form Drafts
+  const [skuLineDraft, setSkuLineDraft] = useState<Partial<ActiveOrderItem>>({});
+  const [manualLineDraft, setManualLineDraft] = useState<Partial<ActiveOrderItem>>({
+    name: '',
+    category: 'MRO',
+    uom: 'Units',
+    quantity: 0,
+    deliveryDate: new Date().toISOString().split('T')[0],
+    notes: ''
+  });
+
   // UI State - synced with context where possible
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>(s2Context.activeOrder?.activeSupplierId || SUPPLIERS[0].id);
 
   // Load events on mount
   useEffect(() => {
     setLocalEvents(getAuditEvents().filter(e => e.stageId === 'S2'));
+    
+    // Fetch S1 Data (Simulated)
+    const s1Data = getMockS1Context();
+    const approved = s1Data.skus.filter(s => s.status === 'APPROVED');
+    setAvailableSkus(approved);
   }, []);
 
   // Sync selection with context
@@ -122,7 +142,119 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   // Governance: Lock fields when PO is Issued/Locked
   const isLocked = ['S2_PO_ISSUED', 'S2_PO_ACKNOWLEDGED', 'S2_LOCKED'].includes(s2Context.procurementStatus);
 
-  // Action Handlers
+  // --- Handlers ---
+
+  const handleEditSku = (sku: SkuMasterData) => {
+    if (isLocked) return;
+    setEditingSkuId(sku.skuId);
+    setSkuLineDraft({
+        skuCode: sku.skuCode,
+        name: sku.name,
+        quantity: 100, // default
+        uom: 'Units', // default for SKUs
+        deliveryDate: new Date().toISOString().split('T')[0],
+        notes: ''
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingSkuId(null);
+    setSkuLineDraft({});
+  };
+
+  const handleAddSkuItem = () => {
+    if (!skuLineDraft.skuCode || !skuLineDraft.quantity) return;
+    
+    addItemToOrder({
+        itemId: `item-${Date.now()}`,
+        itemType: 'SKU',
+        skuCode: skuLineDraft.skuCode,
+        name: skuLineDraft.name || skuLineDraft.skuCode,
+        uom: skuLineDraft.uom || 'Units',
+        quantity: skuLineDraft.quantity,
+        deliveryDate: skuLineDraft.deliveryDate,
+        notes: skuLineDraft.notes
+    });
+    handleCancelEdit();
+  };
+
+  const handleAddManualItem = () => {
+    if (!manualLineDraft.name || !manualLineDraft.quantity) return;
+
+    addItemToOrder({
+        itemId: `man-${Date.now()}`,
+        itemType: 'MANUAL',
+        name: manualLineDraft.name,
+        category: manualLineDraft.category,
+        uom: manualLineDraft.uom || 'Units',
+        quantity: manualLineDraft.quantity,
+        deliveryDate: manualLineDraft.deliveryDate,
+        notes: manualLineDraft.notes
+    });
+
+    // Reset form
+    setManualLineDraft({
+        name: '',
+        category: 'MRO',
+        uom: 'Units',
+        quantity: 0,
+        deliveryDate: new Date().toISOString().split('T')[0],
+        notes: ''
+    });
+  };
+
+  const addItemToOrder = (newItem: ActiveOrderItem) => {
+    setS2Context(prev => {
+        if (!prev.activeOrder) return prev;
+        
+        // For SKUs, check if exists and update. For Manual, always add new.
+        let newItems = [...prev.activeOrder.selectedItems];
+        if (newItem.itemType === 'SKU') {
+            const existingIdx = newItems.findIndex(i => i.itemType === 'SKU' && i.skuCode === newItem.skuCode);
+            if (existingIdx >= 0) {
+                // Update existing
+                newItems[existingIdx] = { ...newItems[existingIdx], ...newItem, itemId: newItems[existingIdx].itemId };
+            } else {
+                newItems.push(newItem);
+            }
+        } else {
+            newItems.push(newItem);
+        }
+
+        return {
+            ...prev,
+            activeOrder: { ...prev.activeOrder, selectedItems: newItems }
+        };
+    });
+
+    // Switch view to lines to show addition
+    setRightTab('LINES');
+
+    const evt = emitAuditEvent({
+        stageId: 'S2',
+        actionId: 'CREATE_PO', 
+        actorRole: role,
+        message: `Added line item: ${newItem.name} (${newItem.quantity} ${newItem.uom})`
+    });
+    setLocalEvents(prev => [evt, ...prev]);
+  };
+
+  const handleRemoveItem = (itemId: string) => {
+    if (isLocked) return;
+    setS2Context(prev => {
+        if (!prev.activeOrder) return prev;
+        return {
+            ...prev,
+            activeOrder: {
+                ...prev.activeOrder,
+                selectedItems: prev.activeOrder.selectedItems.filter(i => i.itemId !== itemId)
+            }
+        };
+    });
+  };
+
+  // --- Core Action Handlers ---
+
   const handleCreatePo = () => {
     setIsSimulating(true);
     setTimeout(() => {
@@ -309,6 +441,11 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
       </div>
     );
   }
+
+  // Helper to check if SKU is in cart
+  const getItemInOrder = (skuCode: string) => {
+    return s2Context.activeOrder?.selectedItems.find(i => i.itemType === 'SKU' && i.skuCode === skuCode);
+  };
 
   return (
     <div className="space-y-6 h-full flex flex-col animate-in fade-in duration-300 pb-12">
@@ -502,28 +639,206 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
       {/* Main Grid */}
       <div className={`flex-1 grid grid-cols-12 gap-6 min-h-0 ${isSimulating ? 'opacity-70 pointer-events-none' : ''}`}>
         
-        {/* Left Col: Approved SKU Reference */}
+        {/* Left Col: Selection Lane */}
         <div className="col-span-3 bg-white rounded-lg shadow-sm border border-industrial-border flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-slate-100 bg-slate-50">
-             <h3 className="font-semibold text-slate-700 flex items-center gap-2">
-               <PackageCheck size={16} />
-               Approved SKUs
-             </h3>
-             <span className="text-xs text-slate-400">Sourced from S1 Blueprint</span>
+          <div className="flex border-b border-slate-100 bg-slate-50">
+             <button 
+                onClick={() => setLeftTab('S1')}
+                className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${leftTab === 'S1' ? 'bg-white border-t-2 border-t-brand-600 text-brand-700' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                Approved SKUs (S1)
+             </button>
+             <button 
+                onClick={() => setLeftTab('MANUAL')}
+                className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${leftTab === 'MANUAL' ? 'bg-white border-t-2 border-t-brand-600 text-brand-700' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                Manual Entry
+             </button>
           </div>
-          <div className="overflow-y-auto flex-1 p-2 space-y-2">
-            {APPROVED_SKUS.map((sku) => (
-              <div key={sku.id} className="p-3 bg-white border border-slate-100 rounded-md shadow-sm">
-                <div className="flex justify-between items-start mb-1">
-                  <span className="font-bold text-slate-800 text-sm">{sku.code}</span>
-                  <CheckCircle2 size={14} className="text-green-500" />
+
+          <div className="overflow-y-auto flex-1 p-2 space-y-2 custom-scrollbar">
+            {/* S1 SKU List */}
+            {leftTab === 'S1' && (
+               <>
+                {availableSkus.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-slate-400">
+                        No approved SKUs found in S1 Master Data.
+                    </div>
+                ) : availableSkus.map((sku) => {
+                  const inOrder = getItemInOrder(sku.skuCode);
+                  const isEditing = editingSkuId === sku.skuId;
+
+                  if (isEditing) {
+                      return (
+                        <div key={sku.skuId} className="p-3 bg-brand-50 border border-brand-200 rounded-md shadow-sm space-y-3 animate-in zoom-in-95 duration-200">
+                            <div className="flex justify-between items-start">
+                                <span className="font-bold text-brand-800 text-sm">{sku.skuCode}</span>
+                                <button onClick={handleCancelEdit} className="text-brand-400 hover:text-brand-600"><X size={14}/></button>
+                            </div>
+                            
+                            <div className="space-y-2">
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-brand-600 block mb-1">Quantity</label>
+                                    <input 
+                                        type="number" 
+                                        className="w-full text-xs p-1.5 rounded border border-brand-200 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                        value={skuLineDraft.quantity}
+                                        onChange={(e) => setSkuLineDraft(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-brand-600 block mb-1">Req. Date</label>
+                                    <input 
+                                        type="date" 
+                                        className="w-full text-xs p-1.5 rounded border border-brand-200 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                        value={skuLineDraft.deliveryDate}
+                                        onChange={(e) => setSkuLineDraft(prev => ({ ...prev, deliveryDate: e.target.value }))}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-[10px] uppercase font-bold text-brand-600 block mb-1">Notes</label>
+                                    <textarea 
+                                        rows={2}
+                                        className="w-full text-xs p-1.5 rounded border border-brand-200 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                        value={skuLineDraft.notes || ''}
+                                        onChange={(e) => setSkuLineDraft(prev => ({ ...prev, notes: e.target.value }))}
+                                        placeholder="Special instructions..."
+                                    />
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={handleAddSkuItem}
+                                disabled={!skuLineDraft.quantity}
+                                className="w-full py-1.5 bg-brand-600 text-white text-xs font-bold rounded shadow-sm hover:bg-brand-700 disabled:opacity-50"
+                            >
+                                {inOrder ? 'Update Order' : 'Add to Order'}
+                            </button>
+                        </div>
+                      );
+                  }
+
+                  return (
+                    <div 
+                        key={sku.skuId} 
+                        onClick={() => handleEditSku(sku)}
+                        className={`p-3 bg-white border rounded-md shadow-sm transition-all cursor-pointer hover:border-brand-300 hover:shadow-md ${inOrder ? 'border-l-4 border-l-green-500' : 'border-slate-100'} ${isLocked ? 'opacity-50 pointer-events-none' : ''}`}
+                    >
+                        <div className="flex justify-between items-start mb-1">
+                            <span className="font-bold text-slate-800 text-sm">{sku.skuCode}</span>
+                            {inOrder && <CheckCircle2 size={14} className="text-green-500" />}
+                        </div>
+                        <div className="text-xs text-slate-500 mb-1">{sku.name}</div>
+                        <div className="flex justify-between items-center text-[10px] text-slate-400 mt-2">
+                            <span className="bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 uppercase">{sku.type}</span>
+                            <span>Rev: {sku.revision.id}</span>
+                        </div>
+                        {inOrder && (
+                            <div className="mt-2 pt-2 border-t border-slate-100 text-[10px] font-bold text-green-700 flex justify-between">
+                                <span>In Basket</span>
+                                <span>Qty: {inOrder.quantity}</span>
+                            </div>
+                        )}
+                    </div>
+                  );
+                })}
+               </>
+            )}
+
+            {/* Manual Entry Form */}
+            {leftTab === 'MANUAL' && (
+                <div className="p-2 space-y-4 animate-in fade-in slide-in-from-right-2">
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex gap-2">
+                        <PackagePlus size={16} className="shrink-0" />
+                        <p>Items added here are <strong>Non-Trackable</strong> and bypass standard S1 validation.</p>
+                    </div>
+
+                    <div className="space-y-3">
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Item Name / Description</label>
+                            <input 
+                                type="text" 
+                                className="w-full text-xs p-2 rounded border border-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                placeholder="e.g. MRO - Thermal Paste"
+                                value={manualLineDraft.name}
+                                onChange={(e) => setManualLineDraft(prev => ({ ...prev, name: e.target.value }))}
+                                disabled={isLocked}
+                            />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Category</label>
+                                <select 
+                                    className="w-full text-xs p-2 rounded border border-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white"
+                                    value={manualLineDraft.category}
+                                    onChange={(e) => setManualLineDraft(prev => ({ ...prev, category: e.target.value as any }))}
+                                    disabled={isLocked}
+                                >
+                                    <option value="MRO">MRO</option>
+                                    <option value="Consumable">Consumable</option>
+                                    <option value="Packaging">Packaging</option>
+                                    <option value="Chemical">Chemical</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">UoM</label>
+                                <input 
+                                    type="text" 
+                                    className="w-full text-xs p-2 rounded border border-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                    value={manualLineDraft.uom}
+                                    onChange={(e) => setManualLineDraft(prev => ({ ...prev, uom: e.target.value }))}
+                                    disabled={isLocked}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <div>
+                                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Quantity</label>
+                                <input 
+                                    type="number" 
+                                    className="w-full text-xs p-2 rounded border border-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                    value={manualLineDraft.quantity}
+                                    onChange={(e) => setManualLineDraft(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+                                    disabled={isLocked}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Req. Date</label>
+                                <input 
+                                    type="date" 
+                                    className="w-full text-xs p-2 rounded border border-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                    value={manualLineDraft.deliveryDate}
+                                    onChange={(e) => setManualLineDraft(prev => ({ ...prev, deliveryDate: e.target.value }))}
+                                    disabled={isLocked}
+                                />
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] uppercase font-bold text-slate-500 block mb-1">Notes</label>
+                            <textarea 
+                                rows={2}
+                                className="w-full text-xs p-2 rounded border border-slate-300 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                placeholder="Details..."
+                                value={manualLineDraft.notes}
+                                onChange={(e) => setManualLineDraft(prev => ({ ...prev, notes: e.target.value }))}
+                                disabled={isLocked}
+                            />
+                        </div>
+
+                        <button 
+                            onClick={handleAddManualItem}
+                            disabled={!manualLineDraft.name || !manualLineDraft.quantity || isLocked}
+                            className="w-full py-2 bg-brand-600 text-white text-xs font-bold rounded shadow-sm hover:bg-brand-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            <Plus size={14} /> Add Manual Item
+                        </button>
+                    </div>
                 </div>
-                <div className="text-xs text-slate-500 mb-2">Chem: {sku.chemistry}</div>
-                <div className="bg-slate-50 px-2 py-1 rounded text-[10px] text-slate-600 font-medium">
-                  Pref: {sku.preferredSupplier}
-                </div>
-              </div>
-            ))}
+            )}
           </div>
         </div>
 
@@ -536,7 +851,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
              </h3>
              <span className="text-xs text-slate-400">Qualified Vendors ({s2Context.vendorCatalogCount})</span>
           </div>
-          <div className="overflow-y-auto flex-1 p-0">
+          <div className="overflow-y-auto flex-1 p-0 custom-scrollbar">
             <table className="w-full text-sm text-left">
               <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 sticky top-0">
                 <tr>
@@ -586,51 +901,111 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* Right Col: Commercial Terms */}
+        {/* Right Col: Summary & Terms */}
         <div className="col-span-4 bg-white rounded-lg shadow-sm border border-industrial-border flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-slate-100 bg-slate-50">
-             <h3 className="font-semibold text-slate-700 flex items-center gap-2">
-               <Building2 size={16} />
-               Commercial Terms
-             </h3>
-             <span className="text-xs text-slate-400">Contract & Pricing Snapshots</span>
+          <div className="flex border-b border-slate-100 bg-slate-50">
+             <button 
+                onClick={() => setRightTab('LINES')}
+                className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${rightTab === 'LINES' ? 'bg-white border-t-2 border-t-brand-600 text-brand-700' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                Order Lines ({s2Context.activeOrder?.selectedItems.length || 0})
+             </button>
+             <button 
+                onClick={() => setRightTab('TERMS')}
+                className={`flex-1 py-3 text-xs font-bold uppercase transition-colors ${rightTab === 'TERMS' ? 'bg-white border-t-2 border-t-brand-600 text-brand-700' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+                Commercial Terms
+             </button>
           </div>
-          <div className="overflow-y-auto flex-1 p-4 space-y-4">
-             {TERMS.map((term) => (
-               <div key={term.id} className="border border-slate-200 rounded-lg p-4 bg-slate-50">
-                  <div className="flex justify-between items-start mb-3">
-                     <span className="text-xs font-mono font-bold text-slate-500">{term.skuRef}</span>
-                     <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase border ${
-                       term.contractStatus === 'Active' ? 'bg-green-50 text-green-700 border-green-200' :
-                       term.contractStatus === 'Draft' ? 'bg-slate-50 text-slate-600 border-slate-200' :
-                       'bg-red-50 text-red-700 border-red-200'
-                     }`}>
-                       {term.contractStatus}
-                     </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <div className="text-[10px] text-slate-400 uppercase">MOQ</div>
-                      <div className="font-medium text-slate-800">{term.moq}</div>
+
+          <div className="overflow-y-auto flex-1 p-4 space-y-4 custom-scrollbar">
+             {rightTab === 'LINES' && (
+                <div className="space-y-3">
+                    {(!s2Context.activeOrder || s2Context.activeOrder.selectedItems.length === 0) ? (
+                        <div className="text-center py-8 text-slate-400 text-xs italic">
+                            No items added to the order yet.
+                        </div>
+                    ) : (
+                        s2Context.activeOrder.selectedItems.map((item) => (
+                            <div key={item.itemId} className="p-3 border border-slate-200 rounded-lg bg-slate-50 flex flex-col gap-2">
+                                <div className="flex justify-between items-start">
+                                    <div className="flex flex-col">
+                                        <span className="font-bold text-slate-700 text-sm">{item.name}</span>
+                                        <div className="flex items-center gap-2 mt-0.5">
+                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
+                                                item.itemType === 'SKU' 
+                                                ? 'bg-blue-100 text-blue-700 border-blue-200' 
+                                                : 'bg-amber-100 text-amber-700 border-amber-200'
+                                            }`}>
+                                                {item.itemType === 'SKU' ? 'TRACKABLE' : 'NON-TRACKABLE'}
+                                            </span>
+                                            {item.skuCode && <span className="text-[10px] font-mono text-slate-400">{item.skuCode}</span>}
+                                        </div>
+                                    </div>
+                                    {!isLocked && (
+                                        <button 
+                                            onClick={() => handleRemoveItem(item.itemId)} 
+                                            className="text-slate-400 hover:text-red-500 transition-colors"
+                                            title="Remove Item"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="flex justify-between items-center text-xs border-t border-slate-200 pt-2 mt-1">
+                                    <div className="font-mono">
+                                        <span className="text-slate-500">Qty:</span> <span className="font-bold">{item.quantity} {item.uom}</span>
+                                    </div>
+                                    <div className="text-slate-500 flex items-center gap-1">
+                                        <Calendar size={10} /> {item.deliveryDate}
+                                    </div>
+                                </div>
+                                {item.notes && <div className="text-[10px] text-slate-500 italic bg-white p-1 rounded border border-slate-100">{item.notes}</div>}
+                            </div>
+                        ))
+                    )}
+                </div>
+             )}
+
+             {rightTab === 'TERMS' && (
+                <>
+                    {TERMS.map((term) => (
+                    <div key={term.id} className="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                        <div className="flex justify-between items-start mb-3">
+                            <span className="text-xs font-mono font-bold text-slate-500">{term.skuRef}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase border ${
+                            term.contractStatus === 'Active' ? 'bg-green-50 text-green-700 border-green-200' :
+                            term.contractStatus === 'Draft' ? 'bg-slate-50 text-slate-600 border-slate-200' :
+                            'bg-red-50 text-red-700 border-red-200'
+                            }`}>
+                            {term.contractStatus}
+                            </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3 text-sm">
+                            <div>
+                            <div className="text-[10px] text-slate-400 uppercase">MOQ</div>
+                            <div className="font-medium text-slate-800">{term.moq}</div>
+                            </div>
+                            <div>
+                            <div className="text-[10px] text-slate-400 uppercase">Lead Time</div>
+                            <div className="font-medium text-slate-800">{term.leadTime}</div>
+                            </div>
+                            <div className="col-span-2">
+                            <div className="text-[10px] text-slate-400 uppercase">Indicative Price Band</div>
+                            <div className="font-medium text-slate-800 bg-white border border-slate-200 p-2 rounded text-center">
+                                {term.priceBand}
+                            </div>
+                            </div>
+                        </div>
                     </div>
-                    <div>
-                      <div className="text-[10px] text-slate-400 uppercase">Lead Time</div>
-                      <div className="font-medium text-slate-800">{term.leadTime}</div>
+                    ))}
+                    
+                    <div className="p-3 bg-amber-50 border border-amber-100 rounded text-xs text-amber-800 flex items-start gap-2">
+                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                    <p>Commercial terms displayed are for demonstration purposes. Actual pricing is retrieved securely from the ERP backend (mocked).</p>
                     </div>
-                     <div className="col-span-2">
-                      <div className="text-[10px] text-slate-400 uppercase">Indicative Price Band</div>
-                      <div className="font-medium text-slate-800 bg-white border border-slate-200 p-2 rounded text-center">
-                        {term.priceBand}
-                      </div>
-                    </div>
-                  </div>
-               </div>
-             ))}
-             
-             <div className="p-3 bg-amber-50 border border-amber-100 rounded text-xs text-amber-800 flex items-start gap-2">
-               <AlertCircle size={14} className="mt-0.5 shrink-0" />
-               <p>Commercial terms displayed are for demonstration purposes. Actual pricing is retrieved securely from the ERP backend (mocked).</p>
-             </div>
+                </>
+             )}
           </div>
         </div>
 

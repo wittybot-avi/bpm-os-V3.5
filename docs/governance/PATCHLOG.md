@@ -1,9 +1,12 @@
+
 # BPM-OS Frontend PATCHLOG
 
 ## V3.5 Active
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S2-PP-07** | Feature | Manual Procurement Items | **STABLE** | Introduced support for non-manufacturing items (MRO, Consumables) in S2 Procurement. Added tabs for "Manual Entry" and "Order Lines". Implemented polymorphic item structure (SKU vs Manual) with NON_TRACKABLE badging. | 2026-02-01 15:00 (IST) |
+| **V35-S2-PP-06** | Feature | S1 SKU Procurement Lane | **STABLE** | Implemented interactive "Manufacturing Items" lane in S2. Fetches Approved SKUs from S1 context. Allows inline editing of Quantity, Delivery Date, and Notes before adding to Active Order. | 2026-02-01 14:15 (IST) |
 | **V35-S2-LOCK-PP-05** | Governance | Lock-on-PO Rule | **STABLE** | Implemented Lock-on-PO governance in S2. Once a PO is issued, the supplier selection is frozen (read-only) and a "COMMERCIAL SNAPSHOT LOCKED" banner is displayed. S3 readiness signal logic validated. | 2026-02-01 13:45 (IST) |
 | **V35-S2-AUDIT-PP-04** | Governance | S2 Audit Trail | **STABLE** | Implemented explicit state transition logging for all S2 Procurement actions (Create, Submit, Approve, Issue, Close). Captured automated vendor acknowledgement events in the audit log. Reinforced `emitAuditEvent` pattern across the S2 lifecycle. | 2026-02-01 13:00 (IST) |
 | **V35-S2-RBAC-PP-03** | Governance | S2 RBAC Gating | **STABLE** | Enforced strict role-based access control for S2 Procurement actions (Create, Submit, Approve, Issue). Implemented "Disable with Tooltip" pattern for unauthorized actions instead of hiding them, improving visibility of permission requirements. | 2026-02-01 12:00 (IST) |
