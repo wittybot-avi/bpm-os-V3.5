@@ -8,6 +8,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S3-PP-16** | Feature | S3 QC Decision Panel | **STABLE** | Implemented interactive QC Inspection modal. Allows QA/Admin to disposition units (Accept/Hold/Reject) with required reason logging. Added specific unit state transitions for QC flows and integrated with S3 Audit log. | 2026-02-02 17:30 (IST) |
 | **V35-S3-PP-15** | Feature | S3 Label Printing | **STABLE** | Implemented label print workflow for trackable units. Added "Print Pending" bulk action in line items and granular "Reprint/Void" actions in management modal. Extended unit model with `labelStatus` and print audit logging. | 2026-02-02 17:00 (IST) |
 | **V35-S3-PP-14** | Feature | S3 Evidence Mapping | **STABLE** | Implemented Trace Mapping feature in S3. Added Summary Card in UI showing verified unit counts and lot coverage. Added full-screen Drawer to view flattened mapping of Unit-Line-Receipt evidence (Lot, Invoice, PO) for provable traceability. | 2026-02-02 16:30 (IST) |
 | **V35-S3-PP-13** | Feature | S3 Unit State Transitions | **STABLE** | Implemented unit-level state machine (Created->Labeled->Scanned->Verified) in contracts and UI. Added action buttons in unit management modal. Enforced strict uniqueness for both enterprise and supplier serials. Added Receipt-level blocking banner for unverified units. | 2026-02-02 16:00 (IST) |

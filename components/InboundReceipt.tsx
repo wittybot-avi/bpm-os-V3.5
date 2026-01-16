@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useContext, useMemo } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon, Printer, Ban, RotateCcw } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon, Printer, Ban, RotateCcw, ThumbsUp, ThumbsDown, PauseCircle } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
 import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit, UnitState, LabelStatus } from '../stages/s3/contracts';
 import { getNextUnitState, canTransitionUnit, transitionUnit } from '../stages/s3/contracts/s3StateMachine';
@@ -45,6 +45,11 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const [serialBuffer, setSerialBuffer] = useState<S3SerializedUnit[]>([]);
   const [bulkText, setBulkText] = useState('');
   const [serialErrors, setSerialErrors] = useState<string[]>([]);
+
+  // QC State
+  const [qcLineId, setQcLineId] = useState<string | null>(null);
+  const [qcBuffer, setQcBuffer] = useState<S3SerializedUnit[]>([]);
+  const [qcFilter, setQcFilter] = useState<'ALL' | 'PENDING' | 'HOLD' | 'FINAL'>('PENDING');
   
   // Trace Mapping View State
   const [showTraceMapping, setShowTraceMapping] = useState(false);
@@ -90,6 +95,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           setValidationResult(null); // Clear validation when switching receipts
           setGenPanel(null);
           setSerialEntryLineId(null);
+          setQcLineId(null);
           setShowTraceMapping(false);
       }
   }, [activeReceipt]);
@@ -626,6 +632,78 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
         setActiveReceipt(refreshedReceipt); // Trigger re-render of main
     }
   };
+  
+  // QC Management Handlers
+  const handleOpenQC = (lineId: string) => {
+     if (!activeReceipt) return;
+     const line = activeReceipt.lines.find(l => l.id === lineId);
+     if (!line || !line.units) return;
+     setQcLineId(lineId);
+     setQcBuffer(JSON.parse(JSON.stringify(line.units))); // Deep copy
+     setQcFilter('PENDING'); // Default to Pending
+  };
+  
+  const handleApplyQCDecision = (unitId: string, decision: 'ACCEPT' | 'HOLD' | 'REJECT') => {
+      let reason = '';
+      if (decision === 'HOLD' || decision === 'REJECT') {
+          const input = window.prompt(`Enter reason for ${decision}:`);
+          if (input === null) return; // Cancelled
+          reason = input;
+      }
+      
+      const toState = decision === 'ACCEPT' ? UnitState.ACCEPTED : decision === 'HOLD' ? UnitState.QC_HOLD : UnitState.REJECTED;
+
+      setQcBuffer(prev => prev.map(u => {
+          if (u.id === unitId) {
+             // Use transition logic to get object structure update, but apply to buffer
+             const { unit } = transitionUnit(u, toState, role, activeReceipt?.id || '', reason);
+             return unit;
+          }
+          return u;
+      }));
+  };
+  
+  const handleSaveQC = () => {
+      if (!activeReceipt || !qcLineId) return;
+      
+      const updatedLines = activeReceipt.lines.map(l => {
+          if (l.id === qcLineId) {
+              return { ...l, units: qcBuffer };
+          }
+          return l;
+      });
+
+      // Count decisions for audit log
+      let accepted = 0, held = 0, rejected = 0;
+      qcBuffer.forEach(u => {
+         // This is a naive diff, simply counting totals in the new buffer is easiest for summary
+         if (u.state === UnitState.ACCEPTED) accepted++;
+         if (u.state === UnitState.QC_HOLD) held++;
+         if (u.state === UnitState.REJECTED) rejected++;
+      });
+      
+      const updatedReceipt = {
+          ...activeReceipt,
+          lines: updatedLines,
+          audit: [
+              {
+                  id: `aud-${Date.now()}`,
+                  ts: new Date().toISOString(),
+                  actorRole: role,
+                  actorLabel: 'Quality',
+                  eventType: 'QC_DECISION_BATCH',
+                  refType: 'LINE',
+                  refId: qcLineId,
+                  message: `QC Update: ${accepted} Accepted, ${held} Held, ${rejected} Rejected`
+              },
+              ...activeReceipt.audit
+          ]
+      } as S3Receipt;
+
+      s3UpsertReceipt(updatedReceipt);
+      setQcLineId(null);
+      setRefreshKey(k => k + 1);
+  };
 
 
   const handleValidate = () => {
@@ -750,9 +828,9 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           case UnitState.CREATED: return 'bg-slate-100 text-slate-600 border-slate-200';
           case UnitState.LABELED: return 'bg-blue-50 text-blue-700 border-blue-200';
           case UnitState.SCANNED: return 'bg-indigo-50 text-indigo-700 border-indigo-200';
-          case UnitState.VERIFIED: return 'bg-green-50 text-green-700 border-green-200';
+          case UnitState.VERIFIED: return 'bg-blue-50 text-blue-700 border-blue-200';
           case UnitState.QC_HOLD: return 'bg-amber-50 text-amber-700 border-amber-200';
-          case UnitState.ACCEPTED: return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+          case UnitState.ACCEPTED: return 'bg-green-100 text-green-800 border-green-200';
           case UnitState.REJECTED: return 'bg-red-50 text-red-700 border-red-200';
           default: return 'bg-slate-50 text-slate-400 border-slate-200';
       }
@@ -772,6 +850,8 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const canCreate = canS3(role, 'CREATE_RECEIPT');
   const canEdit = activeReceipt ? canS3(role, 'EDIT_RECEIPT', activeReceipt.state) : false;
   const isAdmin = role === UserRole.SYSTEM_ADMIN;
+  const isQA = role === UserRole.QA_ENGINEER;
+  const canQC = isQA || isAdmin;
 
   const allowedNext = activeReceipt ? allowedReceiptTransitions[activeReceipt.state] : [];
   const nextStateLabel = allowedNext && allowedNext.length > 0 ? getReceiptNextActions(activeReceipt.state) : null;
@@ -880,9 +960,26 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                     onClick={() => handleOpenSerialEntry(line.id)}
                                     className="bg-white border border-slate-300 text-slate-600 text-[10px] font-bold px-2 py-1 rounded shadow-sm hover:bg-slate-50 flex items-center gap-1"
                                 >
-                                    <FileDigit size={10} /> Manage Units & Serials
+                                    <FileDigit size={10} /> Manage Units
                                 </button>
                             )}
+                            {/* QC Button */}
+                            {unitsGenerated > 0 && (
+                                <button
+                                    onClick={() => handleOpenQC(line.id)}
+                                    className={`text-[10px] font-bold px-2 py-1 rounded shadow-sm flex items-center gap-1 ${
+                                        canQC 
+                                        ? 'bg-purple-600 text-white hover:bg-purple-700'
+                                        : 'bg-white border border-slate-300 text-slate-500 cursor-not-allowed opacity-50' 
+                                    }`}
+                                    disabled={!canQC && !isAdmin} // Viewers might need read-only access? Let's just disable action for now or enable for read-only
+                                    // Actually, let's enable for everyone to view, but only QC can act.
+                                    // We'll handle read-only inside.
+                                >
+                                    <ShieldCheck size={10} /> Inspect
+                                </button>
+                            )}
+                            
                             {buffer.qtyReceived > unitsGenerated && !isGenOpen && (
                                 <button 
                                     onClick={() => handleOpenGeneration(line.id, unitsGenerated, buffer.qtyReceived)}
@@ -1711,6 +1808,112 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                     >
                         <Save size={14} /> Save Changes
                     </button>
+                </div>
+            </div>
+        </div>
+      )}
+      
+      {/* QC Decision Modal */}
+      {qcLineId && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setQcLineId(null)} />
+            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-lg">
+                    <div className="flex items-center gap-2">
+                        <ShieldCheck className="text-purple-600" size={20} />
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-800">Quality Control Inspection</h3>
+                            <p className="text-xs text-slate-500">
+                                {activeReceipt?.lines.find(l => l.id === qcLineId)?.itemName}
+                            </p>
+                        </div>
+                    </div>
+                    <button onClick={() => setQcLineId(null)} className="text-slate-400 hover:text-slate-600">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {/* Filters */}
+                    <div className="flex gap-2 mb-4">
+                        <button onClick={() => setQcFilter('ALL')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>All</button>
+                        <button onClick={() => setQcFilter('PENDING')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'PENDING' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Pending (Verified)</button>
+                        <button onClick={() => setQcFilter('HOLD')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'HOLD' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}>On Hold</button>
+                        <button onClick={() => setQcFilter('FINAL')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'FINAL' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Finalized</button>
+                    </div>
+
+                    {/* Unit List */}
+                    <div className="border border-slate-200 rounded overflow-hidden">
+                         <table className="w-full text-left text-xs">
+                             <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                                 <tr>
+                                     <th className="px-3 py-2 w-12 text-center">#</th>
+                                     <th className="px-3 py-2">Enterprise Serial</th>
+                                     <th className="px-3 py-2 text-center">Status</th>
+                                     <th className="px-3 py-2 text-center">QC Decision</th>
+                                     <th className="px-3 py-2">Reason / Notes</th>
+                                     <th className="px-3 py-2 text-center">Action</th>
+                                 </tr>
+                             </thead>
+                             <tbody className="divide-y divide-slate-100">
+                                 {qcBuffer.filter(u => {
+                                     if (qcFilter === 'ALL') return true;
+                                     if (qcFilter === 'PENDING') return u.state === UnitState.VERIFIED;
+                                     if (qcFilter === 'HOLD') return u.state === UnitState.QC_HOLD;
+                                     if (qcFilter === 'FINAL') return u.state === UnitState.ACCEPTED || u.state === UnitState.REJECTED;
+                                     return true;
+                                 }).map((unit, idx) => {
+                                    const canAct = canQC; 
+                                    return (
+                                     <tr key={unit.id} className="hover:bg-slate-50">
+                                         <td className="px-3 py-2 text-center text-slate-400">{idx + 1}</td>
+                                         <td className="px-3 py-2 font-mono text-slate-600">{unit.enterpriseSerial}</td>
+                                         <td className="px-3 py-2 text-center">
+                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(unit.state)}`}>
+                                                 {unit.state}
+                                             </span>
+                                         </td>
+                                         <td className="px-3 py-2 text-center font-bold">
+                                             {unit.qcDecision || '-'}
+                                         </td>
+                                         <td className="px-3 py-2 text-slate-500 italic truncate max-w-xs" title={unit.qcReason}>
+                                             {unit.qcReason || '-'}
+                                         </td>
+                                         <td className="px-3 py-2 text-center">
+                                            {(unit.state === UnitState.VERIFIED || unit.state === UnitState.QC_HOLD) && canAct ? (
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <button onClick={() => handleApplyQCDecision(unit.id, 'ACCEPT')} className="p-1 text-slate-300 hover:text-green-600 hover:bg-green-50 rounded" title="Accept"><ThumbsUp size={14} /></button>
+                                                    <button onClick={() => handleApplyQCDecision(unit.id, 'HOLD')} className="p-1 text-slate-300 hover:text-amber-600 hover:bg-amber-50 rounded" title="Hold"><PauseCircle size={14} /></button>
+                                                    <button onClick={() => handleApplyQCDecision(unit.id, 'REJECT')} className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded" title="Reject"><ThumbsDown size={14} /></button>
+                                                </div>
+                                            ) : (
+                                                <span className="text-slate-300 text-[10px]">-</span>
+                                            )}
+                                         </td>
+                                     </tr>
+                                    );
+                                 })}
+                                 {qcBuffer.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-400 italic">No units available for inspection.</td></tr>}
+                             </tbody>
+                         </table>
+                    </div>
+                </div>
+
+                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-lg">
+                    <button 
+                        onClick={() => setQcLineId(null)}
+                        className="px-4 py-2 text-slate-600 font-bold text-xs hover:bg-slate-200 rounded transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    {canQC && (
+                        <button 
+                            onClick={handleSaveQC}
+                            className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded hover:bg-purple-700 shadow-sm transition-colors flex items-center gap-2"
+                        >
+                            <Save size={14} /> Commit Decisions
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

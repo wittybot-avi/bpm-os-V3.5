@@ -70,18 +70,31 @@ export const transitionUnit = (
     unit: S3SerializedUnit,
     to: UnitState,
     actorRole: string,
-    receiptId: string
+    receiptId: string,
+    reason?: string
 ): UnitTransitionResult => {
     if (!canTransitionUnit(unit.state, to)) {
         throw new Error(`Invalid unit transition from ${unit.state} to ${to}`);
     }
 
     const now = new Date().toISOString();
-    const updatedUnit = { ...unit, state: to };
+    const updatedUnit: S3SerializedUnit = { ...unit, state: to };
 
     // Update timestamps based on state
     if (to === UnitState.VERIFIED) {
         updatedUnit.verifiedAt = now;
+    }
+
+    // QC Decision Mapping
+    if (to === UnitState.ACCEPTED) {
+        updatedUnit.qcDecision = 'ACCEPT';
+        updatedUnit.qcReason = reason; // Optional note
+    } else if (to === UnitState.QC_HOLD) {
+        updatedUnit.qcDecision = 'HOLD';
+        updatedUnit.qcReason = reason;
+    } else if (to === UnitState.REJECTED) {
+        updatedUnit.qcDecision = 'REJECT';
+        updatedUnit.qcReason = reason;
     }
 
     const auditEvent: S3AuditEvent = {
@@ -92,7 +105,7 @@ export const transitionUnit = (
         eventType: 'UNIT_STATE_CHANGED',
         refType: 'UNIT',
         refId: unit.id,
-        message: `Unit ${unit.enterpriseSerial} transitioned to ${to}`
+        message: `Unit ${unit.enterpriseSerial} transitioned to ${to}${reason ? ` (Reason: ${reason})` : ''}`
     };
 
     return { unit: updatedUnit, auditEvent };
