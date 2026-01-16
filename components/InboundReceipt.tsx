@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState, useContext } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
-import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType } from '../stages/s3/contracts';
+import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions } from '../stages/s3/contracts';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
 import { s3ListOpenOrdersFromS2, S3MockOrder, s3ListSuppliers, S3Supplier } from '../sim/api/s3/s3S2Adapter';
 
@@ -29,6 +29,9 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   // Detail View State
   const [activeTab, setActiveTab] = useState<'LINES' | 'EVIDENCE'>('LINES');
   
+  // Validation State
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+  
   // Edit Buffers
   const [evidenceBuffer, setEvidenceBuffer] = useState<Partial<S3Receipt>>({});
   const [lineBuffers, setLineBuffers] = useState<Record<string, Partial<S3ReceiptLine>>>({});
@@ -41,6 +44,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
     setActiveReceipt(s3GetActiveReceipt());
     setOpenOrders(s3ListOpenOrdersFromS2());
     setSuppliers(s3ListSuppliers());
+    setValidationResult(null); // Reset validation on load
   }, [refreshKey]);
 
   // Reset form when toggling mode
@@ -65,10 +69,12 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
               initialLines[l.id] = {
                   lotRef: l.lotRef || '',
                   mfgDate: l.mfgDate || '',
-                  expDate: l.expDate || ''
+                  expDate: l.expDate || '',
+                  qtyReceived: l.qtyReceived || 0
               };
           });
           setLineBuffers(initialLines);
+          setValidationResult(null); // Clear validation when switching receipts
       }
   }, [activeReceipt]);
 
@@ -251,14 +257,63 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                   eventType: 'LOT_UPDATED',
                   refType: 'LINE',
                   refId: lineId,
-                  message: `Updated Lot/Batch info for line`
+                  message: `Updated line details (Qty/Lot)`
               },
               ...activeReceipt.audit
           ]
       } as S3Receipt;
 
       s3UpsertReceipt(updatedReceipt);
+      // Invalidate previous validation on data change
+      setValidationResult(null); 
       setRefreshKey(k => k + 1);
+  };
+
+  const handleValidate = () => {
+      if (!activeReceipt) return;
+      const result = validateReceipt(activeReceipt, role);
+      setValidationResult(result);
+      
+      // Log validation event
+      const updatedReceipt = {
+          ...activeReceipt,
+          audit: [
+              {
+                  id: `aud-${Date.now()}`,
+                  ts: new Date().toISOString(),
+                  actorRole: role,
+                  actorLabel: 'User',
+                  eventType: 'VALIDATION_RUN',
+                  refType: 'RECEIPT',
+                  refId: activeReceipt.id,
+                  message: `Validation run: ${result.ok ? 'PASSED' : 'FAILED'} (${result.errors.length} errors)`
+              },
+              ...activeReceipt.audit
+          ]
+      } as S3Receipt;
+      
+      s3UpsertReceipt(updatedReceipt);
+      setRefreshKey(k => k + 1);
+  };
+
+  const handleAdvanceState = () => {
+      if (!activeReceipt || !validationResult?.ok) return;
+      
+      // Determine next state based on allowed transitions
+      // Simplified: Just take the first allowed next state for this demo
+      const allowed = allowedReceiptTransitions[activeReceipt.state];
+      if (!allowed || allowed.length === 0) return;
+      
+      const nextState = allowed[0];
+
+      try {
+          const updatedReceipt = transitionReceipt(activeReceipt, nextState, role, 'User', 'Advanced via UI');
+          s3UpsertReceipt(updatedReceipt);
+          setValidationResult(null); // Reset on transition
+          setRefreshKey(k => k + 1);
+      } catch (e) {
+          alert("State transition failed: " + e);
+      }
   };
 
   const getStatusColor = (state: ReceiptState) => {
@@ -277,6 +332,9 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const canCreate = canS3(role, 'CREATE_RECEIPT');
   const canEdit = activeReceipt ? canS3(role, 'EDIT_RECEIPT', activeReceipt.state) : false;
   const isAdmin = role === UserRole.SYSTEM_ADMIN;
+
+  const allowedNext = activeReceipt ? allowedReceiptTransitions[activeReceipt.state] : [];
+  const nextStateLabel = allowedNext && allowedNext.length > 0 ? getReceiptNextActions(activeReceipt.state) : null;
 
   return (
     <div className="h-full flex flex-col space-y-4 animate-in fade-in duration-300">
@@ -452,12 +510,31 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                     </div>
                 </div>
             </div>
-            <div className="flex flex-col items-end">
-                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Next Recommended Action</div>
-                <div className="flex items-center gap-2 text-brand-700 font-bold">
-                    {getReceiptNextActions(activeReceipt.state)}
-                    <ArrowRight size={16} />
+            
+            {/* Actions: Validate & Advance */}
+            <div className="flex flex-col items-end gap-2">
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={handleValidate}
+                        className="px-3 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-md text-xs font-bold hover:bg-slate-50 flex items-center gap-2 shadow-sm transition-colors"
+                    >
+                        <ShieldCheck size={14} /> Validate
+                    </button>
+                    {nextStateLabel && (
+                        <button 
+                            onClick={handleAdvanceState}
+                            disabled={!validationResult?.ok}
+                            className="px-4 py-1.5 bg-brand-600 border border-brand-700 text-white rounded-md text-xs font-bold hover:bg-brand-700 flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <PlayCircle size={14} /> {nextStateLabel}
+                        </button>
+                    )}
                 </div>
+                {validationResult && !validationResult.ok && (
+                    <span className="text-[10px] text-red-600 font-bold flex items-center gap-1 animate-pulse">
+                        <AlertTriangle size={10} /> Fix {validationResult.errors.length} validation errors
+                    </span>
+                )}
             </div>
         </div>
       )}
@@ -509,6 +586,24 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           <div className="col-span-8 bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col overflow-hidden">
               {activeReceipt ? (
                   <div className="flex-1 flex flex-col">
+                      
+                      {/* Validation Panel */}
+                      {validationResult && !validationResult.ok && (
+                          <div className="bg-red-50 border-b border-red-200 p-4 animate-in slide-in-from-top-2">
+                              <div className="flex items-center gap-2 text-red-800 font-bold text-sm mb-2">
+                                  <AlertTriangle size={16} /> Validation Failed
+                              </div>
+                              <ul className="space-y-1">
+                                  {validationResult.errors.map((err, idx) => (
+                                      <li key={idx} className="text-xs text-red-700 flex gap-2">
+                                          <span className="font-mono font-bold">[{err.level}]</span> {err.message}
+                                          {err.refId && <span className="text-red-400 font-mono">Ref: {err.refId}</span>}
+                                      </li>
+                                  ))}
+                              </ul>
+                          </div>
+                      )}
+
                       {/* Tabs */}
                       <div className="flex border-b border-slate-100 bg-slate-50/50">
                           <button 
@@ -625,8 +720,10 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                   {activeReceipt.lines.map(line => {
                                       const buffer = lineBuffers[line.id] || {};
                                       const isTrackable = line.trackability === 'TRACKABLE';
+                                      const hasError = validationResult?.errors.some(e => e.refId === line.id);
+                                      
                                       return (
-                                          <div key={line.id} className="p-3 border border-slate-200 rounded-lg bg-white shadow-sm">
+                                          <div key={line.id} className={`p-3 border rounded-lg bg-white shadow-sm ${hasError ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`}>
                                               <div className="flex justify-between items-start mb-2">
                                                   <div>
                                                       <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
@@ -636,6 +733,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                                   Trackable
                                                               </span>
                                                           )}
+                                                          {hasError && <AlertTriangle size={12} className="text-red-500" />}
                                                       </div>
                                                       <div className="text-xs text-slate-500 font-mono mt-1">SKU: {line.skuId || 'N/A'}</div>
                                                   </div>
@@ -647,7 +745,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                   </div>
                                               </div>
                                               
-                                              {/* Lot Info Section */}
+                                              {/* Lot Info & Qty Edit Section */}
                                               <div className="mt-3 pt-3 border-t border-slate-100">
                                                   <div className="grid grid-cols-4 gap-2 items-end">
                                                       <div className="col-span-2">
@@ -666,12 +764,12 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                           </div>
                                                       </div>
                                                       <div>
-                                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Mfg Date</label>
+                                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Qty Recvd</label>
                                                           <input 
-                                                              type="date"
+                                                              type="number"
                                                               className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500"
-                                                              value={buffer.mfgDate || ''}
-                                                              onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], mfgDate: e.target.value}}))}
+                                                              value={buffer.qtyReceived}
+                                                              onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], qtyReceived: parseInt(e.target.value) || 0}}))}
                                                               disabled={!canEdit}
                                                           />
                                                       </div>
@@ -684,6 +782,18 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                                   Update
                                                               </button>
                                                           )}
+                                                      </div>
+                                                  </div>
+                                                  <div className="grid grid-cols-2 gap-2 mt-2">
+                                                      <div>
+                                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Mfg Date</label>
+                                                          <input 
+                                                              type="date"
+                                                              className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                                              value={buffer.mfgDate || ''}
+                                                              onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], mfgDate: e.target.value}}))}
+                                                              disabled={!canEdit}
+                                                          />
                                                       </div>
                                                   </div>
                                               </div>
