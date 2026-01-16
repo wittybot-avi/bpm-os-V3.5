@@ -1,3 +1,4 @@
+
 import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { UserContext, UserRole, NavView } from '../types';
 import { 
@@ -53,7 +54,7 @@ interface Supplier {
   id: string;
   name: string;
   type: 'Cells' | 'BMS' | 'Mechanical' | 'Thermal';
-  status: 'Approved' | 'Conditional' | 'Pending';
+  status: 'Approved' | 'Conditional' | 'Pending' | 'Rejected';
   region: string;
   rating: string;
   // Extended fields for drill-down
@@ -129,6 +130,20 @@ const SUPPLIERS: Supplier[] = [
     contactPerson: 'Lee Min',
     lastAudit: 'Pending',
     performanceScore: 0,
+    source: 'MANUAL'
+  },
+  { 
+    id: 'sup-005', 
+    name: 'Volt-X Recycled', 
+    type: 'Cells', 
+    status: 'Rejected', 
+    region: 'EU', 
+    rating: 'F',
+    riskLevel: 'High',
+    certificates: [],
+    contactPerson: 'Unknown',
+    lastAudit: '2024-01-01',
+    performanceScore: 20,
     source: 'MANUAL'
   },
 ];
@@ -228,7 +243,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   const serializableItemsCount = s2Context.activeOrder?.selectedItems.filter(i => i.fulfillmentType === 'SERIALIZABLE').length || 0;
   const hasSerializableItems = serializableItemsCount > 0;
 
-  // Validation Logic (PP-S2-09)
+  // Validation Logic (PP-S2-09 & PP-S2-12)
   const validationErrors = useMemo(() => {
     const errors: string[] = [];
     if (!s2Context.activeOrder) return errors;
@@ -236,9 +251,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     const supplier = SUPPLIERS.find(s => s.id === selectedSupplierId);
     if (!supplier) return errors;
 
-    // Rule 1: Supplier Status
-    if (supplier.status === 'Pending') {
-      errors.push(`Selected supplier '${supplier.name}' is Pending approval. PO cannot be issued.`);
+    // Rule 1: Supplier Status (Strict Qualification Check)
+    if (supplier.status === 'Pending' || supplier.status === 'Rejected') {
+      errors.push(`Selected supplier '${supplier.name}' is ${supplier.status}. PO cannot be issued.`);
     }
 
     // Rule 2: Item Category Compatibility
@@ -258,7 +273,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   }, [s2Context.activeOrder, selectedSupplierId, availableSkus]);
 
   const hasValidationErrors = validationErrors.length > 0;
-
+  const validationErrorText = hasValidationErrors ? validationErrors[0] : null;
 
   // --- Handlers ---
 
@@ -605,6 +620,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                               viewingSupplier.status === 'Approved' ? 'bg-green-100 text-green-700' :
                               viewingSupplier.status === 'Conditional' ? 'bg-amber-100 text-amber-700' :
+                              viewingSupplier.status === 'Rejected' ? 'bg-red-100 text-red-700' :
                               'bg-slate-100 text-slate-600'
                           }`}>
                               {viewingSupplier.status}
@@ -865,7 +881,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
               <button 
                 disabled={!submitPoState.enabled || hasValidationErrors}
                 onClick={handleSubmitPo}
-                title={hasValidationErrors ? 'Validation Failed' : submitPoState.reason}
+                title={validationErrorText || submitPoState.reason}
                 className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 border border-slate-200 rounded hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 text-xs font-bold transition-colors"
               >
                 <Send size={14} /> Submit
@@ -879,7 +895,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
               <button 
                 disabled={!approvePoState.enabled || hasValidationErrors}
                 onClick={handleApprovePo}
-                title={hasValidationErrors ? 'Validation Failed' : approvePoState.reason}
+                title={validationErrorText || approvePoState.reason}
                 className="flex items-center gap-2 px-3 py-2 bg-purple-50 text-purple-700 border border-purple-100 rounded hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 text-xs font-bold transition-colors"
               >
                 <ThumbsUp size={14} /> Approve
@@ -893,7 +909,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
               <button 
                 disabled={!issuePoState.enabled || hasValidationErrors}
                 onClick={handleIssuePo}
-                title={hasValidationErrors ? 'Validation Failed' : issuePoState.reason}
+                title={validationErrorText || issuePoState.reason}
                 className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-100 rounded hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 text-xs font-bold transition-colors"
               >
                 <CreditCard size={14} /> Issue PO
@@ -1175,6 +1191,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                         sup.status === 'Approved' ? 'bg-green-100 text-green-700' :
                         sup.status === 'Conditional' ? 'bg-amber-100 text-amber-700' :
+                        sup.status === 'Rejected' ? 'bg-red-100 text-red-700' :
                         'bg-amber-100 text-amber-700'
                       }`}>
                         {sup.status}
