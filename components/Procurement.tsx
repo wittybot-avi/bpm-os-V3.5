@@ -18,7 +18,8 @@ import {
   History,
   RotateCcw,
   ArrowRight,
-  Radar
+  Radar,
+  Lock
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -117,6 +118,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     case 'S2_PO_ACKNOWLEDGED': stateReason = 'Vendor Acknowledged'; stateNext = 'Close Cycle'; break;
     case 'S2_LOCKED': stateReason = 'Cycle Closed'; stateNext = 'Proceed to S3'; break;
   }
+
+  // Governance: Lock fields when PO is Issued/Locked
+  const isLocked = ['S2_PO_ISSUED', 'S2_PO_ACKNOWLEDGED', 'S2_LOCKED'].includes(s2Context.procurementStatus);
 
   // Action Handlers
   const handleCreatePo = () => {
@@ -228,7 +232,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
         stageId: 'S2',
         actionId: 'CLOSE_PROCUREMENT_CYCLE',
         actorRole: role,
-        message: '[S2_PO_ACKNOWLEDGED -> S2_LOCKED] Cycle closed. Ready for next order.'
+        message: '[S2_PO_ACKNOWLEDGED -> S2_LOCKED] Cycle closed. S3 Readiness Signal Emitted.'
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -357,6 +361,17 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
       />
       
       <PreconditionsPanel stageId="S2" />
+
+      {/* Lock-on-PO Governance Banner */}
+      {isLocked && (
+        <div className="bg-slate-800 text-white px-4 py-2 rounded-md text-sm font-bold flex items-center gap-2 mb-4 animate-in fade-in slide-in-from-top-1 shadow-md border border-slate-700">
+          <Lock size={16} className="text-red-400" />
+          <span>COMMERCIAL SNAPSHOT LOCKED</span>
+          <span className="font-normal opacity-75 text-xs ml-2 border-l border-slate-600 pl-2">
+             PO Issued to Vendor • Modifications Restricted
+          </span>
+        </div>
+      )}
 
       {/* Recent Local Activity Panel */}
       {localEvents.length > 0 && (
@@ -536,6 +551,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                   <tr 
                     key={sup.id} 
                     onClick={() => {
+                        if (isLocked) return;
                         setSelectedSupplierId(sup.id);
                         // If there's an active order draft, update it.
                         if (s2Context.activeOrder && s2Context.procurementStatus === 'S2_DRAFT') {
@@ -545,7 +561,11 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                              }));
                         }
                     }}
-                    className={`cursor-pointer hover:bg-slate-50 transition-colors ${selectedSupplierId === sup.id ? 'bg-brand-50' : ''}`}
+                    className={`
+                        transition-colors 
+                        ${selectedSupplierId === sup.id ? 'bg-brand-50' : ''}
+                        ${isLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer hover:bg-slate-50'}
+                    `}
                   >
                     <td className="px-4 py-3 font-medium text-slate-800">{sup.name}</td>
                     <td className="px-4 py-3 text-slate-600">{sup.type}</td>
