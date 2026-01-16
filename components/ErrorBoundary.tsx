@@ -1,4 +1,4 @@
-import React, { ErrorInfo, ReactNode } from 'react';
+import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { ShieldAlert, RefreshCw, LayoutDashboard, FileText, Copy, Terminal } from 'lucide-react';
 import { NavView, PATCH_ID } from '../types';
 
@@ -13,7 +13,7 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-class ErrorBoundary extends React.Component<Props, State> {
+class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,

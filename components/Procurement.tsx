@@ -145,7 +145,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
         stageId: 'S2',
         actionId: 'CREATE_PO',
         actorRole: role,
-        message: `Created new Purchase Order draft (${newOrder.orderId})`
+        message: `[Init -> S2_DRAFT] Created PO ${newOrder.orderId}`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -166,7 +166,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
         stageId: 'S2',
         actionId: 'SUBMIT_PO_FOR_APPROVAL',
         actorRole: role,
-        message: `Submitted PO ${s2Context.activeOrder?.orderId || ''} for commercial approval`
+        message: `[S2_DRAFT -> S2_WAITING_APPROVAL] Submitted PO ${s2Context.activeOrder?.orderId || ''} for commercial approval`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -187,7 +187,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
         stageId: 'S2',
         actionId: 'APPROVE_PO',
         actorRole: role,
-        message: `PO ${s2Context.activeOrder?.orderId || ''} formally approved and signed off`
+        message: `[S2_WAITING_APPROVAL -> S2_APPROVED] PO ${s2Context.activeOrder?.orderId || ''} approved by Management`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -208,7 +208,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
         stageId: 'S2',
         actionId: 'ISSUE_PO_TO_VENDOR',
         actorRole: role,
-        message: `PO ${s2Context.activeOrder?.orderId || ''} issued to vendor ${supplierName}`
+        message: `[S2_APPROVED -> S2_PO_ISSUED] Issued PO ${s2Context.activeOrder?.orderId || ''} to ${supplierName}`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -228,7 +228,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
         stageId: 'S2',
         actionId: 'CLOSE_PROCUREMENT_CYCLE',
         actorRole: role,
-        message: 'Procurement cycle closed. Ready for next order.'
+        message: '[S2_PO_ACKNOWLEDGED -> S2_LOCKED] Cycle closed. Ready for next order.'
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -244,6 +244,16 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
             procurementStatus: 'S2_PO_ACKNOWLEDGED',
             activeOrder: prev.activeOrder ? { ...prev.activeOrder, currentState: 'S2_PO_ACKNOWLEDGED' } : prev.activeOrder
         }));
+        
+        // Log automatic event
+        const evt = emitAuditEvent({
+            stageId: 'S2',
+            actionId: 'AUTO_VENDOR_ACK',
+            actorRole: 'SYSTEM (VENDOR_PORTAL)',
+            message: `[S2_PO_ISSUED -> S2_PO_ACKNOWLEDGED] Vendor acknowledged receipt of PO`
+        });
+        setLocalEvents(prev => [evt, ...prev]);
+
       }, 3000); // 3s delay to simulate acknowledgement
       return () => clearTimeout(timer);
     }
