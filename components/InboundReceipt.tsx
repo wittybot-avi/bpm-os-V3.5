@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState, useContext } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
-import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units } from '../stages/s3/contracts';
+import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit } from '../stages/s3/contracts';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
 import { s3ListOpenOrdersFromS2, S3MockOrder, s3ListSuppliers, S3Supplier } from '../sim/api/s3/s3S2Adapter';
 
@@ -38,6 +38,12 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
 
   // Serial Generation State
   const [genPanel, setGenPanel] = useState<{ lineId: string, mode: 'RANGE' | 'POOL', count: number } | null>(null);
+
+  // Supplier Serial Entry State
+  const [serialEntryLineId, setSerialEntryLineId] = useState<string | null>(null);
+  const [serialBuffer, setSerialBuffer] = useState<S3SerializedUnit[]>([]);
+  const [bulkText, setBulkText] = useState('');
+  const [serialErrors, setSerialErrors] = useState<string[]>([]);
 
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -79,6 +85,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           setLineBuffers(initialLines);
           setValidationResult(null); // Clear validation when switching receipts
           setGenPanel(null);
+          setSerialEntryLineId(null);
       }
   }, [activeReceipt]);
 
@@ -361,6 +368,99 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       setRefreshKey(k => k + 1);
   };
 
+  // Supplier Serial Entry Handlers
+  const handleOpenSerialEntry = (lineId: string) => {
+    const line = activeReceipt?.lines.find(l => l.id === lineId);
+    if (!line) return;
+    setSerialEntryLineId(lineId);
+    setSerialBuffer(JSON.parse(JSON.stringify(line.units || []))); // Deep copy
+    setBulkText('');
+    setSerialErrors([]);
+  };
+
+  const handleBulkApply = () => {
+    if (!bulkText) return;
+    const lines = bulkText.split('\n').map(s => s.trim()).filter(s => s !== '');
+    if (lines.length === 0) return;
+
+    const newBuffer = [...serialBuffer];
+    let lineIdx = 0;
+    
+    for (let i = 0; i < newBuffer.length && lineIdx < lines.length; i++) {
+        if (!newBuffer[i].supplierSerialRef) {
+            newBuffer[i].supplierSerialRef = lines[lineIdx];
+            lineIdx++;
+        }
+    }
+    
+    setSerialBuffer(newBuffer);
+    setBulkText(''); 
+  };
+
+  const handleSaveSerials = () => {
+    if (!activeReceipt || !serialEntryLineId) return;
+
+    // Validation
+    const errors: string[] = [];
+    const seenInReceipt = new Set<string>();
+    
+    activeReceipt.lines.forEach(l => {
+        if (l.id === serialEntryLineId) return; // Skip current line
+        l.units?.forEach(u => {
+            if (u.supplierSerialRef) seenInReceipt.add(u.supplierSerialRef);
+        });
+    });
+
+    const seenInBuffer = new Set<string>();
+
+    serialBuffer.forEach((u, idx) => {
+        if (!u.supplierSerialRef) return;
+        const ref = u.supplierSerialRef;
+        if (seenInReceipt.has(ref)) {
+            errors.push(`Row ${idx + 1}: Serial '${ref}' exists in another line.`);
+        }
+        if (seenInBuffer.has(ref)) {
+             errors.push(`Row ${idx + 1}: Duplicate serial '${ref}' in this list.`);
+        }
+        seenInBuffer.add(ref);
+    });
+
+    if (errors.length > 0) {
+        setSerialErrors(errors);
+        return;
+    }
+
+    // Persist
+    const updatedLines = activeReceipt.lines.map(l => {
+        if (l.id === serialEntryLineId) {
+            return { ...l, units: serialBuffer };
+        }
+        return l;
+    });
+
+    const updatedReceipt = {
+        ...activeReceipt,
+        lines: updatedLines,
+        audit: [
+            {
+                id: `aud-${Date.now()}`,
+                ts: new Date().toISOString(),
+                actorRole: role,
+                actorLabel: 'User',
+                eventType: 'SUPPLIER_SERIALS_CAPTURED',
+                refType: 'LINE',
+                refId: serialEntryLineId,
+                message: `Updated supplier serial references`
+            },
+            ...activeReceipt.audit
+        ]
+    } as S3Receipt;
+
+    s3UpsertReceipt(updatedReceipt);
+    setSerialEntryLineId(null);
+    setRefreshKey(k => k + 1);
+  };
+
   const handleValidate = () => {
       if (!activeReceipt) return;
       const result = validateReceipt(activeReceipt, role);
@@ -529,14 +629,24 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                               <Barcode size={14} className="text-slate-500" />
                               <span className="text-xs font-bold text-slate-600">Serials: {unitsGenerated} / {buffer.qtyReceived}</span>
                           </div>
-                          {buffer.qtyReceived > unitsGenerated && !isGenOpen && (
-                             <button 
-                               onClick={() => handleOpenGeneration(line.id, unitsGenerated, buffer.qtyReceived)}
-                               className="bg-brand-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm hover:bg-brand-700 flex items-center gap-1"
-                             >
-                                <Plus size={10} /> Generate
-                             </button>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {unitsGenerated > 0 && canEdit && (
+                                <button
+                                    onClick={() => handleOpenSerialEntry(line.id)}
+                                    className="bg-white border border-slate-300 text-slate-600 text-[10px] font-bold px-2 py-1 rounded shadow-sm hover:bg-slate-50 flex items-center gap-1"
+                                >
+                                    <FileDigit size={10} /> Scan Supplier Serials
+                                </button>
+                            )}
+                            {buffer.qtyReceived > unitsGenerated && !isGenOpen && (
+                                <button 
+                                    onClick={() => handleOpenGeneration(line.id, unitsGenerated, buffer.qtyReceived)}
+                                    className="bg-brand-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm hover:bg-brand-700 flex items-center gap-1"
+                                >
+                                    <Plus size={10} /> Generate
+                                </button>
+                            )}
+                          </div>
                       </div>
                       
                       {isGenOpen && (
@@ -569,7 +679,10 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                       {unitsGenerated > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1 max-h-16 overflow-y-auto">
                               {line.units?.slice(0, 10).map(u => (
-                                  <span key={u.id} className="text-[9px] bg-white border border-slate-200 px-1 rounded text-slate-500 font-mono">{u.enterpriseSerial}</span>
+                                  <span key={u.id} className={`text-[9px] px-1 rounded font-mono border flex items-center gap-1 ${u.supplierSerialRef ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-500'}`}>
+                                    {u.enterpriseSerial}
+                                    {u.supplierSerialRef && <span className="text-[7px] text-green-500">✔</span>}
+                                  </span>
                               ))}
                               {(line.units?.length || 0) > 10 && <span className="text-[9px] text-slate-400 italic">+{unitsGenerated - 10} more</span>}
                           </div>
@@ -582,7 +695,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   };
 
   return (
-    <div className="h-full flex flex-col space-y-4 animate-in fade-in duration-300">
+    <div className="h-full flex flex-col space-y-4 animate-in fade-in duration-300 relative">
       {/* Header */}
       <div className="flex items-center justify-between shrink-0 border-b border-slate-200 pb-4">
         <div>
@@ -1008,6 +1121,126 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
               )}
           </div>
       </div>
+
+      {/* Supplier Serial Entry Modal */}
+      {serialEntryLineId && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setSerialEntryLineId(null)} />
+            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-lg">
+                    <div className="flex items-center gap-2">
+                        <FileDigit className="text-blue-600" size={20} />
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-800">Scan Supplier Serials</h3>
+                            <p className="text-xs text-slate-500">
+                                {activeReceipt?.lines.find(l => l.id === serialEntryLineId)?.itemName}
+                            </p>
+                        </div>
+                    </div>
+                    <button onClick={() => setSerialEntryLineId(null)} className="text-slate-400 hover:text-slate-600">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {/* Bulk Paste */}
+                    <div className="bg-slate-50 p-4 rounded border border-slate-200">
+                        <div className="flex justify-between items-center mb-2">
+                            <label className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1">
+                                <Copy size={12} /> Bulk Paste
+                            </label>
+                            <span className="text-[10px] text-slate-400">One serial per line</span>
+                        </div>
+                        <textarea 
+                            className="w-full text-xs p-3 border border-slate-300 rounded h-24 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                            placeholder="Paste multiple serials here..."
+                            value={bulkText}
+                            onChange={(e) => setBulkText(e.target.value)}
+                        />
+                        <div className="mt-2 flex justify-end">
+                            <button 
+                                onClick={handleBulkApply}
+                                disabled={!bulkText}
+                                className="bg-blue-600 text-white text-xs font-bold px-3 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50"
+                            >
+                                Apply to Empty Slots
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Unit List */}
+                    <div>
+                         <div className="flex justify-between items-center mb-2">
+                            <h4 className="text-xs font-bold text-slate-700 uppercase">Unit List ({serialBuffer.length})</h4>
+                            <span className="text-[10px] text-slate-400">Total Buffer Count</span>
+                         </div>
+                         <div className="border border-slate-200 rounded overflow-hidden">
+                             <table className="w-full text-left text-xs">
+                                 <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
+                                     <tr>
+                                         <th className="px-3 py-2 w-12 text-center">#</th>
+                                         <th className="px-3 py-2">Enterprise Serial</th>
+                                         <th className="px-3 py-2">Supplier Serial (Input)</th>
+                                     </tr>
+                                 </thead>
+                                 <tbody className="divide-y divide-slate-100">
+                                     {serialBuffer.map((unit, idx) => (
+                                         <tr key={unit.id} className="hover:bg-slate-50">
+                                             <td className="px-3 py-2 text-center text-slate-400">{idx + 1}</td>
+                                             <td className="px-3 py-2 font-mono text-slate-600">{unit.enterpriseSerial}</td>
+                                             <td className="px-3 py-2">
+                                                 <input 
+                                                    className="w-full border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-500 font-mono text-slate-800"
+                                                    placeholder="Scan or Enter..."
+                                                    value={unit.supplierSerialRef || ''}
+                                                    onChange={(e) => {
+                                                        const newVal = e.target.value;
+                                                        setSerialBuffer(prev => prev.map((u, i) => i === idx ? { ...u, supplierSerialRef: newVal } : u));
+                                                        setSerialErrors([]); // Clear errors on edit
+                                                    }}
+                                                 />
+                                             </td>
+                                         </tr>
+                                     ))}
+                                 </tbody>
+                             </table>
+                         </div>
+                    </div>
+
+                    {/* Validation Errors */}
+                    {serialErrors.length > 0 && (
+                        <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700 space-y-1">
+                            <div className="flex items-center gap-2 font-bold mb-1">
+                                <AlertCircle size={14} /> Validation Failed
+                            </div>
+                            <ul className="list-disc pl-5">
+                                {serialErrors.slice(0, 5).map((err, i) => (
+                                    <li key={i}>{err}</li>
+                                ))}
+                                {serialErrors.length > 5 && <li>...and {serialErrors.length - 5} more.</li>}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+
+                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-lg">
+                    <button 
+                        onClick={() => setSerialEntryLineId(null)}
+                        className="px-4 py-2 text-slate-600 font-bold text-xs hover:bg-slate-200 rounded transition-colors"
+                    >
+                        Cancel
+                    </button>
+                    <button 
+                        onClick={handleSaveSerials}
+                        className="px-4 py-2 bg-green-600 text-white font-bold text-xs rounded hover:bg-green-700 shadow-sm transition-colors flex items-center gap-2"
+                    >
+                        <Save size={14} /> Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 };
