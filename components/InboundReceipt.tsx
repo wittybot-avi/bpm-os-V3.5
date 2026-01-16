@@ -1,10 +1,10 @@
 
 import React, { useEffect, useState, useContext } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2 } from 'lucide-react';
-import { NavView, UserContext } from '../types';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw } from 'lucide-react';
+import { NavView, UserContext, UserRole } from '../types';
 import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3 } from '../stages/s3/contracts';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
-import { s3ListOpenOrdersFromS2, S3MockOrder } from '../sim/api/s3/s3S2Adapter';
+import { s3ListOpenOrdersFromS2, S3MockOrder, s3ListSuppliers, S3Supplier } from '../sim/api/s3/s3S2Adapter';
 
 interface InboundReceiptProps {
   onNavigate?: (view: NavView) => void;
@@ -15,7 +15,17 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const [receipts, setReceipts] = useState<S3Receipt[]>([]);
   const [activeReceipt, setActiveReceipt] = useState<S3Receipt | undefined>(undefined);
   const [openOrders, setOpenOrders] = useState<S3MockOrder[]>([]);
+  const [suppliers, setSuppliers] = useState<S3Supplier[]>([]);
+  
+  // Intake Panel State
+  const [intakeMode, setIntakeMode] = useState<'PO' | 'MANUAL'>('PO');
   const [selectedPoId, setSelectedPoId] = useState<string>('');
+  
+  // Manual Receipt State
+  const [manualSupplierId, setManualSupplierId] = useState<string>('');
+  const [manualReason, setManualReason] = useState<string>('');
+  const [supervisorAck, setSupervisorAck] = useState<boolean>(false);
+
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Initial load and sync
@@ -23,7 +33,16 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
     setReceipts(s3ListReceipts());
     setActiveReceipt(s3GetActiveReceipt());
     setOpenOrders(s3ListOpenOrdersFromS2());
+    setSuppliers(s3ListSuppliers());
   }, [refreshKey]);
+
+  // Reset form when toggling mode
+  useEffect(() => {
+      setSelectedPoId('');
+      setManualSupplierId('');
+      setManualReason('');
+      setSupervisorAck(false);
+  }, [intakeMode]);
 
   const handleSelectReceipt = (id: string) => {
     s3SetActiveReceipt(id);
@@ -82,6 +101,46 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
     setRefreshKey(k => k + 1);
   };
 
+  const handleCreateManualReceipt = () => {
+      if (!manualSupplierId || manualReason.length < 10) return;
+      
+      const requiresAck = role !== UserRole.SYSTEM_ADMIN;
+      if (requiresAck && !supervisorAck) return;
+
+      const newReceipt: S3Receipt = {
+        id: `rcpt-man-${Date.now()}`,
+        code: makeReceiptCode(receipts.length + 1),
+        supplierId: manualSupplierId,
+        // poId null indicates Manual
+        createdAt: new Date().toISOString(),
+        createdByRole: role,
+        state: ReceiptState.DRAFT,
+        lines: [], // Empty initially
+        audit: [{
+            id: `aud-${Date.now()}`,
+            ts: new Date().toISOString(),
+            actorRole: role,
+            actorLabel: 'User',
+            eventType: 'MANUAL_RECEIPT_CREATED',
+            refType: 'RECEIPT',
+            refId: '',
+            message: `Manual Receipt created. Reason: ${manualReason}. Supervisor Ack: ${requiresAck ? 'YES' : 'AUTO (Admin)'}`
+        }]
+    };
+
+    newReceipt.audit.forEach(a => a.refId = newReceipt.id);
+
+    s3UpsertReceipt(newReceipt);
+    s3SetActiveReceipt(newReceipt.id);
+    
+    // Reset Form
+    setManualSupplierId('');
+    setManualReason('');
+    setSupervisorAck(false);
+    setIntakeMode('PO'); // Switch back to default view
+    setRefreshKey(k => k + 1);
+  };
+
   const getStatusColor = (state: ReceiptState) => {
     switch (state) {
       case ReceiptState.DRAFT: return 'bg-slate-100 text-slate-700 border-slate-200';
@@ -96,6 +155,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   };
 
   const canCreate = canS3(role, 'CREATE_RECEIPT');
+  const isAdmin = role === UserRole.SYSTEM_ADMIN;
 
   return (
     <div className="h-full flex flex-col space-y-4 animate-in fade-in duration-300">
@@ -115,36 +175,129 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
 
       {/* Procurement Intake Panel (Create Receipt) */}
       {canCreate && (
-        <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm flex items-center gap-4 animate-in slide-in-from-top-2">
-            <div className="p-2 bg-blue-50 text-blue-600 rounded">
-                <FileInput size={20} />
-            </div>
-            <div className="flex-1 flex items-center gap-4">
-                <div>
-                    <h3 className="text-sm font-bold text-slate-700">Procurement Intake</h3>
-                    <p className="text-xs text-slate-500">Link S2 Purchase Order to generate Receipt</p>
+        <div className={`border rounded-lg p-3 shadow-sm transition-colors ${intakeMode === 'MANUAL' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}>
+            <div className="flex items-start gap-4">
+                <div className={`p-2 rounded mt-0.5 ${intakeMode === 'MANUAL' ? 'bg-amber-100 text-amber-700' : 'bg-blue-50 text-blue-600'}`}>
+                    {intakeMode === 'MANUAL' ? <FileWarning size={20} /> : <FileInput size={20} />}
                 </div>
-                <div className="h-8 w-px bg-slate-200"></div>
-                <select 
-                    className="flex-1 text-sm border border-slate-300 rounded p-2 bg-white"
-                    value={selectedPoId}
-                    onChange={(e) => setSelectedPoId(e.target.value)}
-                >
-                    <option value="">-- Select Open Order --</option>
-                    {openOrders.map(po => (
-                        <option key={po.poId} value={po.poId}>
-                            {po.poCode} — {po.supplierName} ({po.items.length} Lines)
-                        </option>
-                    ))}
-                </select>
-                <button 
-                    onClick={handleLoadPo}
-                    disabled={!selectedPoId}
-                    className="bg-brand-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
-                >
-                    <Plus size={14} />
-                    Load into Receipt
-                </button>
+                
+                <div className="flex-1">
+                    {/* Panel Header & Toggle */}
+                    <div className="flex items-center justify-between mb-3">
+                        <div>
+                            <h3 className={`text-sm font-bold ${intakeMode === 'MANUAL' ? 'text-amber-900' : 'text-slate-700'}`}>
+                                {intakeMode === 'MANUAL' ? 'Manual Receipt (Exception)' : 'Procurement Intake'}
+                            </h3>
+                            <p className="text-xs text-slate-500">
+                                {intakeMode === 'MANUAL' 
+                                    ? 'Create ad-hoc receipt without PO linkage. Requires audit reason.' 
+                                    : 'Link S2 Purchase Order to generate Receipt'}
+                            </p>
+                        </div>
+                        <div className="flex bg-slate-100 p-0.5 rounded border border-slate-200">
+                            <button 
+                                onClick={() => setIntakeMode('PO')}
+                                className={`px-3 py-1 text-xs font-bold rounded ${intakeMode === 'PO' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                PO Link
+                            </button>
+                            <button 
+                                onClick={() => setIntakeMode('MANUAL')}
+                                className={`px-3 py-1 text-xs font-bold rounded ${intakeMode === 'MANUAL' ? 'bg-amber-100 text-amber-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                Manual
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Controls */}
+                    {intakeMode === 'PO' ? (
+                        <div className="flex items-center gap-4">
+                            <select 
+                                className="flex-1 text-sm border border-slate-300 rounded p-2 bg-white"
+                                value={selectedPoId}
+                                onChange={(e) => setSelectedPoId(e.target.value)}
+                            >
+                                <option value="">-- Select Open Order --</option>
+                                {openOrders.map(po => (
+                                    <option key={po.poId} value={po.poId}>
+                                        {po.poCode} — {po.supplierName} ({po.items.length} Lines)
+                                    </option>
+                                ))}
+                            </select>
+                            <button 
+                                onClick={handleLoadPo}
+                                disabled={!selectedPoId}
+                                className="bg-brand-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                            >
+                                <Plus size={14} />
+                                Load into Receipt
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="space-y-3 animate-in fade-in slide-in-from-top-1">
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-[10px] uppercase font-bold text-amber-800 mb-1">Supplier *</label>
+                                    <select 
+                                        className="w-full text-sm border border-amber-200 rounded p-2 bg-white focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                        value={manualSupplierId}
+                                        onChange={(e) => setManualSupplierId(e.target.value)}
+                                    >
+                                        <option value="">-- Select Supplier --</option>
+                                        {suppliers.map(s => (
+                                            <option key={s.id} value={s.id}>{s.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] uppercase font-bold text-amber-800 mb-1">Reason (Audit Log) *</label>
+                                    <input 
+                                        type="text"
+                                        className="w-full text-sm border border-amber-200 rounded p-2 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                        placeholder="Min 10 characters..."
+                                        value={manualReason}
+                                        onChange={(e) => setManualReason(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            
+                            {!isAdmin && (
+                                <div className="flex items-center gap-4 bg-amber-100/50 p-2 rounded border border-amber-200">
+                                    <div className="flex-1">
+                                        <label className="block text-[10px] uppercase font-bold text-amber-800 mb-1">Supervisor Authorization</label>
+                                        <select disabled className="w-full text-xs p-1.5 rounded border border-amber-300 bg-slate-50 text-slate-500">
+                                            <option>System Admin (Demo Supervisor)</option>
+                                        </select>
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-4">
+                                        <input 
+                                            type="checkbox" 
+                                            id="ack" 
+                                            className="rounded text-amber-600 focus:ring-amber-500"
+                                            checked={supervisorAck}
+                                            onChange={(e) => setSupervisorAck(e.target.checked)}
+                                        />
+                                        <label htmlFor="ack" className="text-xs font-bold text-amber-900 cursor-pointer select-none">
+                                            I confirm verbal approval
+                                        </label>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end">
+                                <button 
+                                    onClick={handleCreateManualReceipt}
+                                    disabled={!manualSupplierId || manualReason.length < 10 || (!isAdmin && !supervisorAck)}
+                                    className="bg-amber-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-sm transition-colors"
+                                >
+                                    <ShieldAlert size={14} />
+                                    Create Manual Receipt
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
       )}
@@ -157,7 +310,14 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                     <Package size={24} />
                 </div>
                 <div>
-                    <h2 className="text-lg font-bold text-slate-800">{activeReceipt.code}</h2>
+                    <div className="flex items-center gap-2">
+                        <h2 className="text-lg font-bold text-slate-800">{activeReceipt.code}</h2>
+                        {!activeReceipt.poId && (
+                            <span className="text-[10px] bg-amber-100 text-amber-800 border border-amber-200 px-2 py-0.5 rounded font-bold uppercase flex items-center gap-1">
+                                <FileWarning size={10} /> Manual
+                            </span>
+                        )}
+                    </div>
                     <div className="flex items-center gap-2 text-sm text-slate-600">
                         <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase border ${getStatusColor(activeReceipt.state)}`}>
                             {activeReceipt.state.replace(/_/g, ' ')}
@@ -210,8 +370,11 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                   {r.state.replace(/_/g, ' ')}
                               </span>
                           </div>
-                          <div className="text-xs text-slate-500 truncate">
-                              PO: {r.poId || 'N/A'} • {new Date(r.createdAt).toLocaleDateString()}
+                          <div className="text-xs text-slate-500 truncate flex items-center gap-2">
+                              {!r.poId && <span className="text-[9px] bg-amber-100 text-amber-800 px-1 rounded font-bold">MANUAL</span>}
+                              <span>PO: {r.poId || 'N/A'}</span>
+                              <span className="text-slate-300">•</span> 
+                              <span>{new Date(r.createdAt).toLocaleDateString()}</span>
                           </div>
                       </div>
                   ))}
@@ -254,7 +417,11 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                               </div>
                           ))}
                           {activeReceipt.lines.length === 0 && (
-                              <div className="p-8 text-center text-slate-400 text-sm">No line items in this receipt.</div>
+                              <div className="p-12 text-center text-slate-400 text-sm flex flex-col items-center gap-2">
+                                <RefreshCcw className="opacity-20" size={32} />
+                                <p>No line items in this receipt.</p>
+                                {!activeReceipt.poId && <p className="text-xs text-amber-600">Manual receipts require manual line item addition (Coming soon in V35-S3-PP-08).</p>}
+                              </div>
                           )}
                       </div>
                   </div>

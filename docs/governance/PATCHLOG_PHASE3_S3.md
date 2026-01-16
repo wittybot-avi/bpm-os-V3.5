@@ -8,6 +8,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S3-PP-07** | Feature/Governance | S3 Manual Receipt | **STABLE** | Added "Manual Receipt" mode to S3 Intake Panel. Allows Stores/Admin to create receipts without PO, enforcing reason logging and supervisor acknowledgement (if not Admin). | 2026-02-02 13:00 (IST) |
 | **V35-S3-PP-06** | Feature | S3 PO Linkage | **STABLE** | Implemented PO intake adapter (`s3S2Adapter`) and "Procurement Intake" panel in S3. Allows loading mock S2 Open Orders into S3 Receipts with automatic line item generation and trackability assignment. | 2026-02-02 12:30 (IST) |
 | **V35-S3-PP-05** | Foundation | S3 Page Shell | **STABLE** | Implemented basic S3 Inbound Receipt page shell in `components/InboundReceipt.tsx`. Connected to S3 Sim Store. Removed legacy wizard from `S3InboundScreen.tsx` to align with new architecture. | 2026-02-02 12:00 (IST) |
 | **V35-S3-PP-04** | Foundation | S3 RBAC Policy | **STABLE** | Added `s3Rbac.ts` with `canS3()` helper to centralize permission logic for Inbound Operators vs QA vs Viewers. Mapped global UserRoles to S3-specific contexts. | 2026-02-02 11:30 (IST) |

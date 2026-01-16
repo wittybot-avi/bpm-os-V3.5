@@ -18,6 +18,11 @@ export interface S3MockOrder {
     items: S3MockOrderItem[];
 }
 
+export interface S3Supplier {
+    id: string;
+    name: string;
+}
+
 /**
  * Simulates fetching "Approved & Issued" POs from S2 that are ready for receiving.
  * In a real backend, this would query the S2 Order Service.
@@ -86,5 +91,18 @@ export const s3ListOpenOrdersFromS2 = (): S3MockOrder[] => {
                 }
             ]
         }
+    ];
+};
+
+/**
+ * Returns a list of suppliers for Manual Receipt creation.
+ */
+export const s3ListSuppliers = (): S3Supplier[] => {
+    return [
+        { id: 'sup-001', name: 'CellGlobal Dynamics' },
+        { id: 'sup-002', name: 'Orion BMS Systems' },
+        { id: 'sup-003', name: 'ThermalWrap Inc' },
+        { id: 'sup-004', name: 'Precision Casings Ltd' },
+        { id: 'sup-005', name: 'Volt-X Recycled' }
     ];
 };
