@@ -1,5 +1,5 @@
 
-import React, { useContext, useState, useEffect } from 'react';
+import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { UserContext, UserRole, NavView } from '../types';
 import { 
   ShieldAlert, 
@@ -27,7 +27,9 @@ import {
   PackagePlus,
   Trash2,
   List,
-  AlertTriangle
+  AlertTriangle,
+  ScanBarcode,
+  Ban
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -62,6 +64,15 @@ const SUPPLIERS: Supplier[] = [
   { id: 'sup-003', name: 'ThermalWrap Inc', type: 'Thermal', status: 'Conditional', region: 'EU', rating: 'B' },
   { id: 'sup-004', name: 'Precision Casings', type: 'Mechanical', status: 'Pending', region: 'APAC', rating: '-' },
 ];
+
+// Governance Map: S1 SKU Type -> Allowed Supplier Types
+const SKU_TYPE_SUPPLIER_MAP: Record<string, string[]> = {
+  'CELL': ['Cells'],
+  'BMS': ['BMS'],
+  'IOT': ['BMS'], // Electronics supplier handles IoT
+  'PACK': ['Mechanical'], // Enclosures/Structure
+  'MODULE': ['Cells', 'Mechanical'], // Could be either depending on sub-assembly
+};
 
 const TERMS: CommercialTerm[] = [
   { id: 'tm-001', skuRef: 'BP-LFP-48V-2.5K', moq: '5,000 Units', leadTime: '12 Weeks', priceBand: '$125 - $140 / kWh', contractStatus: 'Active' },
@@ -141,6 +152,42 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
 
   // Governance: Lock fields when PO is Issued/Locked
   const isLocked = ['S2_PO_ISSUED', 'S2_PO_ACKNOWLEDGED', 'S2_LOCKED'].includes(s2Context.procurementStatus);
+  
+  // S3 Eligibility Check
+  const serializableItemsCount = s2Context.activeOrder?.selectedItems.filter(i => i.fulfillmentType === 'SERIALIZABLE').length || 0;
+  const hasSerializableItems = serializableItemsCount > 0;
+
+  // Validation Logic (PP-S2-09)
+  const validationErrors = useMemo(() => {
+    const errors: string[] = [];
+    if (!s2Context.activeOrder) return errors;
+
+    const supplier = SUPPLIERS.find(s => s.id === selectedSupplierId);
+    if (!supplier) return errors;
+
+    // Rule 1: Supplier Status
+    if (supplier.status === 'Pending') {
+      errors.push(`Selected supplier '${supplier.name}' is Pending approval. PO cannot be issued.`);
+    }
+
+    // Rule 2: Item Category Compatibility
+    s2Context.activeOrder.selectedItems.forEach(item => {
+      if (item.itemType === 'SKU' && item.skuCode) {
+        const skuDef = availableSkus.find(s => s.skuCode === item.skuCode);
+        if (skuDef) {
+           const allowedTypes = SKU_TYPE_SUPPLIER_MAP[skuDef.type] || [];
+           if (allowedTypes.length > 0 && !allowedTypes.includes(supplier.type)) {
+              errors.push(`Incompatible: Item '${item.name}' (${skuDef.type}) requires [${allowedTypes.join(', ')}] supplier. Selected: ${supplier.type}.`);
+           }
+        }
+      }
+    });
+
+    return errors;
+  }, [s2Context.activeOrder, selectedSupplierId, availableSkus]);
+
+  const hasValidationErrors = validationErrors.length > 0;
+
 
   // --- Handlers ---
 
@@ -168,6 +215,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     addItemToOrder({
         itemId: `item-${Date.now()}`,
         itemType: 'SKU',
+        fulfillmentType: 'SERIALIZABLE',
         skuCode: skuLineDraft.skuCode,
         name: skuLineDraft.name || skuLineDraft.skuCode,
         uom: skuLineDraft.uom || 'Units',
@@ -184,6 +232,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     addItemToOrder({
         itemId: `man-${Date.now()}`,
         itemType: 'MANUAL',
+        fulfillmentType: 'NON_SERIALIZABLE',
         name: manualLineDraft.name,
         category: manualLineDraft.category,
         uom: manualLineDraft.uom || 'Units',
@@ -289,6 +338,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   };
 
   const handleSubmitPo = () => {
+    if (hasValidationErrors) return;
     setIsSimulating(true);
     setTimeout(() => {
       setS2Context(prev => ({ 
@@ -310,6 +360,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   };
 
   const handleApprovePo = () => {
+    if (hasValidationErrors) return;
     setIsSimulating(true);
     setTimeout(() => {
       setS2Context(prev => ({ 
@@ -331,6 +382,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   };
 
   const handleIssuePo = () => {
+    if (hasValidationErrors) return;
     setIsSimulating(true);
     setTimeout(() => {
       setS2Context(prev => ({ 
@@ -510,6 +562,21 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
         </div>
       )}
 
+      {/* Validation Errors Banner */}
+      {hasValidationErrors && (
+        <div className="bg-red-50 text-red-800 px-4 py-3 rounded-md text-sm border border-red-200 mb-4 animate-in slide-in-from-top-2">
+           <div className="flex items-center gap-2 font-bold mb-1">
+             <Ban size={16} className="text-red-600" />
+             <span>Supplier Eligibility Conflict</span>
+           </div>
+           <ul className="list-disc pl-5 space-y-1">
+             {validationErrors.map((err, i) => (
+               <li key={i} className="text-xs">{err}</li>
+             ))}
+           </ul>
+        </div>
+      )}
+
       {/* Recent Local Activity Panel */}
       {localEvents.length > 0 && (
         <div className="bg-slate-50 border border-slate-200 rounded-md p-3 mb-6 animate-in slide-in-from-top-2">
@@ -539,7 +606,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
             <h3 className="font-bold text-blue-900 text-sm">Next Recommended Action</h3>
             <p className="text-xs text-blue-700 mt-1 max-w-lg">
               {isReadyForNext 
-                ? "Procurement cycle complete. Proceed to Inbound Receipt (S3) to process incoming materials." 
+                ? (hasSerializableItems 
+                   ? "Procurement cycle complete. Proceed to Inbound Receipt (S3) to process incoming materials." 
+                   : "Order complete. Non-serializable items can be received directly without S3 processing.")
                 : "Procurement active. Complete approval and issuance cycle to unlock Inbound Logistics."}
             </p>
           </div>
@@ -554,13 +623,17 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
            <div className="flex-1 sm:flex-none flex flex-col items-center">
              <button 
                onClick={handleNavToS3} 
-               disabled={!isReadyForNext}
+               disabled={!isReadyForNext || !hasSerializableItems}
                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+               title={!hasSerializableItems ? 'No items require S3 serialization' : ''}
              >
                <Truck size={14} /> Go to S3: Inbound
              </button>
              {!isReadyForNext && (
                 <span className="text-[9px] text-red-500 mt-1 font-medium">Wait for PO Ack</span>
+             )}
+             {isReadyForNext && !hasSerializableItems && (
+                 <span className="text-[9px] text-amber-600 mt-1 font-medium">Direct Receipt Only</span>
              )}
            </div>
         </div>
@@ -584,9 +657,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
             {/* Submit */}
             <div className="flex flex-col items-center">
               <button 
-                disabled={!submitPoState.enabled}
+                disabled={!submitPoState.enabled || hasValidationErrors}
                 onClick={handleSubmitPo}
-                title={submitPoState.reason}
+                title={hasValidationErrors ? 'Validation Failed' : submitPoState.reason}
                 className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 border border-slate-200 rounded hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 text-xs font-bold transition-colors"
               >
                 <Send size={14} /> Submit
@@ -598,9 +671,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
             {/* Approve */}
             <div className="flex flex-col items-center">
               <button 
-                disabled={!approvePoState.enabled}
+                disabled={!approvePoState.enabled || hasValidationErrors}
                 onClick={handleApprovePo}
-                title={approvePoState.reason}
+                title={hasValidationErrors ? 'Validation Failed' : approvePoState.reason}
                 className="flex items-center gap-2 px-3 py-2 bg-purple-50 text-purple-700 border border-purple-100 rounded hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 text-xs font-bold transition-colors"
               >
                 <ThumbsUp size={14} /> Approve
@@ -612,9 +685,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
             {/* Issue */}
             <div className="flex flex-col items-center">
               <button 
-                disabled={!issuePoState.enabled}
+                disabled={!issuePoState.enabled || hasValidationErrors}
                 onClick={handleIssuePo}
-                title={issuePoState.reason}
+                title={hasValidationErrors ? 'Validation Failed' : issuePoState.reason}
                 className="flex items-center gap-2 px-3 py-2 bg-green-50 text-green-700 border border-green-100 rounded hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 text-xs font-bold transition-colors"
               >
                 <CreditCard size={14} /> Issue PO
@@ -920,50 +993,62 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
 
           <div className="overflow-y-auto flex-1 p-4 space-y-4 custom-scrollbar">
              {rightTab === 'LINES' && (
-                <div className="space-y-3">
-                    {(!s2Context.activeOrder || s2Context.activeOrder.selectedItems.length === 0) ? (
-                        <div className="text-center py-8 text-slate-400 text-xs italic">
-                            No items added to the order yet.
+                <div className="flex flex-col h-full">
+                  <div className="space-y-3 flex-1">
+                      {(!s2Context.activeOrder || s2Context.activeOrder.selectedItems.length === 0) ? (
+                          <div className="text-center py-8 text-slate-400 text-xs italic">
+                              No items added to the order yet.
+                          </div>
+                      ) : (
+                          s2Context.activeOrder.selectedItems.map((item) => (
+                              <div key={item.itemId} className="p-3 border border-slate-200 rounded-lg bg-slate-50 flex flex-col gap-2">
+                                  <div className="flex justify-between items-start">
+                                      <div className="flex flex-col">
+                                          <span className="font-bold text-slate-700 text-sm">{item.name}</span>
+                                          <div className="flex items-center gap-2 mt-0.5">
+                                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
+                                                  item.fulfillmentType === 'SERIALIZABLE'
+                                                  ? 'bg-blue-100 text-blue-700 border-blue-200' 
+                                                  : 'bg-amber-100 text-amber-700 border-amber-200'
+                                              }`}>
+                                                  {item.fulfillmentType === 'SERIALIZABLE' ? 'TRACKABLE (S3)' : 'DIRECT CONSUMPTION'}
+                                              </span>
+                                              {item.skuCode && <span className="text-[10px] font-mono text-slate-400">{item.skuCode}</span>}
+                                          </div>
+                                      </div>
+                                      {!isLocked && (
+                                          <button 
+                                              onClick={() => handleRemoveItem(item.itemId)} 
+                                              className="text-slate-400 hover:text-red-500 transition-colors"
+                                              title="Remove Item"
+                                          >
+                                              <Trash2 size={14} />
+                                          </button>
+                                      )}
+                                  </div>
+                                  <div className="flex justify-between items-center text-xs border-t border-slate-200 pt-2 mt-1">
+                                      <div className="font-mono">
+                                          <span className="text-slate-500">Qty:</span> <span className="font-bold">{item.quantity} {item.uom}</span>
+                                      </div>
+                                      <div className="text-slate-500 flex items-center gap-1">
+                                          <Calendar size={10} /> {item.deliveryDate}
+                                      </div>
+                                  </div>
+                                  {item.notes && <div className="text-[10px] text-slate-500 italic bg-white p-1 rounded border border-slate-100">{item.notes}</div>}
+                              </div>
+                          ))
+                      )}
+                  </div>
+                  
+                  {s2Context.activeOrder && s2Context.activeOrder.selectedItems.length > 0 && (
+                     <div className="mt-4 pt-3 border-t border-slate-200 text-xs flex justify-between items-center bg-slate-50 p-2 rounded">
+                        <span className="text-slate-500 font-bold uppercase text-[10px]">S3 Eligibility</span>
+                        <div className="flex items-center gap-2">
+                           <ScanBarcode size={14} className="text-blue-600"/>
+                           <span className="font-bold text-slate-700">{serializableItemsCount} Items Serializable</span>
                         </div>
-                    ) : (
-                        s2Context.activeOrder.selectedItems.map((item) => (
-                            <div key={item.itemId} className="p-3 border border-slate-200 rounded-lg bg-slate-50 flex flex-col gap-2">
-                                <div className="flex justify-between items-start">
-                                    <div className="flex flex-col">
-                                        <span className="font-bold text-slate-700 text-sm">{item.name}</span>
-                                        <div className="flex items-center gap-2 mt-0.5">
-                                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
-                                                item.itemType === 'SKU' 
-                                                ? 'bg-blue-100 text-blue-700 border-blue-200' 
-                                                : 'bg-amber-100 text-amber-700 border-amber-200'
-                                            }`}>
-                                                {item.itemType === 'SKU' ? 'TRACKABLE' : 'NON-TRACKABLE'}
-                                            </span>
-                                            {item.skuCode && <span className="text-[10px] font-mono text-slate-400">{item.skuCode}</span>}
-                                        </div>
-                                    </div>
-                                    {!isLocked && (
-                                        <button 
-                                            onClick={() => handleRemoveItem(item.itemId)} 
-                                            className="text-slate-400 hover:text-red-500 transition-colors"
-                                            title="Remove Item"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    )}
-                                </div>
-                                <div className="flex justify-between items-center text-xs border-t border-slate-200 pt-2 mt-1">
-                                    <div className="font-mono">
-                                        <span className="text-slate-500">Qty:</span> <span className="font-bold">{item.quantity} {item.uom}</span>
-                                    </div>
-                                    <div className="text-slate-500 flex items-center gap-1">
-                                        <Calendar size={10} /> {item.deliveryDate}
-                                    </div>
-                                </div>
-                                {item.notes && <div className="text-[10px] text-slate-500 italic bg-white p-1 rounded border border-slate-100">{item.notes}</div>}
-                            </div>
-                        ))
-                    )}
+                     </div>
+                  )}
                 </div>
              )}
 

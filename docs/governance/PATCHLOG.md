@@ -5,6 +5,8 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S2-PP-09** | Governance | Supplier Eligibility Rules | **STABLE** | Implemented validation logic in S2 Procurement to block PO issuance if the selected supplier is incompatible with item categories (e.g., cannot buy BMS from a Mechanical supplier). Added error banner and button blocking. | 2026-02-01 16:45 (IST) |
+| **V35-S2-PP-08** | Governance | Enforce S3 Eligibility Rules | **STABLE** | Implemented `fulfillmentType` (SERIALIZABLE vs NON_SERIALIZABLE) in S2 Procurement. Added visual badges and updated next-step guidance logic to clarify S3 eligibility for mixed orders. | 2026-02-01 16:00 (IST) |
 | **V35-S2-PP-07** | Feature | Manual Procurement Items | **STABLE** | Introduced support for non-manufacturing items (MRO, Consumables) in S2 Procurement. Added tabs for "Manual Entry" and "Order Lines". Implemented polymorphic item structure (SKU vs Manual) with NON_TRACKABLE badging. | 2026-02-01 15:00 (IST) |
 | **V35-S2-PP-06** | Feature | S1 SKU Procurement Lane | **STABLE** | Implemented interactive "Manufacturing Items" lane in S2. Fetches Approved SKUs from S1 context. Allows inline editing of Quantity, Delivery Date, and Notes before adding to Active Order. | 2026-02-01 14:15 (IST) |
 | **V35-S2-LOCK-PP-05** | Governance | Lock-on-PO Rule | **STABLE** | Implemented Lock-on-PO governance in S2. Once a PO is issued, the supplier selection is frozen (read-only) and a "COMMERCIAL SNAPSHOT LOCKED" banner is displayed. S3 readiness signal logic validated. | 2026-02-01 13:45 (IST) |

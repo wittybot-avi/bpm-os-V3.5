@@ -16,10 +16,12 @@ export type S2State =
   | 'S2_LOCKED';
 
 export type OrderItemType = 'SKU' | 'MANUAL';
+export type FulfillmentType = 'SERIALIZABLE' | 'NON_SERIALIZABLE';
 
 export interface ActiveOrderItem {
   itemId: string; // Unique ID for the line item
   itemType: OrderItemType;
+  fulfillmentType: FulfillmentType; // Determines S3 eligibility
   name: string; // Display Name (SKU Name or Manual Name)
   skuCode?: string; // Required if itemType === 'SKU'
   category?: string; // e.g., 'MRO', 'Consumable' (mainly for Manual)
@@ -68,6 +70,7 @@ export const getMockS2Context = (): S2Context => ({
       { 
         itemId: 'item-001',
         itemType: 'SKU',
+        fulfillmentType: 'SERIALIZABLE',
         skuCode: 'BP-LFP-48V-2.5K', 
         name: '48V LFP Pack Standard',
         uom: 'Units',
