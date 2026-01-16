@@ -1,6 +1,6 @@
 
-import React, { useEffect, useState, useContext } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle } from 'lucide-react';
+import React, { useEffect, useState, useContext, useMemo } from 'react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
 import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit, UnitState } from '../stages/s3/contracts';
 import { getNextUnitState, canTransitionUnit, transitionUnit } from '../stages/s3/contracts/s3StateMachine';
@@ -45,6 +45,9 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const [serialBuffer, setSerialBuffer] = useState<S3SerializedUnit[]>([]);
   const [bulkText, setBulkText] = useState('');
   const [serialErrors, setSerialErrors] = useState<string[]>([]);
+  
+  // Trace Mapping View State
+  const [showTraceMapping, setShowTraceMapping] = useState(false);
 
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -87,6 +90,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           setValidationResult(null); // Clear validation when switching receipts
           setGenPanel(null);
           setSerialEntryLineId(null);
+          setShowTraceMapping(false);
       }
   }, [activeReceipt]);
 
@@ -541,6 +545,50 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const hasUnverifiedUnits = getUnverifiedCount() > 0;
   // Blocking condition logic: if we are trying to advance to QC, we should check this.
   // For now, it's a banner display.
+  
+  // -- EVIDENCE MAPPING HELPERS --
+  const mappedEvidenceData = useMemo(() => {
+      if (!activeReceipt) return [];
+      const mapping = [];
+      const supplierName = suppliers.find(s => s.id === activeReceipt.supplierId)?.name || 'Unknown';
+      
+      for (const line of activeReceipt.lines) {
+          if (!line.units) continue;
+          for (const unit of line.units) {
+              mapping.push({
+                  unitId: unit.id,
+                  enterpriseSerial: unit.enterpriseSerial,
+                  supplierSerialRef: unit.supplierSerialRef || '-',
+                  lotRef: line.lotRef || 'N/A',
+                  itemCategory: line.category,
+                  itemName: line.itemName,
+                  invoiceNo: activeReceipt.invoiceNo || 'PENDING',
+                  poId: activeReceipt.poId || 'MANUAL',
+                  supplierName,
+                  status: unit.state,
+                  verifiedAt: unit.verifiedAt
+              });
+          }
+      }
+      return mapping;
+  }, [activeReceipt, suppliers]);
+
+  const evidenceSummary = useMemo(() => {
+      if (!activeReceipt) return null;
+      const totalUnits = mappedEvidenceData.length;
+      const verifiedUnits = mappedEvidenceData.filter(u => u.status === UnitState.VERIFIED || u.status === UnitState.ACCEPTED).length;
+      
+      const cellLines = activeReceipt.lines.filter(l => l.category === 'CELL');
+      const cellLinesWithLot = cellLines.filter(l => !!l.lotRef);
+      const lotCoverage = cellLines.length > 0 ? Math.round((cellLinesWithLot.length / cellLines.length) * 100) : 100;
+      
+      return {
+          totalUnits,
+          verifiedUnits,
+          hasInvoice: !!activeReceipt.invoiceNo,
+          lotCoverage
+      };
+  }, [activeReceipt, mappedEvidenceData]);
 
   const getStatusColor = (state: ReceiptState) => {
     switch (state) {
@@ -1138,6 +1186,65 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
 
                           {activeTab === 'LINES' && (
                               <div className="space-y-6 animate-in fade-in slide-in-from-left-2">
+                                  
+                                  {/* Serialization Evidence Summary Card */}
+                                  {evidenceSummary && (
+                                    <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm mb-2">
+                                        <div className="flex justify-between items-center mb-3">
+                                            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                                                <Link size={14} className="text-blue-600" /> Serialization Evidence Summary
+                                            </h4>
+                                            <button 
+                                              onClick={() => setShowTraceMapping(true)}
+                                              className="text-xs font-bold text-brand-600 hover:text-brand-800 flex items-center gap-1 bg-brand-50 px-2 py-1 rounded hover:bg-brand-100 transition-colors"
+                                            >
+                                                <FileSearch size={12} /> View Trace Mapping
+                                            </button>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-4 text-center">
+                                            <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase">Total Units</div>
+                                                <div className="text-lg font-mono font-bold text-slate-700">{evidenceSummary.totalUnits}</div>
+                                            </div>
+                                            <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase">Verified</div>
+                                                <div className={`text-lg font-mono font-bold ${evidenceSummary.verifiedUnits > 0 ? 'text-green-600' : 'text-slate-600'}`}>
+                                                    {evidenceSummary.verifiedUnits}
+                                                </div>
+                                            </div>
+                                            <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase">Invoice Linked</div>
+                                                <div className={`text-lg font-bold ${evidenceSummary.hasInvoice ? 'text-green-600' : 'text-amber-500'}`}>
+                                                    {evidenceSummary.hasInvoice ? 'YES' : 'NO'}
+                                                </div>
+                                            </div>
+                                            <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                                                <div className="text-[10px] text-slate-400 font-bold uppercase">Lot Coverage (Cell)</div>
+                                                <div className={`text-lg font-mono font-bold ${evidenceSummary.lotCoverage === 100 ? 'text-green-600' : 'text-amber-500'}`}>
+                                                    {evidenceSummary.lotCoverage}%
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {/* Sample Data */}
+                                        {mappedEvidenceData.length > 0 && (
+                                            <div className="mt-3 pt-3 border-t border-slate-100">
+                                                <div className="text-[10px] text-slate-400 mb-2 uppercase font-bold">Sample Traceability Linkage</div>
+                                                <div className="space-y-1">
+                                                    {mappedEvidenceData.slice(0, 3).map(u => (
+                                                        <div key={u.unitId} className="flex justify-between items-center text-[10px] font-mono text-slate-600 bg-slate-50 px-2 py-1 rounded">
+                                                            <span>{u.enterpriseSerial}</span>
+                                                            <span className="text-slate-400">→</span>
+                                                            <span className={u.lotRef === 'N/A' ? 'text-red-400' : 'text-blue-600'}>LOT: {u.lotRef}</span>
+                                                            <span className="text-slate-400">→</span>
+                                                            <span className={u.invoiceNo === 'PENDING' ? 'text-amber-500' : 'text-green-600'}>INV: {u.invoiceNo}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                  )}
+
                                   {/* Trackable Items */}
                                   <div>
                                       <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
@@ -1184,6 +1291,85 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
               )}
           </div>
       </div>
+
+      {/* Trace Mapping Modal */}
+      {showTraceMapping && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center">
+            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setShowTraceMapping(false)} />
+            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-lg">
+                    <div className="flex items-center gap-2">
+                        <Link className="text-blue-600" size={20} />
+                        <div>
+                            <h3 className="text-sm font-bold text-slate-800">Traceability Evidence Map</h3>
+                            <p className="text-xs text-slate-500">
+                                {activeReceipt?.code} • {mappedEvidenceData.length} Tracked Units
+                            </p>
+                        </div>
+                    </div>
+                    <button onClick={() => setShowTraceMapping(false)} className="text-slate-400 hover:text-slate-600">
+                        <X size={20} />
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-0">
+                    <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                            <tr>
+                                <th className="px-4 py-3 w-12 text-center">#</th>
+                                <th className="px-4 py-3 font-bold uppercase">Enterprise Serial</th>
+                                <th className="px-4 py-3 font-bold uppercase">Supplier Serial</th>
+                                <th className="px-4 py-3 font-bold uppercase">Lot / Batch</th>
+                                <th className="px-4 py-3 font-bold uppercase">Invoice Ref</th>
+                                <th className="px-4 py-3 font-bold uppercase">Supplier</th>
+                                <th className="px-4 py-3 font-bold uppercase text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {mappedEvidenceData.map((row, idx) => (
+                                <tr key={row.unitId} className="hover:bg-slate-50">
+                                    <td className="px-4 py-3 text-center text-slate-400">{idx + 1}</td>
+                                    <td className="px-4 py-3 font-mono font-medium text-slate-700">{row.enterpriseSerial}</td>
+                                    <td className="px-4 py-3 font-mono text-slate-600">{row.supplierSerialRef}</td>
+                                    <td className="px-4 py-3">
+                                        <span className={`px-2 py-0.5 rounded ${!row.lotRef || row.lotRef === 'N/A' ? 'bg-red-50 text-red-600 border border-red-100' : 'bg-blue-50 text-blue-700 border border-blue-100'}`}>
+                                            {row.lotRef}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3 font-mono text-slate-600">
+                                        {row.invoiceNo === 'PENDING' ? <span className="text-amber-500 font-bold">PENDING</span> : row.invoiceNo}
+                                    </td>
+                                    <td className="px-4 py-3 text-slate-600">{row.supplierName}</td>
+                                    <td className="px-4 py-3 text-center">
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(row.status)}`}>
+                                            {row.status}
+                                        </span>
+                                    </td>
+                                </tr>
+                            ))}
+                            {mappedEvidenceData.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} className="p-8 text-center text-slate-400 italic">No serialized units found for this receipt.</td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-between items-center rounded-b-lg">
+                    <div className="text-[10px] text-slate-400">
+                        Generated from active operational context. Not a persistent report.
+                    </div>
+                    <button 
+                        onClick={() => setShowTraceMapping(false)}
+                        className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold text-xs rounded hover:bg-slate-50 shadow-sm transition-colors"
+                    >
+                        Close View
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Supplier Serial Entry Modal */}
       {serialEntryLineId && (
