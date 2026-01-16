@@ -1,28 +1,84 @@
 
-import React, { useEffect, useState } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList } from 'lucide-react';
-import { NavView } from '../types';
-import { S3Receipt, ReceiptState, getReceiptNextActions } from '../stages/s3/contracts';
-import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt } from '../sim/api/s3/s3Inbound.handlers';
+import React, { useEffect, useState, useContext } from 'react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2 } from 'lucide-react';
+import { NavView, UserContext } from '../types';
+import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3 } from '../stages/s3/contracts';
+import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
+import { s3ListOpenOrdersFromS2, S3MockOrder } from '../sim/api/s3/s3S2Adapter';
 
 interface InboundReceiptProps {
   onNavigate?: (view: NavView) => void;
 }
 
 export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) => {
+  const { role } = useContext(UserContext);
   const [receipts, setReceipts] = useState<S3Receipt[]>([]);
   const [activeReceipt, setActiveReceipt] = useState<S3Receipt | undefined>(undefined);
-  // Simple force-update mechanism for demo interactivity when store changes
+  const [openOrders, setOpenOrders] = useState<S3MockOrder[]>([]);
+  const [selectedPoId, setSelectedPoId] = useState<string>('');
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Initial load and sync
   useEffect(() => {
     setReceipts(s3ListReceipts());
     setActiveReceipt(s3GetActiveReceipt());
+    setOpenOrders(s3ListOpenOrdersFromS2());
   }, [refreshKey]);
 
   const handleSelectReceipt = (id: string) => {
     s3SetActiveReceipt(id);
+    setRefreshKey(k => k + 1);
+  };
+
+  const handleLoadPo = () => {
+    if (!selectedPoId) return;
+    const order = openOrders.find(o => o.poId === selectedPoId);
+    if (!order) return;
+
+    // Generate new Receipt from PO
+    const newLines: S3ReceiptLine[] = order.items.map((item, idx) => ({
+        id: `line-${Date.now()}-${idx}`,
+        receiptId: '', // Set after receipt creation usually, but we'll do it in batch
+        skuId: item.skuId,
+        itemName: item.itemName,
+        category: item.category,
+        // Auto-determine trackability based on category
+        trackability: ['CELL', 'BMS', 'IOT', 'MODULE', 'PACK'].includes(item.category) 
+            ? ItemTrackability.TRACKABLE 
+            : ItemTrackability.NON_TRACKABLE,
+        qtyExpected: item.qtyOrdered,
+        qtyReceived: 0,
+        units: []
+    }));
+
+    const newReceipt: S3Receipt = {
+        id: `rcpt-${Date.now()}`,
+        code: makeReceiptCode(receipts.length + 1),
+        supplierId: order.supplierId,
+        poId: order.poId,
+        createdAt: new Date().toISOString(),
+        createdByRole: role,
+        state: ReceiptState.DRAFT,
+        lines: newLines,
+        audit: [{
+            id: `aud-${Date.now()}`,
+            ts: new Date().toISOString(),
+            actorRole: role,
+            actorLabel: 'User',
+            eventType: 'CREATED',
+            refType: 'RECEIPT',
+            refId: '',
+            message: `Created from PO ${order.poCode}`
+        }]
+    };
+
+    // Fixup receiptId in lines
+    newReceipt.lines.forEach(l => l.receiptId = newReceipt.id);
+    newReceipt.audit.forEach(a => a.refId = newReceipt.id);
+
+    s3UpsertReceipt(newReceipt);
+    s3SetActiveReceipt(newReceipt.id);
+    setSelectedPoId(''); // Reset selector
     setRefreshKey(k => k + 1);
   };
 
@@ -38,6 +94,8 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       default: return 'bg-slate-50 text-slate-600 border-slate-200';
     }
   };
+
+  const canCreate = canS3(role, 'CREATE_RECEIPT');
 
   return (
     <div className="h-full flex flex-col space-y-4 animate-in fade-in duration-300">
@@ -55,6 +113,42 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
         </div>
       </div>
 
+      {/* Procurement Intake Panel (Create Receipt) */}
+      {canCreate && (
+        <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm flex items-center gap-4 animate-in slide-in-from-top-2">
+            <div className="p-2 bg-blue-50 text-blue-600 rounded">
+                <FileInput size={20} />
+            </div>
+            <div className="flex-1 flex items-center gap-4">
+                <div>
+                    <h3 className="text-sm font-bold text-slate-700">Procurement Intake</h3>
+                    <p className="text-xs text-slate-500">Link S2 Purchase Order to generate Receipt</p>
+                </div>
+                <div className="h-8 w-px bg-slate-200"></div>
+                <select 
+                    className="flex-1 text-sm border border-slate-300 rounded p-2 bg-white"
+                    value={selectedPoId}
+                    onChange={(e) => setSelectedPoId(e.target.value)}
+                >
+                    <option value="">-- Select Open Order --</option>
+                    {openOrders.map(po => (
+                        <option key={po.poId} value={po.poId}>
+                            {po.poCode} — {po.supplierName} ({po.items.length} Lines)
+                        </option>
+                    ))}
+                </select>
+                <button 
+                    onClick={handleLoadPo}
+                    disabled={!selectedPoId}
+                    className="bg-brand-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                >
+                    <Plus size={14} />
+                    Load into Receipt
+                </button>
+            </div>
+        </div>
+      )}
+
       {/* Banner */}
       {activeReceipt && (
         <div className="bg-white border border-blue-200 bg-blue-50 rounded-lg p-4 shadow-sm flex items-center justify-between">
@@ -70,10 +164,10 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                         </span>
                         <span className="text-slate-400">|</span>
                         <span>{activeReceipt.lines.length} Line Items</span>
-                        {activeReceipt.invoiceNo && (
+                        {activeReceipt.poId && (
                             <>
                                 <span className="text-slate-400">|</span>
-                                <span className="font-mono text-xs">{activeReceipt.invoiceNo}</span>
+                                <span className="font-mono text-xs bg-white px-2 py-0.5 rounded border border-blue-100 text-blue-700 font-bold">{activeReceipt.poId}</span>
                             </>
                         )}
                     </div>
@@ -123,7 +217,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                   ))}
                   {receipts.length === 0 && (
                       <div className="p-8 text-center text-slate-400 text-sm italic">
-                          No receipts found.
+                          No receipts found. Create one from Open Orders.
                       </div>
                   )}
               </div>
@@ -132,17 +226,37 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           {/* Right: Detail Placeholder */}
           <div className="col-span-8 bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col overflow-hidden">
               {activeReceipt ? (
-                  <div className="flex-1 p-8 flex flex-col items-center justify-center text-slate-400">
-                      <div className="p-6 rounded-full bg-slate-50 mb-4">
-                        <Activity size={48} className="opacity-20 text-slate-600" />
+                  <div className="flex-1 flex flex-col">
+                      <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                          <h4 className="text-sm font-bold text-slate-700">Line Items</h4>
+                          <span className="text-xs text-slate-400">{activeReceipt.lines.length} Lines</span>
                       </div>
-                      <p className="text-sm font-medium text-slate-600">
-                          Viewing <strong>{activeReceipt.code}</strong>
-                      </p>
-                      <p className="text-xs mt-2 opacity-60 max-w-md text-center">
-                          Select an action from the toolbar or review line items. 
-                          Detailed processing view coming in next update.
-                      </p>
+                      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                          {activeReceipt.lines.map(line => (
+                              <div key={line.id} className="p-3 border border-slate-200 rounded-lg flex justify-between items-start bg-white">
+                                  <div>
+                                      <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                          {line.itemName}
+                                          {line.trackability === 'TRACKABLE' && (
+                                              <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold uppercase border border-purple-200">
+                                                  Trackable
+                                              </span>
+                                          )}
+                                      </div>
+                                      <div className="text-xs text-slate-500 font-mono mt-1">SKU: {line.skuId || 'N/A'}</div>
+                                  </div>
+                                  <div className="text-right">
+                                      <div className="text-sm font-mono font-bold text-slate-700">
+                                          {line.qtyReceived} / {line.qtyExpected}
+                                      </div>
+                                      <div className="text-[10px] text-slate-400 uppercase">Received</div>
+                                  </div>
+                              </div>
+                          ))}
+                          {activeReceipt.lines.length === 0 && (
+                              <div className="p-8 text-center text-slate-400 text-sm">No line items in this receipt.</div>
+                          )}
+                      </div>
                   </div>
               ) : (
                   <div className="flex-1 flex flex-col items-center justify-center text-slate-400 gap-4">
