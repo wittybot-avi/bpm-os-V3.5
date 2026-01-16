@@ -52,6 +52,7 @@ export const makeDemoReceipt = (): S3Receipt => {
     supplierId: 'sup-001', // Should match S2 supplier mock
     poId: 'PO-2026-8821', // Should match S2 PO mock
     invoiceNo: 'INV-SAMPLE-001',
+    attachments: [],
     createdAt: now,
     createdByRole: UserRole.STORES,
     state: ReceiptState.DRAFT,

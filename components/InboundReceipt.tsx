@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState, useContext } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
-import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3 } from '../stages/s3/contracts';
+import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType } from '../stages/s3/contracts';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
 import { s3ListOpenOrdersFromS2, S3MockOrder, s3ListSuppliers, S3Supplier } from '../sim/api/s3/s3S2Adapter';
 
@@ -26,6 +26,13 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const [manualReason, setManualReason] = useState<string>('');
   const [supervisorAck, setSupervisorAck] = useState<boolean>(false);
 
+  // Detail View State
+  const [activeTab, setActiveTab] = useState<'LINES' | 'EVIDENCE'>('LINES');
+  
+  // Edit Buffers
+  const [evidenceBuffer, setEvidenceBuffer] = useState<Partial<S3Receipt>>({});
+  const [lineBuffers, setLineBuffers] = useState<Record<string, Partial<S3ReceiptLine>>>({});
+
   const [refreshKey, setRefreshKey] = useState(0);
 
   // Initial load and sync
@@ -44,8 +51,30 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       setSupervisorAck(false);
   }, [intakeMode]);
 
+  // Sync buffers when active receipt changes
+  useEffect(() => {
+      if (activeReceipt) {
+          setEvidenceBuffer({
+              invoiceNo: activeReceipt.invoiceNo || '',
+              invoiceDate: activeReceipt.invoiceDate || '',
+              packingListRef: activeReceipt.packingListRef || '',
+              transportDocRef: activeReceipt.transportDocRef || ''
+          });
+          const initialLines: Record<string, Partial<S3ReceiptLine>> = {};
+          activeReceipt.lines.forEach(l => {
+              initialLines[l.id] = {
+                  lotRef: l.lotRef || '',
+                  mfgDate: l.mfgDate || '',
+                  expDate: l.expDate || ''
+              };
+          });
+          setLineBuffers(initialLines);
+      }
+  }, [activeReceipt]);
+
   const handleSelectReceipt = (id: string) => {
     s3SetActiveReceipt(id);
+    setActiveTab('LINES');
     setRefreshKey(k => k + 1);
   };
 
@@ -57,11 +86,10 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
     // Generate new Receipt from PO
     const newLines: S3ReceiptLine[] = order.items.map((item, idx) => ({
         id: `line-${Date.now()}-${idx}`,
-        receiptId: '', // Set after receipt creation usually, but we'll do it in batch
+        receiptId: '', // Set after receipt creation
         skuId: item.skuId,
         itemName: item.itemName,
         category: item.category,
-        // Auto-determine trackability based on category
         trackability: ['CELL', 'BMS', 'IOT', 'MODULE', 'PACK'].includes(item.category) 
             ? ItemTrackability.TRACKABLE 
             : ItemTrackability.NON_TRACKABLE,
@@ -75,6 +103,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
         code: makeReceiptCode(receipts.length + 1),
         supplierId: order.supplierId,
         poId: order.poId,
+        attachments: [],
         createdAt: new Date().toISOString(),
         createdByRole: role,
         state: ReceiptState.DRAFT,
@@ -91,7 +120,6 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
         }]
     };
 
-    // Fixup receiptId in lines
     newReceipt.lines.forEach(l => l.receiptId = newReceipt.id);
     newReceipt.audit.forEach(a => a.refId = newReceipt.id);
 
@@ -111,11 +139,11 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
         id: `rcpt-man-${Date.now()}`,
         code: makeReceiptCode(receipts.length + 1),
         supplierId: manualSupplierId,
-        // poId null indicates Manual
+        attachments: [],
         createdAt: new Date().toISOString(),
         createdByRole: role,
         state: ReceiptState.DRAFT,
-        lines: [], // Empty initially
+        lines: [], 
         audit: [{
             id: `aud-${Date.now()}`,
             ts: new Date().toISOString(),
@@ -124,21 +152,113 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
             eventType: 'MANUAL_RECEIPT_CREATED',
             refType: 'RECEIPT',
             refId: '',
-            message: `Manual Receipt created. Reason: ${manualReason}. Supervisor Ack: ${requiresAck ? 'YES' : 'AUTO (Admin)'}`
+            message: `Manual Receipt created. Reason: ${manualReason}`
         }]
     };
-
     newReceipt.audit.forEach(a => a.refId = newReceipt.id);
 
     s3UpsertReceipt(newReceipt);
     s3SetActiveReceipt(newReceipt.id);
-    
-    // Reset Form
     setManualSupplierId('');
     setManualReason('');
     setSupervisorAck(false);
-    setIntakeMode('PO'); // Switch back to default view
+    setIntakeMode('PO');
     setRefreshKey(k => k + 1);
+  };
+
+  const handleSaveEvidence = () => {
+      if (!activeReceipt) return;
+      const updatedReceipt = {
+          ...activeReceipt,
+          ...evidenceBuffer,
+          audit: [
+              {
+                  id: `aud-${Date.now()}`,
+                  ts: new Date().toISOString(),
+                  actorRole: role,
+                  actorLabel: 'User',
+                  eventType: 'EVIDENCE_UPDATED',
+                  refType: 'RECEIPT',
+                  refId: activeReceipt.id,
+                  message: 'Updated commercial evidence metadata'
+              },
+              ...activeReceipt.audit
+          ]
+      } as S3Receipt;
+      
+      s3UpsertReceipt(updatedReceipt);
+      setRefreshKey(k => k + 1);
+  };
+
+  const handleAddAttachment = () => {
+      if (!activeReceipt) return;
+      const type = window.prompt('Document Type (INVOICE, PACKING_LIST, COA, PHOTO, OTHER):', 'PACKING_LIST') as AttachmentType;
+      const filename = window.prompt('Simulated Filename:', `Doc_${Date.now()}.pdf`);
+      
+      if (!type || !filename) return;
+
+      const newAtt: S3Attachment = {
+          id: `att-${Date.now()}`,
+          type,
+          filename,
+          uploadedAt: new Date().toISOString(),
+          uploadedBy: role
+      };
+
+      const updatedReceipt = {
+          ...activeReceipt,
+          attachments: [...(activeReceipt.attachments || []), newAtt],
+          audit: [
+              {
+                  id: `aud-${Date.now()}`,
+                  ts: new Date().toISOString(),
+                  actorRole: role,
+                  actorLabel: 'User',
+                  eventType: 'ATTACHMENT_ADDED',
+                  refType: 'RECEIPT',
+                  refId: activeReceipt.id,
+                  message: `Attached document: ${filename} (${type})`
+              },
+              ...activeReceipt.audit
+          ]
+      } as S3Receipt;
+
+      s3UpsertReceipt(updatedReceipt);
+      setRefreshKey(k => k + 1);
+  };
+
+  const handleUpdateLine = (lineId: string) => {
+      if (!activeReceipt) return;
+      const buffer = lineBuffers[lineId];
+      if (!buffer) return;
+
+      const updatedLines = activeReceipt.lines.map(l => {
+          if (l.id === lineId) {
+              return { ...l, ...buffer };
+          }
+          return l;
+      });
+
+      const updatedReceipt = {
+          ...activeReceipt,
+          lines: updatedLines,
+          audit: [
+              {
+                  id: `aud-${Date.now()}`,
+                  ts: new Date().toISOString(),
+                  actorRole: role,
+                  actorLabel: 'User',
+                  eventType: 'LOT_UPDATED',
+                  refType: 'LINE',
+                  refId: lineId,
+                  message: `Updated Lot/Batch info for line`
+              },
+              ...activeReceipt.audit
+          ]
+      } as S3Receipt;
+
+      s3UpsertReceipt(updatedReceipt);
+      setRefreshKey(k => k + 1);
   };
 
   const getStatusColor = (state: ReceiptState) => {
@@ -155,6 +275,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   };
 
   const canCreate = canS3(role, 'CREATE_RECEIPT');
+  const canEdit = activeReceipt ? canS3(role, 'EDIT_RECEIPT', activeReceipt.state) : false;
   const isAdmin = role === UserRole.SYSTEM_ADMIN;
 
   return (
@@ -173,7 +294,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
         </div>
       </div>
 
-      {/* Procurement Intake Panel (Create Receipt) */}
+      {/* Procurement Intake Panel */}
       {canCreate && (
         <div className={`border rounded-lg p-3 shadow-sm transition-colors ${intakeMode === 'MANUAL' ? 'bg-amber-50 border-amber-200' : 'bg-white border-slate-200'}`}>
             <div className="flex items-start gap-4">
@@ -182,7 +303,6 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                 </div>
                 
                 <div className="flex-1">
-                    {/* Panel Header & Toggle */}
                     <div className="flex items-center justify-between mb-3">
                         <div>
                             <h3 className={`text-sm font-bold ${intakeMode === 'MANUAL' ? 'text-amber-900' : 'text-slate-700'}`}>
@@ -210,7 +330,6 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                         </div>
                     </div>
 
-                    {/* Controls */}
                     {intakeMode === 'PO' ? (
                         <div className="flex items-center gap-4">
                             <select 
@@ -390,37 +509,193 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           <div className="col-span-8 bg-white rounded-lg shadow-sm border border-slate-200 flex flex-col overflow-hidden">
               {activeReceipt ? (
                   <div className="flex-1 flex flex-col">
-                      <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-                          <h4 className="text-sm font-bold text-slate-700">Line Items</h4>
-                          <span className="text-xs text-slate-400">{activeReceipt.lines.length} Lines</span>
+                      {/* Tabs */}
+                      <div className="flex border-b border-slate-100 bg-slate-50/50">
+                          <button 
+                            onClick={() => setActiveTab('LINES')}
+                            className={`flex-1 py-3 text-xs font-bold uppercase transition-colors border-b-2 ${activeTab === 'LINES' ? 'border-brand-500 text-brand-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                          >
+                             Line Items ({activeReceipt.lines.length})
+                          </button>
+                          <button 
+                            onClick={() => setActiveTab('EVIDENCE')}
+                            className={`flex-1 py-3 text-xs font-bold uppercase transition-colors border-b-2 ${activeTab === 'EVIDENCE' ? 'border-brand-500 text-brand-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                          >
+                             Evidence & Docs
+                          </button>
                       </div>
-                      <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                          {activeReceipt.lines.map(line => (
-                              <div key={line.id} className="p-3 border border-slate-200 rounded-lg flex justify-between items-start bg-white">
-                                  <div>
-                                      <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                                          {line.itemName}
-                                          {line.trackability === 'TRACKABLE' && (
-                                              <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold uppercase border border-purple-200">
-                                                  Trackable
-                                              </span>
+
+                      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30">
+                          {activeTab === 'EVIDENCE' && (
+                              <div className="space-y-6 animate-in fade-in slide-in-from-right-2">
+                                  {/* Doc Fields */}
+                                  <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                                      <div className="flex items-center gap-2 mb-4 border-b border-slate-100 pb-2">
+                                          <FileText size={16} className="text-blue-600" />
+                                          <h3 className="font-bold text-slate-700 text-sm">Commercial Documentation</h3>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-4 mb-4">
+                                          <div>
+                                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Invoice No</label>
+                                              <input 
+                                                className="w-full text-sm p-2 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none"
+                                                value={evidenceBuffer.invoiceNo || ''}
+                                                onChange={e => setEvidenceBuffer(prev => ({ ...prev, invoiceNo: e.target.value }))}
+                                                disabled={!canEdit}
+                                                placeholder="e.g. INV-2026-991"
+                                              />
+                                          </div>
+                                          <div>
+                                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Invoice Date</label>
+                                              <input 
+                                                type="date"
+                                                className="w-full text-sm p-2 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none"
+                                                value={evidenceBuffer.invoiceDate || ''}
+                                                onChange={e => setEvidenceBuffer(prev => ({ ...prev, invoiceDate: e.target.value }))}
+                                                disabled={!canEdit}
+                                              />
+                                          </div>
+                                          <div>
+                                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Packing List Ref</label>
+                                              <input 
+                                                className="w-full text-sm p-2 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none"
+                                                value={evidenceBuffer.packingListRef || ''}
+                                                onChange={e => setEvidenceBuffer(prev => ({ ...prev, packingListRef: e.target.value }))}
+                                                disabled={!canEdit}
+                                                placeholder="e.g. PKL-001"
+                                              />
+                                          </div>
+                                          <div>
+                                              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Transport Doc</label>
+                                              <input 
+                                                className="w-full text-sm p-2 border border-slate-300 rounded focus:ring-1 focus:ring-brand-500 outline-none"
+                                                value={evidenceBuffer.transportDocRef || ''}
+                                                onChange={e => setEvidenceBuffer(prev => ({ ...prev, transportDocRef: e.target.value }))}
+                                                disabled={!canEdit}
+                                                placeholder="e.g. BL-7721"
+                                              />
+                                          </div>
+                                      </div>
+                                      {canEdit && (
+                                          <div className="flex justify-end">
+                                              <button onClick={handleSaveEvidence} className="flex items-center gap-2 px-3 py-1.5 bg-brand-600 text-white text-xs font-bold rounded hover:bg-brand-700 shadow-sm">
+                                                  <Save size={12} /> Save Changes
+                                              </button>
+                                          </div>
+                                      )}
+                                  </div>
+
+                                  {/* Attachments */}
+                                  <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
+                                      <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-2">
+                                          <div className="flex items-center gap-2">
+                                              <Paperclip size={16} className="text-slate-500" />
+                                              <h3 className="font-bold text-slate-700 text-sm">Attachments</h3>
+                                          </div>
+                                          {canEdit && (
+                                              <button onClick={handleAddAttachment} className="text-xs text-brand-600 font-bold hover:underline flex items-center gap-1">
+                                                  <Plus size={12} /> Attach Document
+                                              </button>
                                           )}
                                       </div>
-                                      <div className="text-xs text-slate-500 font-mono mt-1">SKU: {line.skuId || 'N/A'}</div>
-                                  </div>
-                                  <div className="text-right">
-                                      <div className="text-sm font-mono font-bold text-slate-700">
-                                          {line.qtyReceived} / {line.qtyExpected}
+                                      <div className="space-y-2">
+                                          {activeReceipt.attachments && activeReceipt.attachments.length > 0 ? activeReceipt.attachments.map(att => (
+                                              <div key={att.id} className="flex items-center justify-between p-2 bg-slate-50 border border-slate-100 rounded">
+                                                  <div className="flex items-center gap-3">
+                                                      <div className="p-1.5 bg-white border border-slate-200 rounded text-slate-500">
+                                                          <FileText size={14} />
+                                                      </div>
+                                                      <div>
+                                                          <div className="text-sm font-medium text-slate-700">{att.filename}</div>
+                                                          <div className="text-[10px] text-slate-400 uppercase">{att.type} • {new Date(att.uploadedAt).toLocaleDateString()}</div>
+                                                      </div>
+                                                  </div>
+                                                  <a href="#" className="text-xs text-brand-600 hover:underline">View</a>
+                                              </div>
+                                          )) : (
+                                              <div className="text-center py-4 text-xs text-slate-400 italic">No attachments yet.</div>
+                                          )}
                                       </div>
-                                      <div className="text-[10px] text-slate-400 uppercase">Received</div>
                                   </div>
                               </div>
-                          ))}
-                          {activeReceipt.lines.length === 0 && (
-                              <div className="p-12 text-center text-slate-400 text-sm flex flex-col items-center gap-2">
-                                <RefreshCcw className="opacity-20" size={32} />
-                                <p>No line items in this receipt.</p>
-                                {!activeReceipt.poId && <p className="text-xs text-amber-600">Manual receipts require manual line item addition (Coming soon in V35-S3-PP-08).</p>}
+                          )}
+
+                          {activeTab === 'LINES' && (
+                              <div className="space-y-3 animate-in fade-in slide-in-from-left-2">
+                                  {activeReceipt.lines.map(line => {
+                                      const buffer = lineBuffers[line.id] || {};
+                                      const isTrackable = line.trackability === 'TRACKABLE';
+                                      return (
+                                          <div key={line.id} className="p-3 border border-slate-200 rounded-lg bg-white shadow-sm">
+                                              <div className="flex justify-between items-start mb-2">
+                                                  <div>
+                                                      <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                                                          {line.itemName}
+                                                          {isTrackable && (
+                                                              <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold uppercase border border-purple-200">
+                                                                  Trackable
+                                                              </span>
+                                                          )}
+                                                      </div>
+                                                      <div className="text-xs text-slate-500 font-mono mt-1">SKU: {line.skuId || 'N/A'}</div>
+                                                  </div>
+                                                  <div className="text-right">
+                                                      <div className="text-sm font-mono font-bold text-slate-700">
+                                                          {line.qtyReceived} / {line.qtyExpected}
+                                                      </div>
+                                                      <div className="text-[10px] text-slate-400 uppercase">Received</div>
+                                                  </div>
+                                              </div>
+                                              
+                                              {/* Lot Info Section */}
+                                              <div className="mt-3 pt-3 border-t border-slate-100">
+                                                  <div className="grid grid-cols-4 gap-2 items-end">
+                                                      <div className="col-span-2">
+                                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                                                              Lot / Batch Ref {isTrackable && <span className="text-red-500">*</span>}
+                                                          </label>
+                                                          <div className="relative">
+                                                              <input 
+                                                                  className={`w-full text-xs p-1.5 border rounded focus:outline-none focus:ring-1 focus:ring-brand-500 ${!buffer.lotRef && isTrackable ? 'border-amber-300 bg-amber-50' : 'border-slate-300'}`}
+                                                                  placeholder="Supplier Lot No."
+                                                                  value={buffer.lotRef || ''}
+                                                                  onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], lotRef: e.target.value}}))}
+                                                                  disabled={!canEdit}
+                                                              />
+                                                              <Tag size={12} className="absolute right-2 top-2 text-slate-400" />
+                                                          </div>
+                                                      </div>
+                                                      <div>
+                                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Mfg Date</label>
+                                                          <input 
+                                                              type="date"
+                                                              className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500"
+                                                              value={buffer.mfgDate || ''}
+                                                              onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], mfgDate: e.target.value}}))}
+                                                              disabled={!canEdit}
+                                                          />
+                                                      </div>
+                                                      <div>
+                                                          {canEdit && (
+                                                              <button 
+                                                                  onClick={() => handleUpdateLine(line.id)}
+                                                                  className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded border border-slate-200 transition-colors"
+                                                              >
+                                                                  Update
+                                                              </button>
+                                                          )}
+                                                      </div>
+                                                  </div>
+                                              </div>
+                                          </div>
+                                      );
+                                  })}
+                                  {activeReceipt.lines.length === 0 && (
+                                      <div className="p-12 text-center text-slate-400 text-sm flex flex-col items-center gap-2">
+                                          <RefreshCcw className="opacity-20" size={32} />
+                                          <p>No line items in this receipt.</p>
+                                      </div>
+                                  )}
                               </div>
                           )}
                       </div>

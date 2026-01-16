@@ -33,7 +33,18 @@ export enum ItemTrackability {
 
 export type ItemCategory = 'CELL' | 'BMS' | 'IOT' | 'MODULE' | 'PACK' | 'MISC';
 
+export type AttachmentType = 'INVOICE' | 'PACKING_LIST' | 'COA' | 'TEST_REPORT' | 'PHOTO' | 'OTHER';
+
 // --- Interfaces ---
+
+export interface S3Attachment {
+  id: string;
+  type: AttachmentType;
+  filename: string;
+  notes?: string;
+  uploadedAt: string;
+  uploadedBy: string;
+}
 
 export interface S3SerializedUnit {
   id: EntityId;
@@ -59,7 +70,12 @@ export interface S3ReceiptLine {
   itemName: string;
   category: ItemCategory;
   trackability: ItemTrackability;
+  
+  // Lot / Batch Info
   lotRef?: string; // Supplier Batch/Lot
+  mfgDate?: string; // ISO Date YYYY-MM-DD
+  expDate?: string; // ISO Date YYYY-MM-DD
+  
   qtyExpected?: number;
   qtyReceived: number;
   units?: S3SerializedUnit[];
@@ -82,8 +98,14 @@ export interface S3Receipt {
   code: string; // e.g. "GRN-2026-001"
   supplierId?: string; // Link to S2 Supplier
   poId?: string; // Link to S2 PO
+  
+  // Evidence
   invoiceNo?: string;
+  invoiceDate?: string; // ISO Date YYYY-MM-DD
   packingListRef?: string;
+  transportDocRef?: string;
+  attachments: S3Attachment[];
+  
   createdAt: IsoDateTime;
   createdByRole: string;
   state: ReceiptState;
