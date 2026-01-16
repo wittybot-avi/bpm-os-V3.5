@@ -23,7 +23,7 @@ import {
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
 import { DisabledHint } from './DisabledHint';
-import { getMockS2Context, S2Context } from '../stages/s2/s2Contract';
+import { getMockS2Context, S2Context, ActiveOrderContext } from '../stages/s2/s2Contract';
 import { getS2ActionState, S2ActionId } from '../stages/s2/s2Guards';
 import { emitAuditEvent, getAuditEvents, AuditEvent } from '../utils/auditEvents';
 
@@ -77,17 +77,26 @@ interface ProcurementProps {
 
 export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   const { role } = useContext(UserContext);
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier>(SUPPLIERS[0]);
-
+  
   // Local State for S2 Context Simulation
   const [s2Context, setS2Context] = useState<S2Context>(getMockS2Context());
   const [localEvents, setLocalEvents] = useState<AuditEvent[]>([]);
   const [isSimulating, setIsSimulating] = useState(false);
+  
+  // UI State - synced with context where possible
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>(s2Context.activeOrder?.activeSupplierId || SUPPLIERS[0].id);
 
   // Load events on mount
   useEffect(() => {
     setLocalEvents(getAuditEvents().filter(e => e.stageId === 'S2'));
   }, []);
+
+  // Sync selection with context
+  useEffect(() => {
+    if (s2Context.activeOrder?.activeSupplierId) {
+      setSelectedSupplierId(s2Context.activeOrder.activeSupplierId);
+    }
+  }, [s2Context.activeOrder?.activeSupplierId]);
 
   // Guard Logic
   const getAction = (actionId: S2ActionId) => getS2ActionState(role, s2Context, actionId);
@@ -114,18 +123,29 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     setIsSimulating(true);
     setTimeout(() => {
       const now = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' }) + ' IST';
+      const newOrder: ActiveOrderContext = {
+        orderId: `PO-${new Date().getFullYear()}-${Math.floor(Math.random() * 10000)}`,
+        plantId: 'FAC-WB-01',
+        activeSupplierId: selectedSupplierId,
+        selectedItems: [],
+        currentState: 'S2_DRAFT',
+        createdBy: role,
+        createdAt: now
+      };
+
       setS2Context(prev => ({ 
         ...prev, 
         activePoCount: prev.activePoCount + 1,
         procurementStatus: 'S2_DRAFT', // Explicitly start at DRAFT
-        lastPoCreatedAt: now
+        lastPoCreatedAt: now,
+        activeOrder: newOrder
       }));
       
       const evt = emitAuditEvent({
         stageId: 'S2',
         actionId: 'CREATE_PO',
         actorRole: role,
-        message: 'Created new Purchase Order draft (PO-2026-X)'
+        message: `Created new Purchase Order draft (${newOrder.orderId})`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -138,14 +158,15 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
       setS2Context(prev => ({ 
         ...prev, 
         procurementStatus: 'S2_WAITING_APPROVAL',
-        pendingApprovalsCount: prev.pendingApprovalsCount + 1 
+        pendingApprovalsCount: prev.pendingApprovalsCount + 1,
+        activeOrder: prev.activeOrder ? { ...prev.activeOrder, currentState: 'S2_WAITING_APPROVAL' } : prev.activeOrder
       }));
       
       const evt = emitAuditEvent({
         stageId: 'S2',
         actionId: 'SUBMIT_PO_FOR_APPROVAL',
         actorRole: role,
-        message: 'Submitted PO for commercial approval'
+        message: `Submitted PO ${s2Context.activeOrder?.orderId || ''} for commercial approval`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -158,14 +179,15 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
       setS2Context(prev => ({ 
         ...prev, 
         procurementStatus: 'S2_APPROVED',
-        pendingApprovalsCount: Math.max(0, prev.pendingApprovalsCount - 1)
+        pendingApprovalsCount: Math.max(0, prev.pendingApprovalsCount - 1),
+        activeOrder: prev.activeOrder ? { ...prev.activeOrder, currentState: 'S2_APPROVED' } : prev.activeOrder
       }));
       
       const evt = emitAuditEvent({
         stageId: 'S2',
         actionId: 'APPROVE_PO',
         actorRole: role,
-        message: 'PO formally approved and signed off'
+        message: `PO ${s2Context.activeOrder?.orderId || ''} formally approved and signed off`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -177,14 +199,16 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     setTimeout(() => {
       setS2Context(prev => ({ 
         ...prev, 
-        procurementStatus: 'S2_PO_ISSUED' 
+        procurementStatus: 'S2_PO_ISSUED',
+        activeOrder: prev.activeOrder ? { ...prev.activeOrder, currentState: 'S2_PO_ISSUED' } : prev.activeOrder
       }));
       
+      const supplierName = SUPPLIERS.find(s => s.id === selectedSupplierId)?.name || 'Vendor';
       const evt = emitAuditEvent({
         stageId: 'S2',
         actionId: 'ISSUE_PO_TO_VENDOR',
         actorRole: role,
-        message: `PO issued to vendor ${selectedSupplier.name}`
+        message: `PO ${s2Context.activeOrder?.orderId || ''} issued to vendor ${supplierName}`
       });
       setLocalEvents(prev => [evt, ...prev]);
       setIsSimulating(false);
@@ -196,7 +220,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     setTimeout(() => {
       setS2Context(prev => ({ 
         ...prev, 
-        procurementStatus: 'S2_LOCKED' // Final state
+        procurementStatus: 'S2_LOCKED', // Final state
+        activeOrder: prev.activeOrder ? { ...prev.activeOrder, currentState: 'S2_LOCKED' } : prev.activeOrder
       }));
       
       const evt = emitAuditEvent({
@@ -214,7 +239,11 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   useEffect(() => {
     if (s2Context.procurementStatus === 'S2_PO_ISSUED') {
       const timer = setTimeout(() => {
-        setS2Context(prev => ({ ...prev, procurementStatus: 'S2_PO_ACKNOWLEDGED' }));
+        setS2Context(prev => ({ 
+            ...prev, 
+            procurementStatus: 'S2_PO_ACKNOWLEDGED',
+            activeOrder: prev.activeOrder ? { ...prev.activeOrder, currentState: 'S2_PO_ACKNOWLEDGED' } : prev.activeOrder
+        }));
       }, 3000); // 3s delay to simulate acknowledgement
       return () => clearTimeout(timer);
     }
@@ -381,7 +410,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                <FileText size={20} />
             </div>
             <div>
-               <h3 className="font-bold text-slate-800 text-sm">Active Order Cycle</h3>
+               <h3 className="font-bold text-slate-800 text-sm">
+                   Active Order Cycle {s2Context.activeOrder ? <span className="font-mono text-blue-600">({s2Context.activeOrder.orderId})</span> : ''}
+               </h3>
                <p className="text-xs text-slate-500">Status: <span className="font-bold">{stateLabel}</span></p>
             </div>
          </div>
@@ -495,8 +526,17 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                 {SUPPLIERS.map((sup) => (
                   <tr 
                     key={sup.id} 
-                    onClick={() => setSelectedSupplier(sup)}
-                    className={`cursor-pointer hover:bg-slate-50 transition-colors ${selectedSupplier.id === sup.id ? 'bg-brand-50' : ''}`}
+                    onClick={() => {
+                        setSelectedSupplierId(sup.id);
+                        // If there's an active order draft, update it.
+                        if (s2Context.activeOrder && s2Context.procurementStatus === 'S2_DRAFT') {
+                             setS2Context(prev => ({
+                                 ...prev,
+                                 activeOrder: prev.activeOrder ? { ...prev.activeOrder, activeSupplierId: sup.id } : prev.activeOrder
+                             }));
+                        }
+                    }}
+                    className={`cursor-pointer hover:bg-slate-50 transition-colors ${selectedSupplierId === sup.id ? 'bg-brand-50' : ''}`}
                   >
                     <td className="px-4 py-3 font-medium text-slate-800">{sup.name}</td>
                     <td className="px-4 py-3 text-slate-600">{sup.type}</td>

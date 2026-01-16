@@ -14,6 +14,21 @@ export type S2State =
   | 'S2_PO_ACKNOWLEDGED'
   | 'S2_LOCKED';
 
+export interface ActiveOrderItem {
+  skuCode: string;
+  quantity: number;
+}
+
+export interface ActiveOrderContext {
+  orderId: string;
+  plantId: string;
+  activeSupplierId: string | null;
+  selectedItems: ActiveOrderItem[];
+  currentState: S2State;
+  createdBy: string;
+  createdAt: string;
+}
+
 export interface S2Context {
   activePoCount: number;
   pendingApprovalsCount: number;
@@ -21,6 +36,7 @@ export interface S2Context {
   lastPoCreatedAt: string;
   procurementStatus: S2State;
   blueprintDependency: 'OK' | 'BLOCKED';
+  activeOrder?: ActiveOrderContext | null;
 }
 
 /**
@@ -33,5 +49,14 @@ export const getMockS2Context = (): S2Context => ({
   vendorCatalogCount: 14,
   lastPoCreatedAt: '2026-01-16 11:45 IST',
   procurementStatus: 'S2_WAITING_APPROVAL',
-  blueprintDependency: 'OK'
+  blueprintDependency: 'OK',
+  activeOrder: {
+    orderId: 'PO-2026-8821',
+    plantId: 'FAC-WB-01',
+    activeSupplierId: 'sup-001',
+    selectedItems: [{ skuCode: 'BP-LFP-48V-2.5K', quantity: 500 }],
+    currentState: 'S2_WAITING_APPROVAL',
+    createdBy: 'Procurement Manager',
+    createdAt: '2026-01-16 11:45 IST'
+  }
 });

@@ -13,8 +13,7 @@ interface State {
   errorInfo: ErrorInfo | null;
 }
 
-// Fix: Explicitly importing and extending React.Component ensures properties like props and setState are correctly recognized.
-class ErrorBoundary extends React.Component<Props, State> {
+class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
@@ -25,7 +24,6 @@ class ErrorBoundary extends React.Component<Props, State> {
     return { hasError: true, error, errorInfo: null };
   }
 
-  // Fix: Accessing setState through inheritance from Component.
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("BPM-OS Runtime Error:", error, errorInfo);
     this.setState({ errorInfo });
@@ -35,7 +33,6 @@ class ErrorBoundary extends React.Component<Props, State> {
     window.location.reload();
   };
 
-  // Fix: handleDashboard correctly accesses inherited props and setState from Component.
   private handleDashboard = () => {
     const { onNavigate } = this.props;
     if (onNavigate) {
@@ -46,7 +43,6 @@ class ErrorBoundary extends React.Component<Props, State> {
     }
   };
 
-  // Fix: handleDocs correctly accesses inherited props and setState from Component.
   private handleDocs = () => {
     const { onNavigate } = this.props;
     if (onNavigate) {
@@ -65,7 +61,6 @@ class ErrorBoundary extends React.Component<Props, State> {
 
   public render() {
     const { hasError, error } = this.state;
-    // Fix: render method correctly accesses children from this.props which is inherited from Component.
     const { children } = this.props;
 
     if (hasError) {
@@ -139,7 +134,6 @@ class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Fix: render method correctly returns children from inherited props.
     return children;
   }
 }
