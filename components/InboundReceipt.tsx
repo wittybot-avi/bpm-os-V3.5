@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useContext } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2 } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
 import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions } from '../stages/s3/contracts';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
@@ -96,7 +96,8 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
         skuId: item.skuId,
         itemName: item.itemName,
         category: item.category,
-        trackability: ['CELL', 'BMS', 'IOT', 'MODULE', 'PACK'].includes(item.category) 
+        // Rule: Only CELL, BMS, IOT are trackable by default. Others (MISC) are non-trackable.
+        trackability: ['CELL', 'BMS', 'IOT'].includes(item.category) 
             ? ItemTrackability.TRACKABLE 
             : ItemTrackability.NON_TRACKABLE,
         qtyExpected: item.qtyOrdered,
@@ -269,6 +270,43 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       setRefreshKey(k => k + 1);
   };
 
+  const handleToggleTrackability = (lineId: string) => {
+      if (!activeReceipt || role !== UserRole.SYSTEM_ADMIN) return;
+
+      const line = activeReceipt.lines.find(l => l.id === lineId);
+      if (!line) return;
+
+      const newStatus = line.trackability === ItemTrackability.TRACKABLE 
+          ? ItemTrackability.NON_TRACKABLE 
+          : ItemTrackability.TRACKABLE;
+
+      const updatedLines = activeReceipt.lines.map(l => {
+          if (l.id === lineId) return { ...l, trackability: newStatus };
+          return l;
+      });
+
+      const updatedReceipt = {
+          ...activeReceipt,
+          lines: updatedLines,
+          audit: [
+              {
+                  id: `aud-${Date.now()}`,
+                  ts: new Date().toISOString(),
+                  actorRole: role,
+                  actorLabel: 'Admin',
+                  eventType: 'TRACKABILITY_CHANGED',
+                  refType: 'LINE',
+                  refId: lineId,
+                  message: `Changed trackability to ${newStatus}`
+              },
+              ...activeReceipt.audit
+          ]
+      } as S3Receipt;
+
+      s3UpsertReceipt(updatedReceipt);
+      setRefreshKey(k => k + 1);
+  };
+
   const handleValidate = () => {
       if (!activeReceipt) return;
       const result = validateReceipt(activeReceipt, role);
@@ -329,12 +367,135 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
     }
   };
 
+  const getCategoryColor = (cat: string) => {
+    switch (cat) {
+      case 'CELL': return 'bg-purple-50 text-purple-700 border-purple-200';
+      case 'BMS': return 'bg-blue-50 text-blue-700 border-blue-200';
+      case 'IOT': return 'bg-cyan-50 text-cyan-700 border-cyan-200';
+      case 'MODULE': return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+      case 'PACK': return 'bg-violet-50 text-violet-700 border-violet-200';
+      default: return 'bg-slate-50 text-slate-700 border-slate-200';
+    }
+  };
+
   const canCreate = canS3(role, 'CREATE_RECEIPT');
   const canEdit = activeReceipt ? canS3(role, 'EDIT_RECEIPT', activeReceipt.state) : false;
   const isAdmin = role === UserRole.SYSTEM_ADMIN;
 
   const allowedNext = activeReceipt ? allowedReceiptTransitions[activeReceipt.state] : [];
   const nextStateLabel = allowedNext && allowedNext.length > 0 ? getReceiptNextActions(activeReceipt.state) : null;
+
+  // Split lines for rendering
+  const trackableLines = activeReceipt?.lines.filter(l => l.trackability === ItemTrackability.TRACKABLE) || [];
+  const nonTrackableLines = activeReceipt?.lines.filter(l => l.trackability === ItemTrackability.NON_TRACKABLE) || [];
+
+  const renderLineItem = (line: S3ReceiptLine) => {
+    const buffer = lineBuffers[line.id] || {};
+    const isTrackable = line.trackability === ItemTrackability.TRACKABLE;
+    const hasError = validationResult?.errors.some(e => e.refId === line.id);
+    
+    return (
+        <div key={line.id} className={`p-3 border rounded-lg bg-white shadow-sm ${hasError ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`}>
+            <div className="flex justify-between items-start mb-2">
+                <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase border ${getCategoryColor(line.category)}`}>
+                            {line.category}
+                        </span>
+                        {/* Admin Toggle for Trackability */}
+                        <button 
+                           onClick={() => handleToggleTrackability(line.id)}
+                           disabled={!isAdmin}
+                           className={`text-[10px] px-2 py-0.5 rounded font-bold uppercase border flex items-center gap-1 ${
+                               isTrackable 
+                               ? 'bg-blue-50 text-blue-700 border-blue-200' 
+                               : 'bg-slate-50 text-slate-500 border-slate-200'
+                           } ${isAdmin ? 'hover:bg-opacity-80 cursor-pointer' : 'cursor-default'}`}
+                           title={isAdmin ? "Click to toggle Trackability (Admin)" : "Trackability Status"}
+                        >
+                            {isTrackable ? <ScanBarcode size={10} /> : <Package size={10} />}
+                            {isTrackable ? 'TRACKABLE' : 'BULK'}
+                            {isAdmin && <Settings2 size={8} className="opacity-50" />}
+                        </button>
+                    </div>
+                    <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
+                        {line.itemName}
+                        {hasError && <AlertTriangle size={12} className="text-red-500" />}
+                    </div>
+                    <div className="text-xs text-slate-500 font-mono mt-1">SKU: {line.skuId || 'N/A'}</div>
+                </div>
+                <div className="text-right">
+                    <div className="text-sm font-mono font-bold text-slate-700">
+                        {line.qtyReceived} / {line.qtyExpected}
+                    </div>
+                    <div className="text-[10px] text-slate-400 uppercase">Received</div>
+                </div>
+            </div>
+            
+            {/* Lot Info & Qty Edit Section */}
+            <div className="mt-3 pt-3 border-t border-slate-100">
+                <div className="grid grid-cols-4 gap-2 items-end">
+                    <div className="col-span-2">
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                            Lot / Batch Ref {isTrackable && <span className="text-red-500">*</span>}
+                        </label>
+                        <div className="relative">
+                            <input 
+                                className={`w-full text-xs p-1.5 border rounded focus:outline-none focus:ring-1 focus:ring-brand-500 ${!buffer.lotRef && isTrackable ? 'border-amber-300 bg-amber-50' : 'border-slate-300'}`}
+                                placeholder="Supplier Lot No."
+                                value={buffer.lotRef || ''}
+                                onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], lotRef: e.target.value}}))}
+                                disabled={!canEdit}
+                            />
+                            <Tag size={12} className="absolute right-2 top-2 text-slate-400" />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Qty Recvd</label>
+                        <input 
+                            type="number"
+                            className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500"
+                            value={buffer.qtyReceived}
+                            onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], qtyReceived: parseInt(e.target.value) || 0}}))}
+                            disabled={!canEdit}
+                        />
+                    </div>
+                    <div>
+                        {canEdit && (
+                            <button 
+                                onClick={() => handleUpdateLine(line.id)}
+                                className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded border border-slate-200 transition-colors"
+                            >
+                                Update
+                            </button>
+                        )}
+                    </div>
+                </div>
+                {/* Advanced Fields (Mfg Date) - Optional */}
+                {isTrackable && (
+                   <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div>
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Mfg Date</label>
+                          <input 
+                              type="date"
+                              className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500"
+                              value={buffer.mfgDate || ''}
+                              onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], mfgDate: e.target.value}}))}
+                              disabled={!canEdit}
+                          />
+                      </div>
+                   </div>
+                )}
+                {/* Hint for Trackable */}
+                {isTrackable && buffer.qtyReceived > 0 && (
+                   <div className="mt-2 text-[10px] text-amber-600 flex items-center gap-1 bg-amber-50 px-2 py-1 rounded">
+                      <ScanBarcode size={10} /> Serials required before QC Pending
+                   </div>
+                )}
+            </div>
+        </div>
+    );
+  };
 
   return (
     <div className="h-full flex flex-col space-y-4 animate-in fade-in duration-300">
@@ -716,90 +877,35 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                           )}
 
                           {activeTab === 'LINES' && (
-                              <div className="space-y-3 animate-in fade-in slide-in-from-left-2">
-                                  {activeReceipt.lines.map(line => {
-                                      const buffer = lineBuffers[line.id] || {};
-                                      const isTrackable = line.trackability === 'TRACKABLE';
-                                      const hasError = validationResult?.errors.some(e => e.refId === line.id);
-                                      
-                                      return (
-                                          <div key={line.id} className={`p-3 border rounded-lg bg-white shadow-sm ${hasError ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`}>
-                                              <div className="flex justify-between items-start mb-2">
-                                                  <div>
-                                                      <div className="font-bold text-slate-800 text-sm flex items-center gap-2">
-                                                          {line.itemName}
-                                                          {isTrackable && (
-                                                              <span className="text-[9px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-bold uppercase border border-purple-200">
-                                                                  Trackable
-                                                              </span>
-                                                          )}
-                                                          {hasError && <AlertTriangle size={12} className="text-red-500" />}
-                                                      </div>
-                                                      <div className="text-xs text-slate-500 font-mono mt-1">SKU: {line.skuId || 'N/A'}</div>
-                                                  </div>
-                                                  <div className="text-right">
-                                                      <div className="text-sm font-mono font-bold text-slate-700">
-                                                          {line.qtyReceived} / {line.qtyExpected}
-                                                      </div>
-                                                      <div className="text-[10px] text-slate-400 uppercase">Received</div>
-                                                  </div>
+                              <div className="space-y-6 animate-in fade-in slide-in-from-left-2">
+                                  {/* Trackable Items */}
+                                  <div>
+                                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                          <ScanBarcode size={14} /> Trackable Items (Serialization Required)
+                                      </h4>
+                                      <div className="space-y-3">
+                                          {trackableLines.length > 0 ? trackableLines.map(renderLineItem) : (
+                                              <div className="p-4 text-center text-xs text-slate-400 italic border border-dashed border-slate-200 rounded">
+                                                  No trackable items in this receipt.
                                               </div>
-                                              
-                                              {/* Lot Info & Qty Edit Section */}
-                                              <div className="mt-3 pt-3 border-t border-slate-100">
-                                                  <div className="grid grid-cols-4 gap-2 items-end">
-                                                      <div className="col-span-2">
-                                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
-                                                              Lot / Batch Ref {isTrackable && <span className="text-red-500">*</span>}
-                                                          </label>
-                                                          <div className="relative">
-                                                              <input 
-                                                                  className={`w-full text-xs p-1.5 border rounded focus:outline-none focus:ring-1 focus:ring-brand-500 ${!buffer.lotRef && isTrackable ? 'border-amber-300 bg-amber-50' : 'border-slate-300'}`}
-                                                                  placeholder="Supplier Lot No."
-                                                                  value={buffer.lotRef || ''}
-                                                                  onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], lotRef: e.target.value}}))}
-                                                                  disabled={!canEdit}
-                                                              />
-                                                              <Tag size={12} className="absolute right-2 top-2 text-slate-400" />
-                                                          </div>
-                                                      </div>
-                                                      <div>
-                                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Qty Recvd</label>
-                                                          <input 
-                                                              type="number"
-                                                              className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500"
-                                                              value={buffer.qtyReceived}
-                                                              onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], qtyReceived: parseInt(e.target.value) || 0}}))}
-                                                              disabled={!canEdit}
-                                                          />
-                                                      </div>
-                                                      <div>
-                                                          {canEdit && (
-                                                              <button 
-                                                                  onClick={() => handleUpdateLine(line.id)}
-                                                                  className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded border border-slate-200 transition-colors"
-                                                              >
-                                                                  Update
-                                                              </button>
-                                                          )}
-                                                      </div>
-                                                  </div>
-                                                  <div className="grid grid-cols-2 gap-2 mt-2">
-                                                      <div>
-                                                          <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Mfg Date</label>
-                                                          <input 
-                                                              type="date"
-                                                              className="w-full text-xs p-1.5 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-brand-500"
-                                                              value={buffer.mfgDate || ''}
-                                                              onChange={e => setLineBuffers(prev => ({...prev, [line.id]: {...prev[line.id], mfgDate: e.target.value}}))}
-                                                              disabled={!canEdit}
-                                                          />
-                                                      </div>
-                                                  </div>
+                                          )}
+                                      </div>
+                                  </div>
+
+                                  {/* Non-Trackable Items */}
+                                  <div>
+                                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-2">
+                                          <Package size={14} /> Bulk / Non-Trackable Items
+                                      </h4>
+                                      <div className="space-y-3">
+                                          {nonTrackableLines.length > 0 ? nonTrackableLines.map(renderLineItem) : (
+                                              <div className="p-4 text-center text-xs text-slate-400 italic border border-dashed border-slate-200 rounded">
+                                                  No bulk items in this receipt.
                                               </div>
-                                          </div>
-                                      );
-                                  })}
+                                          )}
+                                      </div>
+                                  </div>
+
                                   {activeReceipt.lines.length === 0 && (
                                       <div className="p-12 text-center text-slate-400 text-sm flex flex-col items-center gap-2">
                                           <RefreshCcw className="opacity-20" size={32} />
