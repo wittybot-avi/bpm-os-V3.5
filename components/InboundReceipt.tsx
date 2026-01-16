@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useContext, useMemo } from 'react';
 import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon, Printer, Ban, RotateCcw, ThumbsUp, ThumbsDown, PauseCircle, Archive, MapPin } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
-import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit, UnitState, LabelStatus } from '../stages/s3/contracts';
+import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, validateClosure, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit, UnitState, LabelStatus } from '../stages/s3/contracts';
 import { getNextUnitState, canTransitionUnit, transitionUnit } from '../stages/s3/contracts/s3StateMachine';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
 import { s3ListOpenOrdersFromS2, S3MockOrder, s3ListSuppliers, S3Supplier } from '../sim/api/s3/s3S2Adapter';
@@ -822,18 +822,70 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const handleAdvanceState = () => {
       if (!activeReceipt || !validationResult?.ok) return;
       
-      const allowed = allowedReceiptTransitions[activeReceipt.state];
-      if (!allowed || allowed.length === 0) return;
-      
-      const nextState = allowed[0];
+      let nextState: ReceiptState | undefined = undefined;
 
-      try {
-          const updatedReceipt = transitionReceipt(activeReceipt, nextState, role, 'User', 'Advanced via UI');
-          s3UpsertReceipt(updatedReceipt);
-          setValidationResult(null); // Reset on transition
-          setRefreshKey(k => k + 1);
-      } catch (e) {
-          alert("State transition failed: " + e);
+      // Special logic for QC Completion
+      if (activeReceipt.state === ReceiptState.QC_PENDING) {
+          // Check for pending QC on trackable units
+          let pendingQC = 0;
+          activeReceipt.lines.forEach(l => {
+              if (l.trackability === ItemTrackability.TRACKABLE && l.units) {
+                   pendingQC += l.units.filter(u => u.state === UnitState.VERIFIED || u.state === UnitState.SCANNED).length;
+              }
+          });
+          
+          if (pendingQC > 0) {
+              setValidationResult({ ok: false, errors: [{ level: 'RECEIPT', code: 'QC_INCOMPLETE', message: `${pendingQC} units are pending QC disposition.` }] });
+              return;
+          }
+
+          // Calculate outcome
+          let totalTrackable = 0;
+          let accepted = 0;
+          let rejected = 0;
+          
+          activeReceipt.lines.forEach(l => {
+              if (l.trackability === ItemTrackability.TRACKABLE && l.units) {
+                  totalTrackable += l.units.length;
+                  accepted += l.units.filter(u => u.state === UnitState.ACCEPTED).length;
+                  rejected += l.units.filter(u => u.state === UnitState.REJECTED).length;
+              }
+          });
+
+          if (totalTrackable > 0) {
+              if (rejected === totalTrackable) nextState = ReceiptState.REJECTED;
+              else if (accepted === totalTrackable) nextState = ReceiptState.ACCEPTED;
+              else nextState = ReceiptState.PARTIAL_ACCEPTED;
+          } else {
+              // No trackable items, assume Accepted if no issues raised
+              nextState = ReceiptState.ACCEPTED;
+          }
+      } 
+      // Special logic for Closure
+      else if (activeReceipt.state === ReceiptState.PUTAWAY_COMPLETE || activeReceipt.state === ReceiptState.REJECTED) {
+          // Validate Closure Constraints
+          const closureValidation = validateClosure(activeReceipt);
+          if (!closureValidation.ok) {
+              setValidationResult(closureValidation); // Show errors in UI
+              return;
+          }
+          nextState = ReceiptState.CLOSED;
+      }
+      else {
+          // Default linear progression
+          const allowed = allowedReceiptTransitions[activeReceipt.state];
+          if (allowed && allowed.length > 0) nextState = allowed[0];
+      }
+
+      if (nextState) {
+          try {
+              const updatedReceipt = transitionReceipt(activeReceipt, nextState, role, 'User', 'Advanced via UI');
+              s3UpsertReceipt(updatedReceipt);
+              setValidationResult(null); 
+              setRefreshKey(k => k + 1);
+          } catch (e) {
+              alert("State transition failed: " + e);
+          }
       }
   };
 
@@ -903,7 +955,8 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       activeReceipt.state === ReceiptState.ACCEPTED || 
       activeReceipt.state === ReceiptState.PARTIAL_ACCEPTED || 
       activeReceipt.state === ReceiptState.PUTAWAY_IN_PROGRESS ||
-      activeReceipt.state === ReceiptState.PUTAWAY_COMPLETE
+      activeReceipt.state === ReceiptState.PUTAWAY_COMPLETE ||
+      activeReceipt.state === ReceiptState.REJECTED // Allow putaway for rejected items too
   );
 
   const putawayData = useMemo(() => {
@@ -1353,7 +1406,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                     {nextStateLabel && (
                         <button 
                             onClick={handleAdvanceState}
-                            disabled={!validationResult?.ok}
+                            disabled={!validationResult?.ok && activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE} // Allow closing to trigger validation
                             className="px-4 py-1.5 bg-brand-600 border border-brand-700 text-white rounded-md text-xs font-bold hover:bg-brand-700 flex items-center gap-2 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <PlayCircle size={14} /> {nextStateLabel}
@@ -1686,7 +1739,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                   </div>
 
                                   {/* Assignment Controls */}
-                                  {activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && (
+                                  {activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && activeReceipt.state !== ReceiptState.CLOSED && (
                                     <div className="bg-white p-4 rounded-lg border border-cyan-200 shadow-sm bg-cyan-50/30">
                                         <div className="grid grid-cols-4 gap-4 items-end">
                                             <div>
@@ -1764,7 +1817,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                   </div>
                                   
                                   {/* Complete Action */}
-                                  {activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && activeReceipt.state !== ReceiptState.CLOSED && (
+                                  {activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && activeReceipt.state !== ReceiptState.CLOSED && activeReceipt.state !== ReceiptState.REJECTED && (
                                     <div className="flex justify-end pt-2">
                                         <button 
                                             onClick={handleCompletePutaway}
@@ -1775,6 +1828,13 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                             <Archive size={16} /> Complete Putaway Process
                                         </button>
                                     </div>
+                                  )}
+                                  
+                                  {/* REJECTED Case Putaway handling */}
+                                  {activeReceipt.state === ReceiptState.REJECTED && (
+                                     <div className="flex justify-end pt-2">
+                                         <p className="text-xs text-red-600 italic mr-4 flex items-center gap-1"><AlertCircle size={14} /> Receipt Rejected. Assign to Returns/Quarantine then Close.</p>
+                                     </div>
                                   )}
                               </div>
                           )}
@@ -1956,203 +2016,3 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                     onChange={(e) => {
                                                         const newVal = e.target.value;
                                                         setSerialBuffer(prev => prev.map((u, i) => i === idx ? { ...u, supplierSerialRef: newVal } : u));
-                                                        setSerialErrors([]); // Clear errors on edit
-                                                    }}
-                                                    disabled={isVoided}
-                                                 />
-                                             </td>
-                                             <td className="px-3 py-2 text-center">
-                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(unit.state)}`}>
-                                                     {unit.state}
-                                                 </span>
-                                             </td>
-                                             <td className="px-3 py-2 text-center">
-                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
-                                                    unit.labelStatus === LabelStatus.PRINTED ? 'bg-green-50 text-green-700 border-green-200' :
-                                                    unit.labelStatus === LabelStatus.VOIDED ? 'bg-red-50 text-red-700 border-red-200' :
-                                                    'bg-slate-50 text-slate-400 border-slate-200'
-                                                }`}>
-                                                    {unit.labelStatus === LabelStatus.NOT_PRINTED ? '-' : unit.labelStatus}
-                                                </span>
-                                             </td>
-                                             <td className="px-3 py-2 text-center flex items-center justify-center gap-2">
-                                                 {nextState && !isVoided && (
-                                                     <button 
-                                                        onClick={() => handleUnitTransitionInModal(idx, nextState)}
-                                                        disabled={!canAdvance}
-                                                        className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] font-bold text-slate-600 hover:bg-white hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
-                                                        title={`Advance to ${nextState}`}
-                                                     >
-                                                        {nextState === UnitState.VERIFIED ? <ShieldCheck size={10} /> : <ArrowRightCircle size={10} />}
-                                                     </button>
-                                                 )}
-                                                 {canPrint && !isVoided && (
-                                                     <>
-                                                        <button 
-                                                            onClick={() => handleImmediateUnitAction(idx, 'REPRINT')}
-                                                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                                            title="Reprint Label"
-                                                        >
-                                                            <RotateCcw size={12} />
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => handleImmediateUnitAction(idx, 'VOID')}
-                                                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                                            title="Void Label"
-                                                        >
-                                                            <Ban size={12} />
-                                                        </button>
-                                                     </>
-                                                 )}
-                                             </td>
-                                         </tr>
-                                        );
-                                     })}
-                                 </tbody>
-                             </table>
-                         </div>
-                    </div>
-
-                    {/* Validation Errors */}
-                    {serialErrors.length > 0 && (
-                        <div className="bg-red-50 border border-red-200 rounded p-3 text-xs text-red-700 space-y-1">
-                            <div className="flex items-center gap-2 font-bold mb-1">
-                                <AlertCircle size={14} /> Validation Failed
-                            </div>
-                            <ul className="list-disc pl-5">
-                                {serialErrors.slice(0, 5).map((err, i) => (
-                                    <li key={i}>{err}</li>
-                                ))}
-                                {serialErrors.length > 5 && <li>...and {serialErrors.length - 5} more.</li>}
-                            </ul>
-                        </div>
-                    )}
-                </div>
-
-                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-lg">
-                    <button 
-                        onClick={() => setSerialEntryLineId(null)}
-                        className="px-4 py-2 text-slate-600 font-bold text-xs hover:bg-slate-200 rounded transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    <button 
-                        onClick={handleSaveUnits}
-                        className="px-4 py-2 bg-green-600 text-white font-bold text-xs rounded hover:bg-green-700 shadow-sm transition-colors flex items-center gap-2"
-                    >
-                        <Save size={14} /> Save Changes
-                    </button>
-                </div>
-            </div>
-        </div>
-      )}
-      
-      {/* QC Decision Modal */}
-      {qcLineId && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center">
-            <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setQcLineId(null)} />
-            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-5xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
-                <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-lg">
-                    <div className="flex items-center gap-2">
-                        <ShieldCheck className="text-purple-600" size={20} />
-                        <div>
-                            <h3 className="text-sm font-bold text-slate-800">Quality Control Inspection</h3>
-                            <p className="text-xs text-slate-500">
-                                {activeReceipt?.lines.find(l => l.id === qcLineId)?.itemName}
-                            </p>
-                        </div>
-                    </div>
-                    <button onClick={() => setQcLineId(null)} className="text-slate-400 hover:text-slate-600">
-                        <X size={20} />
-                    </button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* Filters */}
-                    <div className="flex gap-2 mb-4">
-                        <button onClick={() => setQcFilter('ALL')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>All</button>
-                        <button onClick={() => setQcFilter('PENDING')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'PENDING' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Pending (Verified)</button>
-                        <button onClick={() => setQcFilter('HOLD')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'HOLD' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}>On Hold</button>
-                        <button onClick={() => setQcFilter('FINAL')} className={`px-3 py-1 rounded-full text-xs font-bold ${qcFilter === 'FINAL' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Finalized</button>
-                    </div>
-
-                    {/* Unit List */}
-                    <div className="border border-slate-200 rounded overflow-hidden">
-                         <table className="w-full text-left text-xs">
-                             <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                                 <tr>
-                                     <th className="px-3 py-2 w-12 text-center">#</th>
-                                     <th className="px-3 py-2">Enterprise Serial</th>
-                                     <th className="px-3 py-2 text-center">Status</th>
-                                     <th className="px-3 py-2 text-center">QC Decision</th>
-                                     <th className="px-3 py-2">Reason / Notes</th>
-                                     <th className="px-3 py-2 text-center">Action</th>
-                                 </tr>
-                             </thead>
-                             <tbody className="divide-y divide-slate-100">
-                                 {qcBuffer.filter(u => {
-                                     if (qcFilter === 'ALL') return true;
-                                     if (qcFilter === 'PENDING') return u.state === UnitState.VERIFIED;
-                                     if (qcFilter === 'HOLD') return u.state === UnitState.QC_HOLD;
-                                     if (qcFilter === 'FINAL') return u.state === UnitState.ACCEPTED || u.state === UnitState.REJECTED;
-                                     return true;
-                                 }).map((unit, idx) => {
-                                    const canAct = canQC; 
-                                    return (
-                                     <tr key={unit.id} className="hover:bg-slate-50">
-                                         <td className="px-3 py-2 text-center text-slate-400">{idx + 1}</td>
-                                         <td className="px-3 py-2 font-mono text-slate-600">{unit.enterpriseSerial}</td>
-                                         <td className="px-3 py-2 text-center">
-                                             <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(unit.state)}`}>
-                                                 {unit.state}
-                                             </span>
-                                         </td>
-                                         <td className="px-3 py-2 text-center font-bold">
-                                             {unit.qcDecision || '-'}
-                                         </td>
-                                         <td className="px-3 py-2 text-slate-500 italic truncate max-w-xs" title={unit.qcReason}>
-                                             {unit.qcReason || '-'}
-                                         </td>
-                                         <td className="px-3 py-2 text-center">
-                                            {(unit.state === UnitState.VERIFIED || unit.state === UnitState.QC_HOLD) && canAct ? (
-                                                <div className="flex items-center justify-center gap-2">
-                                                    <button onClick={() => handleApplyQCDecision(unit.id, 'ACCEPT')} className="p-1 text-slate-300 hover:text-green-600 hover:bg-green-50 rounded" title="Accept"><ThumbsUp size={14} /></button>
-                                                    <button onClick={() => handleApplyQCDecision(unit.id, 'HOLD')} className="p-1 text-slate-300 hover:text-amber-600 hover:bg-amber-50 rounded" title="Hold"><PauseCircle size={14} /></button>
-                                                    <button onClick={() => handleApplyQCDecision(unit.id, 'REJECT')} className="p-1 text-slate-300 hover:text-red-600 hover:bg-red-50 rounded" title="Reject"><ThumbsDown size={14} /></button>
-                                                </div>
-                                            ) : (
-                                                <span className="text-slate-300 text-[10px]">-</span>
-                                            )}
-                                         </td>
-                                     </tr>
-                                    );
-                                 })}
-                                 {qcBuffer.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-slate-400 italic">No units available for inspection.</td></tr>}
-                             </tbody>
-                         </table>
-                    </div>
-                </div>
-
-                <div className="p-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3 rounded-b-lg">
-                    <button 
-                        onClick={() => setQcLineId(null)}
-                        className="px-4 py-2 text-slate-600 font-bold text-xs hover:bg-slate-200 rounded transition-colors"
-                    >
-                        Cancel
-                    </button>
-                    {canQC && (
-                        <button 
-                            onClick={handleSaveQC}
-                            className="px-4 py-2 bg-purple-600 text-white font-bold text-xs rounded hover:bg-purple-700 shadow-sm transition-colors flex items-center gap-2"
-                        >
-                            <Save size={14} /> Commit Decisions
-                        </button>
-                    )}
-                </div>
-            </div>
-        </div>
-      )}
-
-    </div>
-  );
-};

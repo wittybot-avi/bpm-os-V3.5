@@ -1,5 +1,5 @@
 
-import { S3Receipt, S3ReceiptLine } from './s3Types';
+import { S3Receipt, S3ReceiptLine, ItemTrackability, LabelStatus, UnitState } from './s3Types';
 import { UserRole } from '../../../types';
 
 export interface ValidationError {
@@ -136,4 +136,56 @@ export const validateReceipt = (receipt: S3Receipt, userRole: string): Validatio
     ok: errors.length === 0,
     errors
   };
+};
+
+/**
+ * Validates if a receipt is ready to be CLOSED.
+ * Checks for labels, QC dispositions, and putaway assignments.
+ */
+export const validateClosure = (receipt: S3Receipt): ValidationResult => {
+    const errors: ValidationError[] = [];
+    
+    receipt.lines.forEach(line => {
+        if (line.trackability === ItemTrackability.TRACKABLE && line.units) {
+            
+            // Check for unprinted labels
+            const unprinted = line.units.filter(u => u.labelStatus === LabelStatus.NOT_PRINTED);
+            if (unprinted.length > 0) {
+                 errors.push({
+                     level: 'LINE',
+                     refId: line.id,
+                     code: 'LABEL_PENDING',
+                     message: `${unprinted.length} units in line '${line.itemName}' have labels pending.`
+                 });
+            }
+
+            // Check for missing QC decisions
+            const undispositioned = line.units.filter(u => !u.qcDecision);
+            if (undispositioned.length > 0) {
+                 errors.push({
+                     level: 'LINE',
+                     refId: line.id,
+                     code: 'QC_PENDING',
+                     message: `${undispositioned.length} units in line '${line.itemName}' have no QC disposition.`
+                 });
+            }
+
+            // Check for missing Putaway assignment
+            // All units (Accepted/Hold/Rejected) must have a location recorded before closure.
+            const unassigned = line.units.filter(u => !u.putaway?.bin && !u.putaway?.warehouse);
+            if (unassigned.length > 0) {
+                 errors.push({
+                     level: 'LINE',
+                     refId: line.id,
+                     code: 'NO_PUTAWAY',
+                     message: `${unassigned.length} units in line '${line.itemName}' not assigned to a storage location.`
+                 });
+            }
+        }
+    });
+
+    return {
+        ok: errors.length === 0,
+        errors
+    };
 };
