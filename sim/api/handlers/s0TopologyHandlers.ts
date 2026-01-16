@@ -3,7 +3,7 @@
  * Simulated backend logic for system hierarchy retrieval and management.
  * @version V3.5
  * @governance S0-ARCH-BP-05
- * @updated V35-S0-HOTFIX-PP-29 (Full CRUD Handlers)
+ * @updated V35-S0-HOTFIX-PP-35 (Refined Capability Resolution)
  */
 
 import { UserRole } from "../../../types";
@@ -45,7 +45,8 @@ import {
   addUser,
   updateUser,
   addS0AuditLog,
-  getS0AuditLogs
+  getS0AuditLogs,
+  resolveEffectiveFlag
 } from "../s0/systemTopology.store";
 import type { Enterprise, Plant, Line, Station, DeviceClass, S0AuditEntry } from "../../../domain/s0/systemTopology.types";
 import type { CapabilityOverride, EffectiveFlag, CapabilityScope, CapabilityFlag } from "../../../domain/s0/capability.types";
@@ -163,6 +164,11 @@ export const createPlantHandler: ApiHandler = async (req) => {
     enterpriseId: body.enterpriseId || 'ENT-BPM-GLOBAL',
     effectiveFrom: new Date().toISOString(),
     lineIds: [],
+    locationCity: body.locationCity,
+    locationState: body.locationState,
+    country: body.country || 'India',
+    timezone: body.timezone || 'Asia/Kolkata',
+    siteType: body.siteType || 'GIGAFACTORY',
     audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
   addPlant(newPlant);
@@ -224,6 +230,9 @@ export const createLineHandler: ApiHandler = async (req) => {
     stationIds: [],
     supportedOperations: body.supportedOperations || [],
     supportedSkuTypes: body.supportedSkuTypes || [],
+    lineType: body.lineType || 'PACK_ASSEMBLY',
+    maxThroughputPerHr: body.maxThroughputPerHr || 0,
+    shiftModel: body.shiftModel || 1,
     audit: { createdBy: "API_USER", createdAt: new Date().toISOString() }
   };
   addLine(newLine);
@@ -368,54 +377,15 @@ export const updateCapabilityFlagHandler: ApiHandler = async (req) => {
 
 /**
  * GET /api/s0/capabilities/effective
+ * @version V35-S0-HOTFIX-PP-35
  */
 export const getEffectiveCapabilitiesHandler: ApiHandler = async (req) => {
   const scope = req.query?.["scope"] as CapabilityScope;
   const scopeId = req.query?.["scopeId"];
   if (!scope || !scopeId) return err("BAD_REQUEST", "Scope and scopeId are required");
+  
   const flags = getCapabilityFlags();
-  const overrides = getCapabilityOverrides();
-  const resolve = (flagId: string): EffectiveFlag => {
-    const flag = flags.find(f => f.id === flagId)!;
-    const exact = overrides.find(o => o.flagId === flagId && o.scope === scope && o.scopeId === scopeId);
-    if (exact) return { ...flag, effectiveValue: exact.value, sourceScope: scope, sourceId: scopeId, isOverridden: true };
-    if (scope === 'STATION') {
-      const station = getStations().find(s => s.id === scopeId);
-      if (station) {
-        const lineId = station.lineId;
-        const lineOverride = overrides.find(o => o.flagId === flagId && o.scope === 'LINE' && o.scopeId === lineId);
-        if (lineOverride) return { ...flag, effectiveValue: lineOverride.value, sourceScope: 'LINE', sourceId: lineId, isOverridden: false };
-        const line = getLineById(lineId);
-        if (line) {
-          const plantId = line.plantId;
-          const plantOverride = overrides.find(o => o.flagId === flagId && o.scope === 'PLANT' && o.scopeId === plantId);
-          if (plantOverride) return { ...flag, effectiveValue: plantOverride.value, sourceScope: 'PLANT', sourceId: plantId, isOverridden: false };
-          const plant = getPlantById(plantId);
-          if (plant) {
-             const entId = plant.enterpriseId;
-             const entOverride = overrides.find(o => o.flagId === flagId && o.scope === 'ENTERPRISE' && o.scopeId === entId);
-             if (entOverride) return { ...flag, effectiveValue: entOverride.value, sourceScope: 'ENTERPRISE', sourceId: entId, isOverridden: false };
-          }
-        }
-      }
-    } else if (scope === 'LINE') {
-      const line = getLines().find(l => l.id === scopeId);
-      if (line) {
-        const plantId = line.plantId;
-        const plantOverride = overrides.find(o => o.flagId === flagId && o.scope === 'PLANT' && o.scopeId === plantId);
-        if (plantOverride) return { ...flag, effectiveValue: plantOverride.value, sourceScope: 'PLANT', sourceId: plantId, isOverridden: false };
-      }
-    } else if (scope === 'PLANT') {
-      const plant = getPlants().find(p => p.id === scopeId);
-      if (plant) {
-        const entId = plant.enterpriseId;
-        const entOverride = overrides.find(o => o.flagId === flagId && o.scope === 'ENTERPRISE' && o.scopeId === entId);
-        if (entOverride) return { ...flag, effectiveValue: entOverride.value, sourceScope: 'ENTERPRISE', sourceId: entId, isOverridden: false };
-      }
-    }
-    return { ...flag, effectiveValue: flag.defaultValue, sourceScope: 'GLOBAL', isOverridden: false };
-  };
-  const resolved = flags.map(f => resolve(f.id));
+  const resolved = flags.map(f => resolveEffectiveFlag(f.id, scope, scopeId));
   return ok(resolved);
 };
 

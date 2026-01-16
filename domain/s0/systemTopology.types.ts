@@ -52,6 +52,11 @@ export interface Enterprise extends BaseTopologyEntity {
 export interface Plant extends BaseTopologyEntity {
   readonly enterpriseId: EntityId;
   readonly lineIds: readonly EntityId[];
+  readonly locationCity?: string;
+  readonly locationState?: string;
+  readonly country: string;
+  readonly timezone: string;
+  readonly siteType: 'GIGAFACTORY' | 'PILOT' | 'R&D' | 'CONTRACT';
 }
 
 /**
@@ -63,6 +68,9 @@ export interface Line extends BaseTopologyEntity {
   readonly stationIds: readonly EntityId[];
   readonly supportedOperations: readonly string[]; // V35-S0-CRUD-PP-13
   readonly supportedSkuTypes: readonly string[];    // V35-S0-CRUD-PP-13
+  readonly lineType: 'PACK_ASSEMBLY' | 'MODULE_ASSEMBLY' | 'CELL_TESTING' | 'BMS_FLASHING' | 'INCOMING_QC' | 'EOL';
+  readonly maxThroughputPerHr: number;
+  readonly shiftModel: 1 | 2 | 3;
 }
 
 /**

@@ -42,7 +42,8 @@ import {
   Search,
   Settings2,
   Mail,
-  Fingerprint
+  Fingerprint,
+  Link
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -64,6 +65,40 @@ const ScopeBadge: React.FC<{ scope: string }> = ({ scope }) => (
     {scope.toUpperCase()}
   </span>
 );
+
+const RoleBadge: React.FC<{ role: UserRole }> = ({ role }) => {
+  let styles = "bg-slate-100 text-slate-600 border-slate-200";
+  if (role === UserRole.SYSTEM_ADMIN) styles = "bg-red-50 text-red-700 border-red-200";
+  if (role === UserRole.MANAGEMENT) styles = "bg-purple-50 text-purple-700 border-purple-200";
+  if (role === UserRole.OPERATOR) styles = "bg-blue-50 text-blue-700 border-blue-200";
+  if (role === UserRole.QA_ENGINEER) styles = "bg-green-50 text-green-700 border-green-200";
+  
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border uppercase tracking-tighter ${styles}`}>
+      {role}
+    </span>
+  );
+};
+
+const ChipList = ({ items, limit = 3, colorClass = "bg-blue-50 text-blue-800 border-blue-100" }: { items: any[], limit?: number, colorClass?: string }) => {
+  if (!items || items.length === 0) return <span className="text-[10px] text-slate-400 italic">No active items</span>;
+  const visible = items.slice(0, limit);
+  const remaining = items.length - limit;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {visible.map(item => (
+        <div key={item.id} className={`px-2 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap overflow-hidden text-ellipsis max-w-[120px] ${colorClass}`} title={item.name || item.displayName}>
+          {item.name || item.displayName || item.label || item.code}
+        </div>
+      ))}
+      {remaining > 0 && (
+        <div className="px-2 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-400 text-[10px] font-bold">
+          +{remaining} more
+        </div>
+      )}
+    </div>
+  );
+};
 
 type ManageCategory = 
   | 'ORG' 
@@ -98,11 +133,11 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [allSops, setAllSops] = useState<SOPProfile[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
 
-  // Selection Context
-  const [selEntId, setSelEntId] = useState<string>('');
-  const [selPlantId, setSelPlantId] = useState<string>('');
-  const [selLineId, setSelLineId] = useState<string>('');
-  const [selStationId, setSelStationId] = useState<string>('');
+  // Selection Context (Recover from Session Storage or Default)
+  const [selEntId, setSelEntId] = useState<string>(() => localStorage.getItem('bpmos.s0.selEntId') || '');
+  const [selPlantId, setSelPlantId] = useState<string>(() => localStorage.getItem('bpmos.s0.selPlantId') || '');
+  const [selLineId, setSelLineId] = useState<string>(() => localStorage.getItem('bpmos.s0.selLineId') || '');
+  const [selStationId, setSelStationId] = useState<string>(() => localStorage.getItem('bpmos.s0.selStationId') || '');
   
   // Loading States
   const [isTopologyLoading, setIsTopologyLoading] = useState(true);
@@ -110,7 +145,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [isFormSubmitting, setIsFormSubmitting] = useState(false);
   const [isFlagsLoading, setIsFlagsLoading] = useState(false);
   const [isComplianceLoading, setIsComplianceLoading] = useState(false);
-  const [isPermsLoading, setIsPermsLoading] = useState(false);
+  const [isUsersLoading, setIsUsersLoading] = useState(false);
 
   // Form States (Editing Buffers)
   const [editingEnterprise, setEditingEnterprise] = useState<Partial<Enterprise> | null>(null);
@@ -120,12 +155,11 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
   const [editingDeviceClass, setEditingDeviceClass] = useState<Partial<DeviceClass> | null>(null);
   const [editingSop, setEditingSop] = useState<Partial<SOPProfile> | null>(null);
   const [editingUser, setEditingUser] = useState<Partial<AppUser> | null>(null);
-  const [editingFramework, setEditingFramework] = useState<Partial<RegulatoryFramework> | null>(null);
+  const [editingFramework, setEditingFramework] = useState<(Partial<RegulatoryFramework> & { autoBindToCurrentContext?: boolean }) | null>(null);
   const [editingFlag, setEditingFlag] = useState<Partial<CapabilityFlag> | null>(null);
   
   const [effectiveFlags, setEffectiveFlags] = useState<EffectiveFlag[]>([]);
   const [effectiveCompliance, setEffectiveCompliance] = useState<EffectiveCompliance | null>(null);
-  const [effectivePerms, setEffectivePerms] = useState<EffectivePermissions | null>(null);
 
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
@@ -133,7 +167,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     onConfirm: () => void;
   } | null>(null);
 
-  // V35-S0-STATE-RESET-PP-26A: Clean preview env
+  // V35-S0-STATE-RESET-PP-26A: Clean preview env (Selective cleanup)
   useEffect(() => {
     const s0Keys = ["bpmos.s0.drawerState", "bpmos.s0.selectedEntity", "bpmos.s0.selectedNode", "bpmos.s0.lastManageKey"];
     s0Keys.forEach(key => localStorage.removeItem(key));
@@ -154,7 +188,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       else if (activeCategory === 'SOP_PROFILES') endpoint = '/api/s0/compliance/sop-profiles';
       else if (activeCategory === 'USERS') endpoint = '/api/s0/users';
       else if (activeCategory === 'REGULATORY') endpoint = '/api/s0/compliance/frameworks';
-      else if (activeCategory === 'CAPABILITY_FLAGS') endpoint = '/api/s0/capabilities/effective?scope=GLOBAL&scopeId=GLOBAL';
+      else if (activeCategory === 'CAPABILITY_FLAGS') endpoint = `/api/s0/capabilities/effective?scope=${getCurrentScope().scope}&scopeId=${getCurrentScope().id}`;
       
       if (endpoint) {
         const res = await apiFetch(endpoint);
@@ -174,9 +208,17 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
     } catch (e) { console.error(e); } finally { setIsEntitiesLoading(false); }
   };
 
+  const getCurrentScope = (): { scope: CapabilityScope, id: string } => {
+    if (selStationId) return { scope: 'STATION', id: selStationId };
+    if (selLineId) return { scope: 'LINE', id: selLineId };
+    if (selPlantId) return { scope: 'PLANT', id: selPlantId };
+    if (selEntId) return { scope: 'ENTERPRISE', id: selEntId };
+    return { scope: 'GLOBAL', id: 'GLOBAL' };
+  };
+
   useEffect(() => { loadRegistryData(); }, [activeCategory, selPlantId, selLineId, selEntId]);
 
-  // Topology Sync
+  // Topology Sync & Cascading Context
   useEffect(() => {
     const init = async () => {
       setIsTopologyLoading(true);
@@ -185,13 +227,16 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         const data = await res.json();
         if (data.ok && data.data.length > 0) {
           setEnterprises(data.data);
-          setSelEntId(data.data[0].id);
+          if (!selEntId || !data.data.find((e: any) => e.id === selEntId)) {
+            setSelEntId(data.data[0].id);
+          }
         }
       } catch (e) { console.error(e); }
     };
     init();
   }, []);
 
+  // Cascade: Enterprise -> Plant
   useEffect(() => {
     if (!selEntId) return;
     const fetchPlants = async () => {
@@ -200,13 +245,20 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         const data = await res.json();
         if (data.ok) {
           setActivePlants(data.data);
-          if (data.data.length > 0 && !data.data.find((p: any) => p.id === selPlantId)) setSelPlantId(data.data[0].id);
+          const currentValid = data.data.find((p: any) => p.id === selPlantId);
+          if (!currentValid) {
+            const nextId = data.data[0]?.id || '';
+            setSelPlantId(nextId);
+            localStorage.setItem('bpmos.s0.selPlantId', nextId);
+          }
         }
       } catch (e) { console.error(e); }
     };
     fetchPlants();
+    localStorage.setItem('bpmos.s0.selEntId', selEntId);
   }, [selEntId]);
 
+  // Cascade: Plant -> Line
   useEffect(() => {
     if (!selPlantId) { setActiveLines([]); setSelLineId(''); return; }
     const fetchLines = async () => {
@@ -215,13 +267,20 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         const data = await res.json();
         if (data.ok) {
           setActiveLines(data.data);
-          if (data.data.length > 0 && !data.data.find((l: any) => l.id === selLineId)) setSelLineId(data.data[0].id);
+          const currentValid = data.data.find((l: any) => l.id === selLineId);
+          if (!currentValid) {
+            const nextId = data.data[0]?.id || '';
+            setSelLineId(nextId);
+            localStorage.setItem('bpmos.s0.selLineId', nextId);
+          }
         }
       } catch (e) { console.error(e); }
     };
     fetchLines();
+    localStorage.setItem('bpmos.s0.selPlantId', selPlantId);
   }, [selPlantId]);
 
+  // Cascade: Line -> Station
   useEffect(() => {
     if (!selLineId) { setActiveStations([]); setSelStationId(''); return; }
     const fetchStations = async () => {
@@ -230,41 +289,53 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         const data = await res.json();
         if (data.ok) {
           setActiveStations(data.data);
-          if (data.data.length > 0 && !data.data.find((s: any) => s.id === selStationId)) setSelStationId(data.data[0].id);
+          const currentValid = data.data.find((s: any) => s.id === selStationId);
+          if (!currentValid) {
+            const nextId = data.data[0]?.id || '';
+            setSelStationId(nextId);
+            localStorage.setItem('bpmos.s0.selStationId', nextId);
+          }
         }
       } catch (e) { console.error(e); } finally { setIsTopologyLoading(false); }
     };
     fetchStations();
+    localStorage.setItem('bpmos.s0.selLineId', selLineId);
   }, [selLineId]);
 
-  // Effective state resolution for landing page cards
   useEffect(() => {
-    const resolveScopedStates = async () => {
-      let scope: CapabilityScope = 'GLOBAL';
-      let scopeId = 'GLOBAL';
-      if (selStationId) { scope = 'STATION'; scopeId = selStationId; }
-      else if (selLineId) { scope = 'LINE'; scopeId = selLineId; }
-      else if (selPlantId) { scope = 'PLANT'; scopeId = selPlantId; }
-      else if (selEntId) { scope = 'ENTERPRISE'; scopeId = selEntId; }
-      if (!scopeId) return;
-      setIsFlagsLoading(true);
-      setIsComplianceLoading(true);
-      try {
-        const [capRes, compRes] = await Promise.all([
-          apiFetch(`/api/s0/capabilities/effective?scope=${scope}&scopeId=${scopeId}`),
-          apiFetch(`/api/s0/compliance/effective?scope=${scope}&scopeId=${scopeId}`)
-        ]);
-        const capData = await capRes.json();
-        const compData = await compRes.json();
-        if (capData.ok) setEffectiveFlags(capData.data);
-        if (compData.ok) setEffectiveCompliance(compData.data);
-      } catch (e) { console.error(e); } finally {
-        setIsFlagsLoading(false);
-        setIsComplianceLoading(false);
-      }
-    };
-    resolveScopedStates();
-  }, [selEntId, selPlantId, selLineId, selStationId]);
+    if (selStationId) localStorage.setItem('bpmos.s0.selStationId', selStationId);
+  }, [selStationId]);
+
+  // Effective state resolution for landing page cards
+  const resolveScopedStates = async () => {
+    const { scope, id: scopeId } = getCurrentScope();
+    if (!scopeId) return;
+    setIsFlagsLoading(true);
+    setIsComplianceLoading(true);
+    setIsUsersLoading(true);
+    try {
+      const [capRes, compRes, userRes, fwRes] = await Promise.all([
+        apiFetch(`/api/s0/capabilities/effective?scope=${scope}&scopeId=${scopeId}`),
+        apiFetch(`/api/s0/compliance/effective?scope=${scope}&scopeId=${scopeId}`),
+        apiFetch('/api/s0/users'),
+        apiFetch('/api/s0/compliance/frameworks')
+      ]);
+      const capData = await capRes.json();
+      const compData = await compRes.json();
+      const userData = await userRes.json();
+      const fwData = await fwRes.json();
+      if (capData.ok) setEffectiveFlags(capData.data);
+      if (compData.ok) setEffectiveCompliance(compData.data);
+      if (userData.ok) setAppUsers(userData.data);
+      if (fwData.ok) setAllFrameworks(fwData.data);
+    } catch (e) { console.error(e); } finally {
+      setIsFlagsLoading(false);
+      setIsComplianceLoading(false);
+      setIsUsersLoading(false);
+    }
+  };
+
+  useEffect(() => { resolveScopedStates(); }, [selEntId, selPlantId, selLineId, selStationId]);
 
   // Generic Submit Wrapper
   const handleEntitySubmit = async (type: string, payload: any, id?: string) => {
@@ -280,8 +351,32 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
       const data = await res.json();
       if (data.ok) {
         emitAuditEvent({ stageId: 'S0', actionId: `MANAGE_${type.toUpperCase().replace('/', '_')}`, actorRole: activeUserRole, message: `${isEdit ? 'Updated' : 'Created'} ${type}: ${payload.displayName || payload.username || payload.name || id}` });
+        
+        // Handle Auto-binding for Regulatory Frameworks if applicable
+        if (type === 'compliance/frameworks' && payload.autoBindToCurrentContext) {
+            const { scope, id: scopeId } = getCurrentScope();
+
+            // Fetch current effective to get existing IDs
+            const currCompRes = await apiFetch(`/api/s0/compliance/effective?scope=${scope}&scopeId=${scopeId}`);
+            const currComp = await currCompRes.json();
+            const existingFws = currComp.ok ? currComp.data.frameworks.map((f: any) => f.id) : [];
+            const existingSops = currComp.ok ? currComp.data.sopProfiles.map((s: any) => s.id) : [];
+
+            await apiFetch('/api/s0/compliance/bind', {
+                method: 'POST',
+                body: JSON.stringify({
+                    scope,
+                    scopeId,
+                    regulatoryFrameworkIds: [...new Set([...existingFws, data.data.id])],
+                    sopProfileIds: existingSops
+                })
+            });
+        }
+
         setActiveTab('LIST');
-        loadRegistryData();
+        // Refresh both drawer data and landing cards
+        await loadRegistryData();
+        await resolveScopedStates();
       } else {
         alert(`Failed to save: ${data.error?.message || 'Unknown error'}`);
       }
@@ -306,22 +401,44 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
 
   const toggleFlag = (flag: EffectiveFlag) => {
     if (!isSystemAdmin) return;
-    let targetScope: CapabilityScope = 'GLOBAL';
-    let targetId = 'GLOBAL';
-    if (selStationId) { targetScope = 'STATION'; targetId = selStationId; }
-    else if (selLineId) { targetScope = 'LINE'; targetId = selLineId; }
-    else if (selPlantId) { targetScope = 'PLANT'; targetId = selPlantId; }
-    else if (selEntId) { targetScope = 'ENTERPRISE'; targetId = selEntId; }
-    const isReverting = flag.isOverridden;
+    const { scope: targetScope, id: targetId } = getCurrentScope();
+    
+    // Logic: If we are at GLOBAL, we update the global default.
+    // If we are at a specific node, we create/update an override.
+    // If already overridden at this exact node, toggling it flips the override value.
+    // If we want to "reset", that's handled by removing the override (not simplified here).
+
+    const isGlobal = targetScope === 'GLOBAL';
+    const isReverting = flag.isOverridden; // User wants to remove the local override
+
     setConfirmAction({
-      title: isReverting ? 'Revert to Inherited State?' : `Override Capability for ${targetScope}?`,
-      message: isReverting ? `Revert to inherited value from ${flag.sourceScope}.` : `Explicitly ${!flag.effectiveValue ? 'Enable' : 'Disable'} for current scope.`,
+      title: isGlobal ? 'Update Global Default?' : (isReverting ? 'Revert to Inherited State?' : `Set Override for ${targetScope}?`),
+      message: isGlobal ? `Change system-wide default for ${flag.label} to ${!flag.effectiveValue ? 'Enabled' : 'Disabled'}.` :
+               isReverting ? `Remove the local override and inherit value from ${flag.sourceScope}.` : 
+               `Explicitly ${!flag.effectiveValue ? 'Enable' : 'Disable'} ${flag.label} for this ${targetScope.toLowerCase()}.`,
       onConfirm: async () => {
         setIsSimulating(true);
         try {
-          if (isReverting) { await apiFetch('/api/s0/capabilities/override', { method: 'DELETE', body: JSON.stringify({ flagId: flag.id, scope: targetScope, scopeId: targetId }) }); }
-          else { await apiFetch('/api/s0/capabilities/override', { method: 'POST', body: JSON.stringify({ flagId: flag.id, scope: targetScope, scopeId: targetId, value: !flag.effectiveValue }) }); }
-          loadRegistryData();
+          if (isGlobal) {
+            await apiFetch('/api/s0/capabilities/update', { 
+              method: 'PATCH', 
+              body: JSON.stringify({ id: flag.id, updates: { defaultValue: !flag.effectiveValue } }) 
+            });
+          } else {
+            if (isReverting) {
+               await apiFetch('/api/s0/capabilities/override', { 
+                 method: 'DELETE', 
+                 body: JSON.stringify({ flagId: flag.id, scope: targetScope, scopeId: targetId }) 
+               });
+            } else {
+               await apiFetch('/api/s0/capabilities/override', { 
+                 method: 'POST', 
+                 body: JSON.stringify({ flagId: flag.id, scope: targetScope, scopeId: targetId, value: !flag.effectiveValue }) 
+               });
+            }
+          }
+          await resolveScopedStates();
+          await loadRegistryData();
         } catch (e) { console.error(e); } finally { setIsSimulating(false); setConfirmAction(null); }
       }
     });
@@ -344,7 +461,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
         </div>
         <div className="relative">
           <select value={value} onChange={(e) => onChange(e.target.value)} className="text-xs font-bold text-slate-700 bg-transparent outline-none appearance-none pr-4 cursor-pointer hover:text-brand-600 transition-colors">
-            {options.length === 0 && <option value="">N/A</option>}
+            <option value="">Global / Select...</option>
             {options.map((opt: any) => (<option key={opt.id} value={opt.id}>{opt.displayName || opt.code}</option>))}
           </select>
           <ChevronDown size={10} className="absolute right-0 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
@@ -379,7 +496,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* Restore Rich Topology Selector */}
+        {/* Rich Topology Selector */}
         <div className="bg-white border border-industrial-border rounded-lg p-3 shadow-sm flex flex-wrap items-center gap-4 overflow-x-auto custom-scrollbar">
           <SelectorItem icon={Building2} label="Enterprise" value={selEntId} options={enterprises} onChange={setSelEntId} onManage={() => openManager('ORG')} />
           <SelectorItem icon={Factory} label="Plant" value={selPlantId} options={activePlants} onChange={setSelPlantId} onManage={() => openManager('PLANTS')} />
@@ -399,7 +516,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
           <button onClick={() => onNavigate && onNavigate('sku_blueprint')} disabled={!isReadyForNext} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"><Cpu size={14} /> SKU Master (S1)</button>
         </div>
 
-        {/* Restore Full Dashboard Grid Layout */}
+        {/* Dashboard Grid */}
         <div className={`grid grid-cols-1 md:grid-cols-2 gap-6 ${isSimulating ? 'opacity-70 pointer-events-none' : ''}`}>
           
           <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col">
@@ -426,17 +543,19 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
 
           <div className="bg-white p-6 rounded-lg shadow-sm border border-industrial-border flex flex-col md:col-span-2">
             <div className="flex justify-between mb-4 border-b pb-2">
-              <div className="flex items-center gap-2 text-slate-700"><Zap size={20} className="text-brand-600" /><h2 className="font-bold">Capability Flags</h2><ScopeBadge scope="MIXED" /></div>
+              <div className="flex items-center gap-2 text-slate-700"><Zap size={20} className="text-brand-600" /><h2 className="font-bold">Capability Flags</h2><ScopeBadge scope={getCurrentScope().scope} /></div>
               <button onClick={() => openManager('CAPABILITY_FLAGS')} className="text-[10px] font-bold text-slate-400 uppercase">Manage</button>
             </div>
             {isFlagsLoading ? <div className="py-8 flex justify-center"><Loader2 className="animate-spin text-brand-500" /></div> : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {effectiveFlags.map(flag => (
-                  <div key={flag.id} className={`p-4 rounded-lg border ${flag.effectiveValue ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
+                  <div key={flag.id} className={`p-4 rounded-lg border flex flex-col justify-between ${flag.effectiveValue ? 'bg-white border-slate-200 shadow-sm' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex flex-col">
                           <div className="flex items-center gap-2"><span className="font-bold text-slate-800 text-sm">{flag.label}</span>{flag.isOverridden && <span className="text-[8px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200 font-bold">OVERRIDDEN</span>}</div>
-                          <span className="text-[8px] font-bold text-slate-400 flex items-center gap-1"><Globe size={8} /> Source: {flag.sourceScope}</span>
+                          <span className={`text-[8px] font-bold flex items-center gap-1 mt-0.5 ${flag.sourceScope !== 'GLOBAL' ? 'text-brand-600' : 'text-slate-400'}`}>
+                             <Globe size={8} /> Source: {flag.sourceScope}
+                          </span>
                         </div>
                         <button onClick={() => toggleFlag(flag)}>{flag.effectiveValue ? <ToggleRight className="text-brand-600" size={24} /> : <ToggleLeft className="text-slate-300" size={24} />}</button>
                       </div>
@@ -454,8 +573,8 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
             </div>
             {isComplianceLoading ? <div className="py-4 flex justify-center"><Loader2 className="animate-spin text-brand-500" /></div> : (
               <div className="space-y-4">
-                <div><div className="text-[10px] font-bold text-slate-400 uppercase mb-2">Frameworks</div><div className="flex flex-wrap gap-2">{effectiveCompliance?.frameworks.map(fw => (<div key={fw.id} className="px-3 py-1 bg-blue-50 text-blue-800 rounded border border-blue-100 text-xs font-bold">{fw.name}</div>))}</div></div>
-                <div><div className="text-[10px] font-bold text-slate-400 uppercase mb-2">SOPs</div><div className="flex flex-wrap gap-2">{effectiveCompliance?.sopProfiles.map(sop => (<div key={sop.id} className="px-3 py-1 bg-purple-50 text-purple-800 rounded border border-purple-100 text-xs font-bold">{sop.name}</div>))}</div></div>
+                <div><div className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">Frameworks</div><ChipList items={effectiveCompliance?.frameworks as any[]} /></div>
+                <div><div className="text-[10px] font-bold text-slate-400 uppercase mb-2 tracking-widest">SOPs</div><ChipList items={effectiveCompliance?.sopProfiles as any[]} colorClass="bg-purple-50 text-purple-800 border-purple-100" /></div>
               </div>
             )}
           </div>
@@ -465,15 +584,33 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
               <div className="flex items-center gap-2 text-slate-700"><Users size={20} className="text-brand-600" /><h2 className="font-bold">User Matrix</h2><ScopeBadge scope="GLOBAL" /></div>
               <button onClick={() => openManager('USERS')} className="text-[10px] font-bold text-slate-400 uppercase">Manage</button>
             </div>
-            <div className="space-y-2">
-               {appUsers.slice(0, 4).map(u => (
-                 <div key={u.id} className="flex justify-between items-center text-xs py-1 border-b border-slate-50 last:border-0">
-                    <span className="font-bold text-slate-700">{u.username}</span>
-                    <span className="text-slate-400 font-mono text-[10px]">{u.role}</span>
-                 </div>
-               ))}
-               {appUsers.length === 0 && <div className="text-xs text-slate-400 italic py-2">Loading users...</div>}
-            </div>
+            {isUsersLoading ? <div className="py-4 flex justify-center"><Loader2 className="animate-spin text-brand-500" /></div> : (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center mb-3">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Total User Accounts</span>
+                  <span className="text-xs font-mono font-bold bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{appUsers.length}</span>
+                </div>
+                <div className="space-y-1">
+                  {appUsers.slice(0, 5).map(u => (
+                    <div key={u.id} className="flex justify-between items-center text-xs py-1.5 border-b border-slate-50 last:border-0 hover:bg-slate-50/50 rounded px-1 transition-colors group">
+                        <div className="flex flex-col">
+                          <span className="font-bold text-slate-700 leading-none">{u.username}</span>
+                          <span className="text-[9px] text-slate-400 mt-1 flex items-center gap-1">
+                            <MapPin size={8} /> {u.scopes.length > 0 ? u.scopes[0].scope : 'GLOBAL'}
+                          </span>
+                        </div>
+                        <RoleBadge role={u.role} />
+                    </div>
+                  ))}
+                  {appUsers.length === 0 && <div className="text-xs text-slate-400 italic py-4 text-center border-2 border-dashed border-slate-100 rounded">No users configured.</div>}
+                  {appUsers.length > 5 && (
+                    <div onClick={() => openManager('USERS')} className="text-center pt-2 cursor-pointer group">
+                      <span className="text-[9px] font-bold text-brand-600 group-hover:text-brand-800 uppercase tracking-widest">+{appUsers.length - 5} More in Registry</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -505,14 +642,14 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                            <div className="text-xs font-bold text-slate-500 uppercase">Registry Directory</div>
                            {isSystemAdmin && (
                             <button onClick={() => { 
-                                if (activeCategory === 'PLANTS') setEditingPlant({ displayName: '', code: '', status: 'ACTIVE', enterpriseId: selEntId });
-                                if (activeCategory === 'LINES') setEditingLine({ displayName: '', code: '', status: 'ACTIVE', plantId: selPlantId, supportedOperations: [], supportedSkuTypes: [] });
+                                if (activeCategory === 'PLANTS') setEditingPlant({ displayName: '', code: '', status: 'ACTIVE', enterpriseId: selEntId, country: 'India', timezone: 'Asia/Kolkata', siteType: 'GIGAFACTORY' });
+                                if (activeCategory === 'LINES') setEditingLine({ displayName: '', code: '', status: 'ACTIVE', plantId: selPlantId, supportedOperations: [], supportedSkuTypes: [], lineType: 'PACK_ASSEMBLY', maxThroughputPerHr: 0, shiftModel: 1 });
                                 if (activeCategory === 'STATIONS') setEditingStation({ displayName: '', code: '', status: 'ACTIVE', lineId: selLineId, stationType: 'ASSEMBLY', supportedOperations: [] });
                                 if (activeCategory === 'DEVICE_CLASSES') setEditingDeviceClass({ displayName: '', code: '', status: 'ACTIVE', category: 'OTHER', supportedProtocols: [] });
                                 if (activeCategory === 'USERS') setEditingUser({ username: '', fullName: '', email: '', role: UserRole.OPERATOR, status: 'ACTIVE', scopes: [] });
                                 if (activeCategory === 'ORG') setEditingEnterprise({ displayName: '', code: '', status: 'ACTIVE', timezone: 'UTC' });
                                 if (activeCategory === 'SOP_PROFILES') setEditingSop({ name: '', code: '', version: '1.0' });
-                                if (activeCategory === 'REGULATORY') setEditingFramework({ name: '', code: '', jurisdiction: 'INDIA', mandatory: true, status: 'DRAFT' });
+                                if (activeCategory === 'REGULATORY') setEditingFramework({ name: '', code: '', jurisdiction: 'INDIA', mandatory: true, status: 'DRAFT', referenceId: '' });
                                 if (activeCategory === 'CAPABILITY_FLAGS') setEditingFlag({}); 
                                 setActiveTab('DETAILS');
                             }} className="bg-brand-600 text-white px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1 hover:bg-brand-700 shadow-sm"><Plus size={14} /> NEW ENTRY</button>
@@ -522,13 +659,13 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                         <div className="divide-y bg-white border rounded-xl overflow-hidden shadow-sm">
                            {activeCategory === 'PLANTS' && activePlants.map(p => (
                              <div key={p.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
-                               <div><div className="font-bold text-slate-800 text-sm">{p.displayName}</div><div className="text-[10px] font-mono text-slate-400">{p.code}</div></div>
+                               <div><div className="font-bold text-slate-800 text-sm">{p.displayName}</div><div className="text-[10px] font-mono text-slate-400">{p.code} • {p.siteType}</div></div>
                                {isSystemAdmin && <button onClick={() => { setEditingPlant(p); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
                              </div>
                            ))}
                            {activeCategory === 'LINES' && activeLines.map(l => (
                              <div key={l.id} className="p-4 flex justify-between items-center hover:bg-slate-50 group">
-                               <div><div className="font-bold text-slate-800 text-sm">{l.displayName}</div><div className="text-[10px] font-mono text-slate-400">{l.code}</div></div>
+                               <div><div className="font-bold text-slate-800 text-sm">{l.displayName}</div><div className="text-[10px] font-mono text-slate-400">{l.code} • {l.lineType}</div></div>
                                {isSystemAdmin && <button onClick={() => { setEditingLine(l); setActiveTab('DETAILS'); }} className="p-2 opacity-0 group-hover:opacity-100 hover:bg-slate-200 rounded transition-all text-brand-600"><Edit2 size={16} /></button>}
                              </div>
                            ))}
@@ -579,9 +716,15 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                                 {activeCategory === 'PLANTS' && (
                                 <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('plants', editingPlant, editingPlant?.id); }} className="space-y-6">
                                     <h3 className="font-bold text-slate-800 flex items-center gap-2"><Factory size={18} className="text-brand-600" /> Plant Definition</h3>
-                                    <div className="space-y-4">
-                                    <Field label="Display Name"><input required className="w-full border rounded p-3 text-sm" value={editingPlant?.displayName || ''} onChange={ev => setEditingPlant(p => ({ ...p!, displayName: ev.target.value }))} /></Field>
-                                    <Field label="Plant Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingPlant?.code || ''} onChange={ev => setEditingPlant(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <Field label="Display Name"><input required className="w-full border rounded p-3 text-sm" value={editingPlant?.displayName || ''} onChange={ev => setEditingPlant(p => ({ ...p!, displayName: ev.target.value }))} /></Field>
+                                      <Field label="Plant Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingPlant?.code || ''} onChange={ev => setEditingPlant(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                      <Field label="City"><input className="w-full border rounded p-3 text-sm" value={editingPlant?.locationCity || ''} onChange={ev => setEditingPlant(p => ({ ...p!, locationCity: ev.target.value }))} /></Field>
+                                      <Field label="State / Province"><input className="w-full border rounded p-3 text-sm" value={editingPlant?.locationState || ''} onChange={ev => setEditingPlant(p => ({ ...p!, locationState: ev.target.value }))} /></Field>
+                                      <Field label="Country"><input required className="w-full border rounded p-3 text-sm" value={editingPlant?.country || 'India'} onChange={ev => setEditingPlant(p => ({ ...p!, country: ev.target.value }))} /></Field>
+                                      <Field label="Timezone"><input required className="w-full border rounded p-3 text-sm font-mono" value={editingPlant?.timezone || 'Asia/Kolkata'} onChange={ev => setEditingPlant(p => ({ ...p!, timezone: ev.target.value }))} /></Field>
+                                      <Field label="Site Type"><select className="w-full border rounded p-3 text-sm bg-white" value={editingPlant?.siteType} onChange={ev => setEditingPlant(p => ({ ...p!, siteType: ev.target.value as any }))}><option value="GIGAFACTORY">Gigafactory</option><option value="PILOT">Pilot Plant</option><option value="R&D">R&D Facility</option><option value="CONTRACT">Contract Mfg</option></select></Field>
+                                      <Field label="Status"><select className="w-full border rounded p-3 text-sm bg-white" value={editingPlant?.status} onChange={ev => setEditingPlant(p => ({ ...p!, status: ev.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option></select></Field>
                                     </div>
                                     <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
                                 </form>
@@ -589,9 +732,13 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                                 {activeCategory === 'LINES' && (
                                 <form onSubmit={(e) => { e.preventDefault(); handleEntitySubmit('lines', editingLine, editingLine?.id); }} className="space-y-6">
                                     <h3 className="font-bold text-slate-800 flex items-center gap-2"><Layout size={18} className="text-brand-600" /> Production Line</h3>
-                                    <div className="space-y-4">
-                                    <Field label="Display Name"><input required className="w-full border rounded p-3 text-sm" value={editingLine?.displayName || ''} onChange={ev => setEditingLine(p => ({ ...p!, displayName: ev.target.value }))} /></Field>
-                                    <Field label="Line Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingLine?.code || ''} onChange={ev => setEditingLine(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                    <div className="grid grid-cols-2 gap-4">
+                                      <Field label="Display Name"><input required className="w-full border rounded p-3 text-sm" value={editingLine?.displayName || ''} onChange={ev => setEditingLine(p => ({ ...p!, displayName: ev.target.value }))} /></Field>
+                                      <Field label="Line Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingLine?.code || ''} onChange={ev => setEditingLine(p => ({ ...p!, code: ev.target.value }))} /></Field>
+                                      <Field label="Line Type"><select className="w-full border rounded p-3 text-sm bg-white" value={editingLine?.lineType} onChange={ev => setEditingLine(p => ({ ...p!, lineType: ev.target.value as any }))}><option value="PACK_ASSEMBLY">Pack Assembly</option><option value="MODULE_ASSEMBLY">Module Assembly</option><option value="CELL_TESTING">Cell Testing</option><option value="BMS_FLASHING">BMS Flashing</option><option value="INCOMING_QC">Incoming QC</option><option value="EOL">End of Line (EOL)</option></select></Field>
+                                      <Field label="Max Throughput (Units/Hr)"><input type="number" className="w-full border rounded p-3 text-sm font-mono" value={editingLine?.maxThroughputPerHr || 0} onChange={ev => setEditingLine(p => ({ ...p!, maxThroughputPerHr: parseInt(ev.target.value) }))} /></Field>
+                                      <Field label="Shift Model"><select className="w-full border rounded p-3 text-sm bg-white" value={editingLine?.shiftModel} onChange={ev => setEditingLine(p => ({ ...p!, shiftModel: parseInt(ev.target.value) as any }))}><option value={1}>1 Shift (8hr)</option><option value={2}>2 Shifts (16hr)</option><option value={3}>3 Shifts (24hr)</option></select></Field>
+                                      <Field label="Status"><select className="w-full border rounded p-3 text-sm bg-white" value={editingLine?.status} onChange={ev => setEditingLine(p => ({ ...p!, status: ev.target.value as any }))}><option value="ACTIVE">ACTIVE</option><option value="SUSPENDED">SUSPENDED</option></select></Field>
                                     </div>
                                     <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
                                 </form>
@@ -637,9 +784,20 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                                     <div className="space-y-4">
                                     <Field label="Standard Name"><input required className="w-full border rounded p-3 text-sm" value={editingFramework?.name || ''} onChange={ev => setEditingFramework(p => ({ ...p!, name: ev.target.value }))} /></Field>
                                     <Field label="Legal Code"><input required className="w-full border rounded p-3 text-sm font-mono uppercase" value={editingFramework?.code || ''} onChange={ev => setEditingFramework(p => ({ ...p!, code: ev.target.value }))} /></Field>
-                                    <Field label="Jurisdiction"><select className="w-full border rounded p-3 text-sm bg-white" value={editingFramework?.jurisdiction} onChange={ev => setEditingFramework(p => ({ ...p!, jurisdiction: ev.target.value }))}><option value="INDIA">INDIA</option><option value="EU">EU</option><option value="GLOBAL">GLOBAL</option></select></Field>
+                                    <Field label="Reference ID (Legal)"><input className="w-full border rounded p-3 text-sm font-mono" value={editingFramework?.referenceId || ''} onChange={ev => setEditingFramework(p => ({ ...p!, referenceId: ev.target.value }))} /></Field>
+                                    <Field label="Jurisdiction"><select className="w-full border rounded p-3 text-sm bg-white" value={editingFramework?.jurisdiction} onChange={ev => setEditingFramework(p => ({ ...p!, jurisdiction: ev.target.value }))}><option value="INDIA">INDIA</option><option value="EU">EU</option><option value="OTHER">OTHER</option></select></Field>
                                     <Field label="Mandatory"><select className="w-full border rounded p-3 text-sm bg-white" value={String(editingFramework?.mandatory)} onChange={ev => setEditingFramework(p => ({ ...p!, mandatory: ev.target.value === 'true' }))}><option value="true">YES</option><option value="false">NO</option></select></Field>
                                     <Field label="Status"><select className="w-full border rounded p-3 text-sm bg-white" value={editingFramework?.status} onChange={ev => setEditingFramework(p => ({ ...p!, status: ev.target.value as any }))}><option value="DRAFT">DRAFT</option><option value="ACTIVE">ACTIVE</option><option value="RETIRED">RETIRED</option></select></Field>
+                                    
+                                    {!editingFramework?.id && (
+                                        <div className="p-3 bg-blue-50 border border-blue-200 rounded flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Link size={16} className="text-brand-600" />
+                                                <span className="text-[11px] font-bold text-brand-900">Auto-bind to current selection context?</span>
+                                            </div>
+                                            <input type="checkbox" className="w-4 h-4 rounded text-brand-600" checked={editingFramework?.autoBindToCurrentContext || false} onChange={e => setEditingFramework(f => ({...f!, autoBindToCurrentContext: e.target.checked}))} />
+                                        </div>
+                                    )}
                                     </div>
                                     <div className="pt-6 flex gap-3 border-t"><button type="button" onClick={() => setActiveTab('LIST')} className="flex-1 py-3 text-xs font-bold text-slate-400 hover:bg-slate-50 uppercase">Cancel</button><button type="submit" disabled={isFormSubmitting} className="flex-[2] py-3 bg-brand-600 text-white rounded-lg font-bold text-xs shadow-md hover:bg-brand-700 flex items-center justify-center gap-2">{isFormSubmitting ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />} SAVE</button></div>
                                 </form>
@@ -689,7 +847,7 @@ export const SystemSetup: React.FC<SystemSetupProps> = ({ onNavigate }) => {
                  </>
                )}
             </div>
-            <footer className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center"><button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Close</button><div className="text-[10px] font-mono text-slate-400 flex items-center gap-1"><ShieldCheck size={12} /> V3.5-HOTFIX-29</div></footer>
+            <footer className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center"><button onClick={closeManager} className="px-4 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider">Close</button><div className="text-[10px] font-mono text-slate-400 flex items-center gap-1"><ShieldCheck size={12} /> V3.5-HOTFIX-35</div></footer>
           </div>
         </div>
       )}
