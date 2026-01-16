@@ -29,7 +29,14 @@ import {
   List,
   AlertTriangle,
   ScanBarcode,
-  Ban
+  Ban,
+  Eye,
+  FileBadge,
+  TrendingUp,
+  Globe,
+  Phone,
+  Mail,
+  Award
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -47,6 +54,12 @@ interface Supplier {
   status: 'Approved' | 'Conditional' | 'Pending';
   region: string;
   rating: string;
+  // Extended fields for drill-down
+  riskLevel: 'Low' | 'Medium' | 'High';
+  certificates: string[];
+  contactPerson: string;
+  lastAudit: string;
+  performanceScore: number;
 }
 
 interface CommercialTerm {
@@ -59,10 +72,58 @@ interface CommercialTerm {
 }
 
 const SUPPLIERS: Supplier[] = [
-  { id: 'sup-001', name: 'CellGlobal Dynamics', type: 'Cells', status: 'Approved', region: 'APAC', rating: 'A+' },
-  { id: 'sup-002', name: 'Orion BMS Systems', type: 'BMS', status: 'Approved', region: 'NA', rating: 'A' },
-  { id: 'sup-003', name: 'ThermalWrap Inc', type: 'Thermal', status: 'Conditional', region: 'EU', rating: 'B' },
-  { id: 'sup-004', name: 'Precision Casings', type: 'Mechanical', status: 'Pending', region: 'APAC', rating: '-' },
+  { 
+    id: 'sup-001', 
+    name: 'CellGlobal Dynamics', 
+    type: 'Cells', 
+    status: 'Approved', 
+    region: 'APAC', 
+    rating: 'A+',
+    riskLevel: 'Low',
+    certificates: ['ISO 9001:2015', 'IATF 16949', 'ISO 14001'],
+    contactPerson: 'Wei Zhang',
+    lastAudit: '2025-11-15',
+    performanceScore: 98
+  },
+  { 
+    id: 'sup-002', 
+    name: 'Orion BMS Systems', 
+    type: 'BMS', 
+    status: 'Approved', 
+    region: 'NA', 
+    rating: 'A',
+    riskLevel: 'Low',
+    certificates: ['ISO 9001', 'ISO 27001 (Cybersec)'],
+    contactPerson: 'Sarah Connor',
+    lastAudit: '2025-10-01',
+    performanceScore: 95
+  },
+  { 
+    id: 'sup-003', 
+    name: 'ThermalWrap Inc', 
+    type: 'Thermal', 
+    status: 'Conditional', 
+    region: 'EU', 
+    rating: 'B',
+    riskLevel: 'Medium',
+    certificates: ['ISO 9001'],
+    contactPerson: 'Jean Reno',
+    lastAudit: '2025-08-20',
+    performanceScore: 82
+  },
+  { 
+    id: 'sup-004', 
+    name: 'Precision Casings', 
+    type: 'Mechanical', 
+    status: 'Pending', 
+    region: 'APAC', 
+    rating: '-',
+    riskLevel: 'High',
+    certificates: ['Pending Review'],
+    contactPerson: 'Lee Min',
+    lastAudit: 'Pending',
+    performanceScore: 0
+  },
 ];
 
 // Governance Map: S1 SKU Type -> Allowed Supplier Types
@@ -98,6 +159,9 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   // S1 SKU Data State
   const [availableSkus, setAvailableSkus] = useState<SkuMasterData[]>([]);
   const [editingSkuId, setEditingSkuId] = useState<string | null>(null);
+  
+  // Drill-down State
+  const [viewingSupplier, setViewingSupplier] = useState<Supplier | null>(null);
   
   // Form Drafts
   const [skuLineDraft, setSkuLineDraft] = useState<Partial<ActiveOrderItem>>({});
@@ -302,6 +366,11 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
     });
   };
 
+  const handleInspectSupplier = (e: React.MouseEvent, supplier: Supplier) => {
+    e.stopPropagation();
+    setViewingSupplier(supplier);
+  };
+
   // --- Core Action Handlers ---
 
   const handleCreatePo = () => {
@@ -500,7 +569,118 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   };
 
   return (
-    <div className="space-y-6 h-full flex flex-col animate-in fade-in duration-300 pb-12">
+    <div className="space-y-6 h-full flex flex-col animate-in fade-in duration-300 pb-12 relative">
+      
+      {/* Supplier Drill-Down Drawer */}
+      {viewingSupplier && (
+        <div className="absolute inset-0 z-50 flex justify-end">
+           {/* Backdrop */}
+           <div 
+             className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm transition-opacity" 
+             onClick={() => setViewingSupplier(null)}
+           />
+           
+           {/* Drawer Content */}
+           <div className="relative w-full max-w-lg bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300 border-l border-slate-200">
+              <div className="p-6 bg-slate-50 border-b border-slate-200 flex justify-between items-start">
+                  <div>
+                      <div className="flex items-center gap-2 mb-1">
+                          <h2 className="text-xl font-bold text-slate-800">{viewingSupplier.name}</h2>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                              viewingSupplier.status === 'Approved' ? 'bg-green-100 text-green-700' :
+                              viewingSupplier.status === 'Conditional' ? 'bg-amber-100 text-amber-700' :
+                              'bg-slate-100 text-slate-600'
+                          }`}>
+                              {viewingSupplier.status}
+                          </span>
+                      </div>
+                      <div className="text-xs text-slate-500 font-mono">ID: {viewingSupplier.id} • {viewingSupplier.type}</div>
+                  </div>
+                  <button 
+                    onClick={() => setViewingSupplier(null)}
+                    className="p-2 hover:bg-slate-200 rounded-full text-slate-400 transition-colors"
+                  >
+                      <X size={20} />
+                  </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                  
+                  {/* Scorecard Grid */}
+                  <div className="grid grid-cols-3 gap-4">
+                      <div className="p-3 bg-white border border-slate-200 rounded-lg text-center flex flex-col items-center gap-1">
+                          <div className="text-[10px] uppercase font-bold text-slate-400">Score</div>
+                          <div className="text-xl font-bold text-brand-600">{viewingSupplier.performanceScore}/100</div>
+                          <TrendingUp size={14} className="text-green-500" />
+                      </div>
+                      <div className="p-3 bg-white border border-slate-200 rounded-lg text-center flex flex-col items-center gap-1">
+                          <div className="text-[10px] uppercase font-bold text-slate-400">Risk</div>
+                          <div className={`text-xl font-bold ${
+                              viewingSupplier.riskLevel === 'Low' ? 'text-green-600' :
+                              viewingSupplier.riskLevel === 'Medium' ? 'text-amber-600' :
+                              'text-red-600'
+                          }`}>{viewingSupplier.riskLevel}</div>
+                          <ShieldAlert size={14} className={viewingSupplier.riskLevel === 'High' ? 'text-red-500' : 'text-slate-300'} />
+                      </div>
+                      <div className="p-3 bg-white border border-slate-200 rounded-lg text-center flex flex-col items-center gap-1">
+                          <div className="text-[10px] uppercase font-bold text-slate-400">Rating</div>
+                          <div className="text-xl font-bold text-purple-600">{viewingSupplier.rating}</div>
+                          <Award size={14} className="text-purple-400" />
+                      </div>
+                  </div>
+
+                  {/* Details */}
+                  <div className="bg-slate-50 rounded-lg border border-slate-200 p-4 space-y-3">
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Company Details</h3>
+                      <div className="flex items-center gap-3 text-sm text-slate-700">
+                          <Globe size={16} className="text-slate-400" />
+                          <span>Region: <strong>{viewingSupplier.region}</strong></span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-slate-700">
+                          <User size={16} className="text-slate-400" />
+                          <span>Contact: <strong>{viewingSupplier.contactPerson}</strong></span>
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-slate-700">
+                          <History size={16} className="text-slate-400" />
+                          <span>Last Audit: <strong>{viewingSupplier.lastAudit}</strong></span>
+                      </div>
+                  </div>
+
+                  {/* Certificates */}
+                  <div>
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Certifications</h3>
+                      <div className="flex flex-wrap gap-2">
+                          {viewingSupplier.certificates.map((cert, i) => (
+                              <span key={i} className="px-3 py-1 bg-blue-50 text-blue-700 border border-blue-100 rounded-full text-xs font-medium flex items-center gap-1">
+                                  <FileBadge size={12} /> {cert}
+                              </span>
+                          ))}
+                      </div>
+                  </div>
+
+                  {/* Capabilities */}
+                  <div>
+                      <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Approved Categories</h3>
+                      <div className="flex flex-wrap gap-2">
+                          <span className="px-3 py-1 bg-slate-100 text-slate-600 border border-slate-200 rounded text-xs font-mono">
+                              {viewingSupplier.type}
+                          </span>
+                      </div>
+                  </div>
+
+              </div>
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
+                  <button 
+                    onClick={() => setViewingSupplier(null)}
+                    className="px-4 py-2 bg-white border border-slate-300 text-slate-700 text-sm font-bold rounded hover:bg-slate-100 transition-colors"
+                  >
+                      Close
+                  </button>
+              </div>
+           </div>
+        </div>
+      )}
+
       {/* Standard Header */}
       <div className="flex items-center justify-between shrink-0 border-b border-slate-200 pb-4">
         <div>
@@ -931,7 +1111,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider">Supplier Name</th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider">Type</th>
                   <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider">Status</th>
-                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider">Region</th>
+                  <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -966,7 +1146,15 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                         {sup.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">{sup.region}</td>
+                    <td className="px-4 py-3">
+                        <button 
+                            onClick={(e) => handleInspectSupplier(e, sup)}
+                            className="p-1.5 text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-full transition-colors"
+                            title="Inspect Supplier Details"
+                        >
+                            <Eye size={16} />
+                        </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
