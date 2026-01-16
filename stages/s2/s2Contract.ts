@@ -1,55 +1,12 @@
 
 /**
  * S2 Commercial Procurement - Stage Contract
- * Defines the data shape for the Procurement context.
+ * Imports definitions from s2Types.ts
  */
 
-export type S2State =
-  | 'S2_DRAFT'
-  | 'S2_RFQ_ISSUED'
-  | 'S2_VENDOR_RESPONSE_RECEIVED'
-  | 'S2_COMMERCIAL_EVALUATION'
-  | 'S2_WAITING_APPROVAL'
-  | 'S2_APPROVED'
-  | 'S2_PO_ISSUED'
-  | 'S2_PO_ACKNOWLEDGED'
-  | 'S2_LOCKED';
+import { S2Context } from './contracts/s2Types';
 
-export type OrderItemType = 'SKU' | 'MANUAL';
-export type FulfillmentType = 'SERIALIZABLE' | 'NON_SERIALIZABLE';
-
-export interface ActiveOrderItem {
-  itemId: string; // Unique ID for the line item
-  itemType: OrderItemType;
-  fulfillmentType: FulfillmentType; // Determines S3 eligibility
-  name: string; // Display Name (SKU Name or Manual Name)
-  skuCode?: string; // Required if itemType === 'SKU'
-  category?: string; // e.g., 'MRO', 'Consumable' (mainly for Manual)
-  uom: string;
-  quantity: number;
-  deliveryDate?: string;
-  notes?: string;
-}
-
-export interface ActiveOrderContext {
-  orderId: string;
-  plantId: string;
-  activeSupplierId: string | null;
-  selectedItems: ActiveOrderItem[];
-  currentState: S2State;
-  createdBy: string;
-  createdAt: string;
-}
-
-export interface S2Context {
-  activePoCount: number;
-  pendingApprovalsCount: number;
-  vendorCatalogCount: number;
-  lastPoCreatedAt: string;
-  procurementStatus: S2State;
-  blueprintDependency: 'OK' | 'BLOCKED';
-  activeOrder?: ActiveOrderContext | null;
-}
+export * from './contracts/s2Types';
 
 /**
  * Returns deterministic mock data for S2 context.
@@ -81,6 +38,7 @@ export const getMockS2Context = (): S2Context => ({
     ],
     currentState: 'S2_WAITING_APPROVAL',
     createdBy: 'Procurement Manager',
-    createdAt: '2026-01-16 11:45 IST'
+    createdAt: '2026-01-16 11:45 IST',
+    termSnapshots: []
   }
 });

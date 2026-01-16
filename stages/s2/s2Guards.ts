@@ -1,16 +1,6 @@
-import { UserRole } from '../../types';
-import { S2Context } from './s2Contract';
 
-/**
- * S2 Action Identifiers
- * Lifecycle operations for Commercial Procurement.
- */
-export type S2ActionId = 
-  | 'CREATE_PO'
-  | 'SUBMIT_PO_FOR_APPROVAL'
-  | 'APPROVE_PO'
-  | 'ISSUE_PO_TO_VENDOR'
-  | 'CLOSE_PROCUREMENT_CYCLE';
+import { UserRole } from '../../types';
+import { S2Context, S2ActionId } from './contracts/s2Types';
 
 /**
  * Action State Interface
@@ -23,14 +13,6 @@ export interface ActionState {
 /**
  * S2 Action Guard
  * Determines if a specific action is allowed based on Role and Context.
- * 
- * RBAC Policy:
- * - ADMIN: All Actions (State dependent)
- * - PROCUREMENT: Create, Submit, Issue
- * - MANAGEMENT (Finance): Approve, Close
- * - OTHERS: View Only
- * 
- * Flow: DRAFT -> (RFQ/EVAL) -> WAITING_APPROVAL -> APPROVED -> ISSUED -> LOCKED
  */
 export const getS2ActionState = (role: UserRole, context: S2Context, action: S2ActionId): ActionState => {
   const isAdmin = role === UserRole.SYSTEM_ADMIN;
@@ -50,8 +32,6 @@ export const getS2ActionState = (role: UserRole, context: S2Context, action: S2A
   switch (action) {
     case 'CREATE_PO':
       if (!isProcurement) return { enabled: false, reason: 'Requires Procurement Role' };
-      // Can start a PO if IDLE (LOCKED/initial) or Draft/RFQ stages (to edit)
-      // If a PO is already in motion (Approval/Approved/Issued), we block creation of a *concurrent* one in this simplified pilot.
       if (
         context.procurementStatus === 'S2_WAITING_APPROVAL' || 
         context.procurementStatus === 'S2_APPROVED' || 
