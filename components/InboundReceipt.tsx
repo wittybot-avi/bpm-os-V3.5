@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useContext, useMemo } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon, Printer, Ban, RotateCcw, ThumbsUp, ThumbsDown, PauseCircle } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon, Printer, Ban, RotateCcw, ThumbsUp, ThumbsDown, PauseCircle, Archive, MapPin } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
 import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit, UnitState, LabelStatus } from '../stages/s3/contracts';
 import { getNextUnitState, canTransitionUnit, transitionUnit } from '../stages/s3/contracts/s3StateMachine';
@@ -28,7 +28,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const [supervisorAck, setSupervisorAck] = useState<boolean>(false);
 
   // Detail View State
-  const [activeTab, setActiveTab] = useState<'LINES' | 'EVIDENCE'>('LINES');
+  const [activeTab, setActiveTab] = useState<'LINES' | 'EVIDENCE' | 'PUTAWAY'>('LINES');
   
   // Validation State
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
@@ -50,6 +50,11 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const [qcLineId, setQcLineId] = useState<string | null>(null);
   const [qcBuffer, setQcBuffer] = useState<S3SerializedUnit[]>([]);
   const [qcFilter, setQcFilter] = useState<'ALL' | 'PENDING' | 'HOLD' | 'FINAL'>('PENDING');
+
+  // Putaway State
+  const [putawayFilter, setPutawayFilter] = useState<'ALL' | 'ACCEPTED' | 'HOLD' | 'REJECTED'>('ALL');
+  const [putawaySelection, setPutawaySelection] = useState<Set<string>>(new Set());
+  const [targetLocation, setTargetLocation] = useState({ warehouse: 'Main Warehouse', zone: 'Zone A', bin: '' });
   
   // Trace Mapping View State
   const [showTraceMapping, setShowTraceMapping] = useState(false);
@@ -96,6 +101,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
           setGenPanel(null);
           setSerialEntryLineId(null);
           setQcLineId(null);
+          setPutawaySelection(new Set());
           setShowTraceMapping(false);
       }
   }, [activeReceipt]);
@@ -705,6 +711,87 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       setRefreshKey(k => k + 1);
   };
 
+  // Putaway Handlers
+  const handlePutawaySelectAll = () => {
+      if (!activeReceipt) return;
+      const allIds = new Set<string>();
+      activeReceipt.lines.forEach(line => {
+         line.units?.forEach(u => {
+             // Filter based on active tab
+             let matches = false;
+             if (putawayFilter === 'ALL') matches = true;
+             else if (putawayFilter === 'ACCEPTED' && u.state === UnitState.ACCEPTED) matches = true;
+             else if (putawayFilter === 'HOLD' && u.state === UnitState.QC_HOLD) matches = true;
+             else if (putawayFilter === 'REJECTED' && u.state === UnitState.REJECTED) matches = true;
+
+             if (matches) allIds.add(u.id);
+         });
+      });
+      setPutawaySelection(allIds);
+  };
+
+  const handlePutawaySelectionToggle = (unitId: string) => {
+      const newSet = new Set(putawaySelection);
+      if (newSet.has(unitId)) newSet.delete(unitId);
+      else newSet.add(unitId);
+      setPutawaySelection(newSet);
+  };
+
+  const handleAssignPutaway = () => {
+      if (!activeReceipt || putawaySelection.size === 0) return;
+      if (!targetLocation.warehouse || !targetLocation.zone || !targetLocation.bin) {
+          alert("Please define a complete target location (Warehouse, Zone, and Bin).");
+          return;
+      }
+
+      const updatedLines = activeReceipt.lines.map(line => {
+          if (!line.units) return line;
+          const updatedUnits = line.units.map(u => {
+              if (putawaySelection.has(u.id)) {
+                  return {
+                      ...u,
+                      putaway: { ...targetLocation }
+                  };
+              }
+              return u;
+          });
+          return { ...line, units: updatedUnits };
+      });
+
+      const updatedReceipt = {
+          ...activeReceipt,
+          lines: updatedLines,
+          audit: [
+              {
+                  id: `aud-${Date.now()}`,
+                  ts: new Date().toISOString(),
+                  actorRole: role,
+                  actorLabel: 'Stores',
+                  eventType: 'PUTAWAY_ASSIGNED',
+                  refType: 'RECEIPT',
+                  refId: activeReceipt.id,
+                  message: `Assigned ${putawaySelection.size} units to ${targetLocation.warehouse}/${targetLocation.zone}/${targetLocation.bin}`
+              },
+              ...activeReceipt.audit
+          ]
+      } as S3Receipt;
+
+      s3UpsertReceipt(updatedReceipt);
+      setPutawaySelection(new Set()); // Clear selection
+      setRefreshKey(k => k + 1);
+  };
+
+  const handleCompletePutaway = () => {
+      if (!activeReceipt) return;
+      try {
+          const updatedReceipt = transitionReceipt(activeReceipt, ReceiptState.PUTAWAY_COMPLETE, role, 'User', 'Putaway process finalized');
+          s3UpsertReceipt(updatedReceipt);
+          setRefreshKey(k => k + 1);
+      } catch (e) {
+          alert("Could not complete putaway: " + e);
+      }
+  };
+
 
   const handleValidate = () => {
       if (!activeReceipt) return;
@@ -786,7 +873,8 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                   poId: activeReceipt.poId || 'MANUAL',
                   supplierName,
                   status: unit.state,
-                  verifiedAt: unit.verifiedAt
+                  verifiedAt: unit.verifiedAt,
+                  putaway: unit.putaway
               });
           }
       }
@@ -810,6 +898,26 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       };
   }, [activeReceipt, mappedEvidenceData]);
 
+  // -- PUTAWAY HELPERS --
+  const putawayReady = activeReceipt && (
+      activeReceipt.state === ReceiptState.ACCEPTED || 
+      activeReceipt.state === ReceiptState.PARTIAL_ACCEPTED || 
+      activeReceipt.state === ReceiptState.PUTAWAY_IN_PROGRESS ||
+      activeReceipt.state === ReceiptState.PUTAWAY_COMPLETE
+  );
+
+  const putawayData = useMemo(() => {
+      return mappedEvidenceData.filter(u => {
+          if (putawayFilter === 'ALL') return true;
+          if (putawayFilter === 'ACCEPTED') return u.status === UnitState.ACCEPTED;
+          if (putawayFilter === 'HOLD') return u.status === UnitState.QC_HOLD;
+          if (putawayFilter === 'REJECTED') return u.status === UnitState.REJECTED;
+          return true;
+      });
+  }, [mappedEvidenceData, putawayFilter]);
+  
+  const assignedCount = mappedEvidenceData.filter(u => !!u.putaway?.bin).length;
+
   const getStatusColor = (state: ReceiptState) => {
     switch (state) {
       case ReceiptState.DRAFT: return 'bg-slate-100 text-slate-700 border-slate-200';
@@ -819,6 +927,8 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       case ReceiptState.ACCEPTED: return 'bg-green-100 text-green-700 border-green-200';
       case ReceiptState.REJECTED: return 'bg-red-100 text-red-700 border-red-200';
       case ReceiptState.CLOSED: return 'bg-slate-800 text-slate-200 border-slate-700';
+      case ReceiptState.PUTAWAY_IN_PROGRESS: return 'bg-cyan-100 text-cyan-700 border-cyan-200';
+      case ReceiptState.PUTAWAY_COMPLETE: return 'bg-emerald-100 text-emerald-800 border-emerald-200';
       default: return 'bg-slate-50 text-slate-600 border-slate-200';
     }
   };
@@ -852,6 +962,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   const isAdmin = role === UserRole.SYSTEM_ADMIN;
   const isQA = role === UserRole.QA_ENGINEER;
   const canQC = isQA || isAdmin;
+  const canPutaway = isAdmin || role === UserRole.STORES || role === UserRole.OPERATOR;
 
   const allowedNext = activeReceipt ? allowedReceiptTransitions[activeReceipt.state] : [];
   const nextStateLabel = allowedNext && allowedNext.length > 0 ? getReceiptNextActions(activeReceipt.state) : null;
@@ -1350,6 +1461,14 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                           >
                              Evidence & Docs
                           </button>
+                          {putawayReady && (
+                            <button 
+                                onClick={() => setActiveTab('PUTAWAY')}
+                                className={`flex-1 py-3 text-xs font-bold uppercase transition-colors border-b-2 flex items-center justify-center gap-2 ${activeTab === 'PUTAWAY' ? 'border-cyan-500 text-cyan-700 bg-white' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                            >
+                                <Archive size={14} /> Putaway
+                            </button>
+                          )}
                       </div>
 
                       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30">
@@ -1541,6 +1660,121 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                           <RefreshCcw className="opacity-20" size={32} />
                                           <p>No line items in this receipt.</p>
                                       </div>
+                                  )}
+                              </div>
+                          )}
+
+                          {activeTab === 'PUTAWAY' && (
+                              <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 h-full flex flex-col">
+                                  {/* Putaway Filters & Summary */}
+                                  <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm flex flex-col gap-4">
+                                      <div className="flex items-center justify-between">
+                                          <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                              <Archive className="text-cyan-600" size={20} /> Putaway Assignment
+                                          </h3>
+                                          <div className="text-xs text-slate-500 font-mono">
+                                              Assigned: <span className="font-bold text-green-600">{assignedCount}</span> / {mappedEvidenceData.length}
+                                          </div>
+                                      </div>
+                                      
+                                      <div className="flex gap-2">
+                                          <button onClick={() => setPutawayFilter('ALL')} className={`px-3 py-1 rounded-full text-xs font-bold ${putawayFilter === 'ALL' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}>All</button>
+                                          <button onClick={() => setPutawayFilter('ACCEPTED')} className={`px-3 py-1 rounded-full text-xs font-bold ${putawayFilter === 'ACCEPTED' ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Available (Accepted)</button>
+                                          <button onClick={() => setPutawayFilter('HOLD')} className={`px-3 py-1 rounded-full text-xs font-bold ${putawayFilter === 'HOLD' ? 'bg-amber-500 text-white' : 'bg-slate-100 text-slate-600'}`}>On Hold</button>
+                                          <button onClick={() => setPutawayFilter('REJECTED')} className={`px-3 py-1 rounded-full text-xs font-bold ${putawayFilter === 'REJECTED' ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600'}`}>Rejected</button>
+                                      </div>
+                                  </div>
+
+                                  {/* Assignment Controls */}
+                                  {activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && (
+                                    <div className="bg-white p-4 rounded-lg border border-cyan-200 shadow-sm bg-cyan-50/30">
+                                        <div className="grid grid-cols-4 gap-4 items-end">
+                                            <div>
+                                                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Warehouse</label>
+                                                <select className="w-full text-xs p-2 border border-slate-300 rounded bg-white" value={targetLocation.warehouse} onChange={e => setTargetLocation(p => ({...p, warehouse: e.target.value}))}>
+                                                    <option>Main Warehouse</option>
+                                                    <option>Overflow Annex</option>
+                                                    <option>Returns Center</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Zone</label>
+                                                <select className="w-full text-xs p-2 border border-slate-300 rounded bg-white" value={targetLocation.zone} onChange={e => setTargetLocation(p => ({...p, zone: e.target.value}))}>
+                                                    <option>Zone A (Fast)</option>
+                                                    <option>Zone B (Bulk)</option>
+                                                    <option>Zone C (Cold)</option>
+                                                    <option>Zone Q (Quarantine)</option>
+                                                    <option>Zone R (Returns)</option>
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] uppercase font-bold text-slate-500 mb-1">Bin Location</label>
+                                                <input className="w-full text-xs p-2 border border-slate-300 rounded" placeholder="e.g. A-01-04" value={targetLocation.bin} onChange={e => setTargetLocation(p => ({...p, bin: e.target.value}))} />
+                                            </div>
+                                            <button 
+                                                onClick={handleAssignPutaway}
+                                                disabled={!canPutaway || putawaySelection.size === 0}
+                                                className="bg-cyan-600 text-white text-xs font-bold py-2 rounded shadow-sm hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                            >
+                                                <MapPin size={14} /> Assign ({putawaySelection.size})
+                                            </button>
+                                        </div>
+                                    </div>
+                                  )}
+
+                                  {/* Unit Table */}
+                                  <div className="flex-1 bg-white border border-slate-200 rounded-lg overflow-hidden flex flex-col">
+                                      <div className="flex-1 overflow-auto">
+                                          <table className="w-full text-left text-xs">
+                                              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 sticky top-0 z-10">
+                                                  <tr>
+                                                      <th className="px-4 py-2 w-10 text-center">
+                                                          <input type="checkbox" onChange={handlePutawaySelectAll} checked={putawayData.length > 0 && putawaySelection.size === putawayData.length} />
+                                                      </th>
+                                                      <th className="px-4 py-2 font-bold uppercase">Serial Number</th>
+                                                      <th className="px-4 py-2 font-bold uppercase">Item</th>
+                                                      <th className="px-4 py-2 font-bold uppercase text-center">Status</th>
+                                                      <th className="px-4 py-2 font-bold uppercase">Current Location</th>
+                                                  </tr>
+                                              </thead>
+                                              <tbody className="divide-y divide-slate-100">
+                                                  {putawayData.map(u => (
+                                                      <tr key={u.unitId} className={`hover:bg-slate-50 ${putawaySelection.has(u.unitId) ? 'bg-cyan-50/50' : ''}`}>
+                                                          <td className="px-4 py-2 text-center">
+                                                              <input type="checkbox" checked={putawaySelection.has(u.unitId)} onChange={() => handlePutawaySelectionToggle(u.unitId)} />
+                                                          </td>
+                                                          <td className="px-4 py-2 font-mono text-slate-700">{u.enterpriseSerial}</td>
+                                                          <td className="px-4 py-2 text-slate-600">{u.itemName} <span className="text-slate-400 text-[10px]">({u.itemCategory})</span></td>
+                                                          <td className="px-4 py-2 text-center">
+                                                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(u.status)}`}>{u.status}</span>
+                                                          </td>
+                                                          <td className="px-4 py-2">
+                                                              {u.putaway?.bin ? (
+                                                                  <span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200 text-slate-600">
+                                                                      {u.putaway.warehouse?.split(' ')[0]}/{u.putaway.zone?.split(' ')[1]}/{u.putaway.bin}
+                                                                  </span>
+                                                              ) : <span className="text-slate-300 italic">-</span>}
+                                                          </td>
+                                                      </tr>
+                                                  ))}
+                                                  {putawayData.length === 0 && <tr><td colSpan={5} className="p-8 text-center text-slate-400 italic">No units match filter criteria.</td></tr>}
+                                              </tbody>
+                                          </table>
+                                      </div>
+                                  </div>
+                                  
+                                  {/* Complete Action */}
+                                  {activeReceipt.state !== ReceiptState.PUTAWAY_COMPLETE && activeReceipt.state !== ReceiptState.CLOSED && (
+                                    <div className="flex justify-end pt-2">
+                                        <button 
+                                            onClick={handleCompletePutaway}
+                                            disabled={assignedCount < mappedEvidenceData.length || !canPutaway}
+                                            className="px-6 py-2 bg-green-600 text-white rounded-lg text-sm font-bold shadow-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                            title={assignedCount < mappedEvidenceData.length ? "Assign all units first" : "Finalize Putaway"}
+                                        >
+                                            <Archive size={16} /> Complete Putaway Process
+                                        </button>
+                                    </div>
                                   )}
                               </div>
                           )}

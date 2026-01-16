@@ -8,6 +8,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S3-PP-17** | Feature | S3 Putaway Assignment | **STABLE** | Added Putaway tab for assigning storage locations (Warehouse/Zone/Bin) to accepted/held/rejected units. Includes bulk assignment controls and audit logging. Only active when receipt is in post-inspection state. | 2026-02-02 18:00 (IST) |
 | **V35-S3-PP-16** | Feature | S3 QC Decision Panel | **STABLE** | Implemented interactive QC Inspection modal. Allows QA/Admin to disposition units (Accept/Hold/Reject) with required reason logging. Added specific unit state transitions for QC flows and integrated with S3 Audit log. | 2026-02-02 17:30 (IST) |
 | **V35-S3-PP-15** | Feature | S3 Label Printing | **STABLE** | Implemented label print workflow for trackable units. Added "Print Pending" bulk action in line items and granular "Reprint/Void" actions in management modal. Extended unit model with `labelStatus` and print audit logging. | 2026-02-02 17:00 (IST) |
 | **V35-S3-PP-14** | Feature | S3 Evidence Mapping | **STABLE** | Implemented Trace Mapping feature in S3. Added Summary Card in UI showing verified unit counts and lot coverage. Added full-screen Drawer to view flattened mapping of Unit-Line-Receipt evidence (Lot, Invoice, PO) for provable traceability. | 2026-02-02 16:30 (IST) |
