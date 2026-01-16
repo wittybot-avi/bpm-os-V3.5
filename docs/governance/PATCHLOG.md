@@ -4,6 +4,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S2-RBAC-PP-03** | Governance | S2 RBAC Gating | **STABLE** | Enforced strict role-based access control for S2 Procurement actions (Create, Submit, Approve, Issue). Implemented "Disable with Tooltip" pattern for unauthorized actions instead of hiding them, improving visibility of permission requirements. | 2026-02-01 12:00 (IST) |
 | **V35-S2-CTX-PP-02** | Feature | Active Order Context | **STABLE** | Implemented `ActiveOrderContext` in S2 contract. Bound Procurement UI to display active order ID and synchronize status transitions. Ensured single source of truth for the active procurement cycle. | 2026-02-01 11:15 (IST) |
 | **V35-S2-STATE-PP-01** | Feature | S2 State Machine | **STABLE** | Introduced authoritative S2 state machine with states (DRAFT -> LOCKED). Updated S2 Contract, Guards, and UI to reflect granular procurement status. Enhanced StageStateBanner to support overrides. | 2026-02-01 10:30 (IST) |
 | **V35-S0-HOTFIX-PP-35** | Hotfix | Effective Capability Flags | **STABLE** | Implements hierarchical capability evaluation (Line > Plant > Global). Capability card now displays explicit "Source" labeling. Toggles on the landing page intelligently create/update overrides based on the active organizational context. | 2026-01-30 23:59 (IST) |

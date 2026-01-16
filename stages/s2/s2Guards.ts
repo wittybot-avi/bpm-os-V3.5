@@ -24,6 +24,12 @@ export interface ActionState {
  * S2 Action Guard
  * Determines if a specific action is allowed based on Role and Context.
  * 
+ * RBAC Policy:
+ * - ADMIN: All Actions (State dependent)
+ * - PROCUREMENT: Create, Submit, Issue
+ * - MANAGEMENT (Finance): Approve, Close
+ * - OTHERS: View Only
+ * 
  * Flow: DRAFT -> (RFQ/EVAL) -> WAITING_APPROVAL -> APPROVED -> ISSUED -> LOCKED
  */
 export const getS2ActionState = (role: UserRole, context: S2Context, action: S2ActionId): ActionState => {
@@ -33,20 +39,26 @@ export const getS2ActionState = (role: UserRole, context: S2Context, action: S2A
 
   // Global dependency check
   if (context.blueprintDependency === 'BLOCKED' && action === 'CREATE_PO') {
-    return { enabled: false, reason: 'S1 Blueprint Not Ready' };
+    return { enabled: false, reason: 'S1 Blueprint Not Ready (Dependency)' };
+  }
+
+  // Operator / Viewer Lockout
+  if (!isProcurement && !isManagement) {
+    return { enabled: false, reason: `Role '${role}' has Read-Only access` };
   }
 
   switch (action) {
     case 'CREATE_PO':
       if (!isProcurement) return { enabled: false, reason: 'Requires Procurement Role' };
       // Can start a PO if IDLE (LOCKED/initial) or Draft/RFQ stages (to edit)
+      // If a PO is already in motion (Approval/Approved/Issued), we block creation of a *concurrent* one in this simplified pilot.
       if (
         context.procurementStatus === 'S2_WAITING_APPROVAL' || 
         context.procurementStatus === 'S2_APPROVED' || 
         context.procurementStatus === 'S2_PO_ISSUED' ||
         context.procurementStatus === 'S2_PO_ACKNOWLEDGED'
       ) {
-         return { enabled: false, reason: 'PO already in workflow' };
+         return { enabled: false, reason: 'Current PO is active in workflow' };
       }
       return { enabled: true };
 
@@ -58,12 +70,12 @@ export const getS2ActionState = (role: UserRole, context: S2Context, action: S2A
         context.procurementStatus !== 'S2_VENDOR_RESPONSE_RECEIVED' &&
         context.procurementStatus !== 'S2_COMMERCIAL_EVALUATION'
       ) {
-        return { enabled: false, reason: 'No Active Draft PO' };
+        return { enabled: false, reason: 'PO not in Draft/Evaluation state' };
       }
       return { enabled: true };
 
     case 'APPROVE_PO':
-      if (!isManagement) return { enabled: false, reason: 'Requires Management Role' };
+      if (!isManagement) return { enabled: false, reason: 'Requires Management/Finance Role' };
       if (context.procurementStatus !== 'S2_WAITING_APPROVAL') {
         return { enabled: false, reason: 'No PO pending approval' };
       }
@@ -72,7 +84,7 @@ export const getS2ActionState = (role: UserRole, context: S2Context, action: S2A
     case 'ISSUE_PO_TO_VENDOR':
       if (!isProcurement) return { enabled: false, reason: 'Requires Procurement Role' };
       if (context.procurementStatus !== 'S2_APPROVED') {
-        return { enabled: false, reason: 'PO not approved' };
+        return { enabled: false, reason: 'PO not approved yet' };
       }
       return { enabled: true };
 
@@ -82,7 +94,7 @@ export const getS2ActionState = (role: UserRole, context: S2Context, action: S2A
         context.procurementStatus !== 'S2_PO_ISSUED' && 
         context.procurementStatus !== 'S2_PO_ACKNOWLEDGED'
       ) {
-        return { enabled: false, reason: 'Cycle incomplete' };
+        return { enabled: false, reason: 'PO Cycle incomplete (Wait for Ack)' };
       }
       return { enabled: true };
       

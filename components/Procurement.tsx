@@ -283,7 +283,8 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
   const hasAccess = 
     role === UserRole.SYSTEM_ADMIN || 
     role === UserRole.PROCUREMENT || 
-    role === UserRole.MANAGEMENT;
+    role === UserRole.MANAGEMENT ||
+    role === UserRole.OPERATOR; // Allow operator to view but not act
 
   if (!hasAccess) {
     return (
@@ -312,7 +313,7 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
         <div className="flex flex-col items-end gap-1">
           <div className="flex gap-2">
             <button 
-              className="bg-brand-600 text-white px-4 py-2 rounded-md font-medium text-sm flex items-center gap-2 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="bg-brand-600 text-white px-4 py-2 rounded-md font-medium text-sm flex items-center gap-2 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-400 transition-colors"
               disabled={!createPoState.enabled || isSimulating}
               onClick={handleCreatePo}
               title={createPoState.reason}
@@ -458,20 +459,18 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
               </button>
             </div>
 
-            {/* Close Cycle (Conditionally visible when Approved) */}
-            {closeCycleState.enabled && (
-                <>
-                    <div className="w-4 h-px bg-slate-300"></div>
-                    <div className="flex flex-col items-center">
-                        <button 
-                            onClick={handleCloseCycle}
-                            className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-slate-200 border border-slate-700 rounded hover:bg-slate-700 text-xs font-bold transition-colors"
-                        >
-                            <RotateCcw size={14} /> Close
-                        </button>
-                    </div>
-                </>
-            )}
+            {/* Close Cycle - Always show, disable if not allowed */}
+            <div className="w-4 h-px bg-slate-300"></div>
+            <div className="flex flex-col items-center">
+                <button 
+                    disabled={!closeCycleState.enabled}
+                    onClick={handleCloseCycle}
+                    title={closeCycleState.reason}
+                    className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-slate-200 border border-slate-700 rounded hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 disabled:border-slate-200 text-xs font-bold transition-colors"
+                >
+                    <RotateCcw size={14} /> Close
+                </button>
+            </div>
          </div>
       </div>
 
