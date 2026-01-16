@@ -8,6 +8,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S3-PP-05** | Foundation | S3 Page Shell | **STABLE** | Implemented basic S3 Inbound Receipt page shell in `components/InboundReceipt.tsx`. Connected to S3 Sim Store. Removed legacy wizard from `S3InboundScreen.tsx` to align with new architecture. | 2026-02-02 12:00 (IST) |
 | **V35-S3-PP-04** | Foundation | S3 RBAC Policy | **STABLE** | Added `s3Rbac.ts` with `canS3()` helper to centralize permission logic for Inbound Operators vs QA vs Viewers. Mapped global UserRoles to S3-specific contexts. | 2026-02-02 11:30 (IST) |
 | **V35-S3-PP-03** | Foundation | S3 Sim Store | **STABLE** | Implemented persistent simulation store for S3 Receipts (`sim/api/s3/s3Inbound.store.ts`) with seed data and localStorage support. Added API-like handler wrappers. | 2026-02-02 11:00 (IST) |
 | **V35-S3-PP-02** | Foundation | S3 State Machine | **STABLE** | Implemented pure functional state machine for Receipt transitions (Draft -> Closed). Added `transitionReceipt` reducer and updated guards. | 2026-02-02 10:30 (IST) |
