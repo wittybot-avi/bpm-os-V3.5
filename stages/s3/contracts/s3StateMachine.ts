@@ -1,5 +1,5 @@
 
-import { S3Receipt, S3AuditEvent, ReceiptState } from './s3Types';
+import { S3Receipt, S3AuditEvent, ReceiptState, S3SerializedUnit, UnitState } from './s3Types';
 import { UserRole } from '../../../types';
 
 /**
@@ -33,6 +33,71 @@ export const allowedReceiptTransitions: Record<ReceiptState, ReceiptState[]> = {
   [ReceiptState.PUTAWAY_COMPLETE]: [ReceiptState.CLOSED],
   [ReceiptState.CLOSED]: [] // Terminal state
 };
+
+/**
+ * Unit State Machine
+ */
+export const allowedUnitTransitions: Record<UnitState, UnitState[]> = {
+  [UnitState.CREATED]: [UnitState.LABELED],
+  [UnitState.LABELED]: [UnitState.SCANNED],
+  [UnitState.SCANNED]: [UnitState.VERIFIED],
+  [UnitState.VERIFIED]: [UnitState.ACCEPTED, UnitState.QC_HOLD, UnitState.REJECTED],
+  [UnitState.QC_HOLD]: [UnitState.ACCEPTED, UnitState.REJECTED],
+  [UnitState.ACCEPTED]: [],
+  [UnitState.REJECTED]: []
+};
+
+export const canTransitionUnit = (from: UnitState, to: UnitState): boolean => {
+  return allowedUnitTransitions[from]?.includes(to) ?? false;
+};
+
+export const getNextUnitState = (current: UnitState): UnitState | null => {
+    // Helper for linear progression buttons
+    const map: Partial<Record<UnitState, UnitState>> = {
+        [UnitState.CREATED]: UnitState.LABELED,
+        [UnitState.LABELED]: UnitState.SCANNED,
+        [UnitState.SCANNED]: UnitState.VERIFIED
+    };
+    return map[current] || null;
+};
+
+export interface UnitTransitionResult {
+    unit: S3SerializedUnit;
+    auditEvent: S3AuditEvent;
+}
+
+export const transitionUnit = (
+    unit: S3SerializedUnit,
+    to: UnitState,
+    actorRole: string,
+    receiptId: string
+): UnitTransitionResult => {
+    if (!canTransitionUnit(unit.state, to)) {
+        throw new Error(`Invalid unit transition from ${unit.state} to ${to}`);
+    }
+
+    const now = new Date().toISOString();
+    const updatedUnit = { ...unit, state: to };
+
+    // Update timestamps based on state
+    if (to === UnitState.VERIFIED) {
+        updatedUnit.verifiedAt = now;
+    }
+
+    const auditEvent: S3AuditEvent = {
+        id: `audit-u-${Date.now()}-${Math.random().toString(36).substr(2,5)}`,
+        ts: now,
+        actorRole,
+        actorLabel: 'User',
+        eventType: 'UNIT_STATE_CHANGED',
+        refType: 'UNIT',
+        refId: unit.id,
+        message: `Unit ${unit.enterpriseSerial} transitioned to ${to}`
+    };
+
+    return { unit: updatedUnit, auditEvent };
+};
+
 
 /**
  * Returns a short, human-readable label for the next primary action button.

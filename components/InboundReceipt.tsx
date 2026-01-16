@@ -1,8 +1,9 @@
 
 import React, { useEffect, useState, useContext } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
-import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit } from '../stages/s3/contracts';
+import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit, UnitState } from '../stages/s3/contracts';
+import { getNextUnitState, canTransitionUnit, transitionUnit } from '../stages/s3/contracts/s3StateMachine';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
 import { s3ListOpenOrdersFromS2, S3MockOrder, s3ListSuppliers, S3Supplier } from '../sim/api/s3/s3S2Adapter';
 
@@ -335,6 +336,16 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       const startSeq = (line.units?.length || 0) + 1000 + Math.floor(Math.random() * 5000);
       const newUnits = generateS3Units(line.id, line.category, genPanel.count, startSeq, genPanel.mode);
 
+      // Guard: Check for duplicate Enterprise Serials within the receipt
+      const existingSerials = new Set<string>();
+      activeReceipt.lines.forEach(l => l.units?.forEach(u => existingSerials.add(u.enterpriseSerial)));
+      
+      const duplicates = newUnits.filter(u => existingSerials.has(u.enterpriseSerial));
+      if (duplicates.length > 0) {
+          alert(`Generation failed: ${duplicates.length} duplicate enterprise serials detected.`);
+          return;
+      }
+
       const updatedLines = activeReceipt.lines.map(l => {
           if (l.id === genPanel.lineId) {
               return {
@@ -397,7 +408,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
     setBulkText(''); 
   };
 
-  const handleSaveSerials = () => {
+  const handleSaveUnits = () => {
     if (!activeReceipt || !serialEntryLineId) return;
 
     // Validation
@@ -447,10 +458,10 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                 ts: new Date().toISOString(),
                 actorRole: role,
                 actorLabel: 'User',
-                eventType: 'SUPPLIER_SERIALS_CAPTURED',
+                eventType: 'UNIT_UPDATE',
                 refType: 'LINE',
                 refId: serialEntryLineId,
-                message: `Updated supplier serial references`
+                message: `Updated units (Supplier Serials / States)`
             },
             ...activeReceipt.audit
         ]
@@ -459,6 +470,16 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
     s3UpsertReceipt(updatedReceipt);
     setSerialEntryLineId(null);
     setRefreshKey(k => k + 1);
+  };
+
+  const handleUnitTransitionInModal = (index: number, toState: UnitState) => {
+     // Updates the local buffer for the modal
+     // Real persistence happens on "Save Changes"
+     setSerialBuffer(prev => {
+         const next = [...prev];
+         next[index] = { ...next[index], state: toState };
+         return next;
+     });
   };
 
   const handleValidate = () => {
@@ -505,6 +526,22 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       }
   };
 
+  // Helper to check for unverified units
+  const getUnverifiedCount = (): number => {
+    if (!activeReceipt) return 0;
+    let count = 0;
+    activeReceipt.lines.forEach(line => {
+        if (line.trackability === ItemTrackability.TRACKABLE && line.units) {
+             count += line.units.filter(u => u.state !== UnitState.VERIFIED && u.state !== UnitState.ACCEPTED && u.state !== UnitState.QC_HOLD && u.state !== UnitState.REJECTED).length;
+        }
+    });
+    return count;
+  };
+
+  const hasUnverifiedUnits = getUnverifiedCount() > 0;
+  // Blocking condition logic: if we are trying to advance to QC, we should check this.
+  // For now, it's a banner display.
+
   const getStatusColor = (state: ReceiptState) => {
     switch (state) {
       case ReceiptState.DRAFT: return 'bg-slate-100 text-slate-700 border-slate-200';
@@ -516,6 +553,19 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       case ReceiptState.CLOSED: return 'bg-slate-800 text-slate-200 border-slate-700';
       default: return 'bg-slate-50 text-slate-600 border-slate-200';
     }
+  };
+
+  const getUnitStateBadge = (state: UnitState) => {
+      switch (state) {
+          case UnitState.CREATED: return 'bg-slate-100 text-slate-600 border-slate-200';
+          case UnitState.LABELED: return 'bg-blue-50 text-blue-700 border-blue-200';
+          case UnitState.SCANNED: return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+          case UnitState.VERIFIED: return 'bg-green-50 text-green-700 border-green-200';
+          case UnitState.QC_HOLD: return 'bg-amber-50 text-amber-700 border-amber-200';
+          case UnitState.ACCEPTED: return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+          case UnitState.REJECTED: return 'bg-red-50 text-red-700 border-red-200';
+          default: return 'bg-slate-50 text-slate-400 border-slate-200';
+      }
   };
 
   const getCategoryColor = (cat: string) => {
@@ -635,7 +685,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                     onClick={() => handleOpenSerialEntry(line.id)}
                                     className="bg-white border border-slate-300 text-slate-600 text-[10px] font-bold px-2 py-1 rounded shadow-sm hover:bg-slate-50 flex items-center gap-1"
                                 >
-                                    <FileDigit size={10} /> Scan Supplier Serials
+                                    <FileDigit size={10} /> Manage Units & Serials
                                 </button>
                             )}
                             {buffer.qtyReceived > unitsGenerated && !isGenOpen && (
@@ -679,9 +729,9 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                       {unitsGenerated > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1 max-h-16 overflow-y-auto">
                               {line.units?.slice(0, 10).map(u => (
-                                  <span key={u.id} className={`text-[9px] px-1 rounded font-mono border flex items-center gap-1 ${u.supplierSerialRef ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-500'}`}>
+                                  <span key={u.id} className={`text-[9px] px-1 rounded font-mono border flex items-center gap-1 ${u.state === UnitState.VERIFIED ? 'bg-green-50 border-green-200 text-green-700' : 'bg-white border-slate-200 text-slate-500'}`}>
                                     {u.enterpriseSerial}
-                                    {u.supplierSerialRef && <span className="text-[7px] text-green-500">✔</span>}
+                                    <span className={`w-1.5 h-1.5 rounded-full ${u.state === UnitState.VERIFIED ? 'bg-green-500' : 'bg-slate-300'}`}></span>
                                   </span>
                               ))}
                               {(line.units?.length || 0) > 10 && <span className="text-[9px] text-slate-400 italic">+{unitsGenerated - 10} more</span>}
@@ -895,6 +945,19 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                 )}
             </div>
         </div>
+      )}
+
+      {/* Verification Gate Hint */}
+      {activeReceipt && hasUnverifiedUnits && activeReceipt.state !== ReceiptState.DRAFT && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-3 shadow-sm animate-in fade-in">
+              <AlertOctagon size={16} className="text-amber-600 mt-0.5" />
+              <div>
+                  <h4 className="text-xs font-bold text-amber-800 uppercase">Verification Incomplete</h4>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                      <strong>{getUnverifiedCount()}</strong> trackable units have not been verified. Receipt cannot proceed to Quality Control until all units are marked VERIFIED.
+                  </p>
+              </div>
+          </div>
       )}
 
       {/* Main Grid */}
@@ -1126,12 +1189,12 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       {serialEntryLineId && (
         <div className="absolute inset-0 z-50 flex items-center justify-center">
             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setSerialEntryLineId(null)} />
-            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+            <div className="relative bg-white rounded-lg shadow-xl w-full max-w-4xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
                 <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50 rounded-t-lg">
                     <div className="flex items-center gap-2">
                         <FileDigit className="text-blue-600" size={20} />
                         <div>
-                            <h3 className="text-sm font-bold text-slate-800">Scan Supplier Serials</h3>
+                            <h3 className="text-sm font-bold text-slate-800">Manage Units & Serials</h3>
                             <p className="text-xs text-slate-500">
                                 {activeReceipt?.lines.find(l => l.id === serialEntryLineId)?.itemName}
                             </p>
@@ -1147,7 +1210,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                     <div className="bg-slate-50 p-4 rounded border border-slate-200">
                         <div className="flex justify-between items-center mb-2">
                             <label className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1">
-                                <Copy size={12} /> Bulk Paste
+                                <Copy size={12} /> Bulk Paste Supplier Serials
                             </label>
                             <span className="text-[10px] text-slate-400">One serial per line</span>
                         </div>
@@ -1181,10 +1244,17 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                          <th className="px-3 py-2 w-12 text-center">#</th>
                                          <th className="px-3 py-2">Enterprise Serial</th>
                                          <th className="px-3 py-2">Supplier Serial (Input)</th>
+                                         <th className="px-3 py-2 text-center">State</th>
+                                         <th className="px-3 py-2 text-center">Actions</th>
                                      </tr>
                                  </thead>
                                  <tbody className="divide-y divide-slate-100">
-                                     {serialBuffer.map((unit, idx) => (
+                                     {serialBuffer.map((unit, idx) => {
+                                        const nextState = getNextUnitState(unit.state);
+                                        // Permission Check (Simplified)
+                                        const canAdvance = role === UserRole.SYSTEM_ADMIN || role === UserRole.STORES || (unit.state === UnitState.SCANNED && role === UserRole.QA_ENGINEER);
+
+                                        return (
                                          <tr key={unit.id} className="hover:bg-slate-50">
                                              <td className="px-3 py-2 text-center text-slate-400">{idx + 1}</td>
                                              <td className="px-3 py-2 font-mono text-slate-600">{unit.enterpriseSerial}</td>
@@ -1200,8 +1270,27 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                     }}
                                                  />
                                              </td>
+                                             <td className="px-3 py-2 text-center">
+                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getUnitStateBadge(unit.state)}`}>
+                                                     {unit.state}
+                                                 </span>
+                                             </td>
+                                             <td className="px-3 py-2 text-center">
+                                                 {nextState && (
+                                                     <button 
+                                                        onClick={() => handleUnitTransitionInModal(idx, nextState)}
+                                                        disabled={!canAdvance}
+                                                        className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] font-bold text-slate-600 hover:bg-white hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 mx-auto"
+                                                        title={`Advance to ${nextState}`}
+                                                     >
+                                                        {nextState === UnitState.VERIFIED ? <ShieldCheck size={10} /> : <ArrowRightCircle size={10} />}
+                                                        <span>{nextState === UnitState.VERIFIED ? 'Verify' : 'Next'}</span>
+                                                     </button>
+                                                 )}
+                                             </td>
                                          </tr>
-                                     ))}
+                                        );
+                                     })}
                                  </tbody>
                              </table>
                          </div>
@@ -1231,7 +1320,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                         Cancel
                     </button>
                     <button 
-                        onClick={handleSaveSerials}
+                        onClick={handleSaveUnits}
                         className="px-4 py-2 bg-green-600 text-white font-bold text-xs rounded hover:bg-green-700 shadow-sm transition-colors flex items-center gap-2"
                     >
                         <Save size={14} /> Save Changes

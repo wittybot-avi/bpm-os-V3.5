@@ -14,6 +14,45 @@ export interface ValidationResult {
   errors: ValidationError[];
 }
 
+export const validateUnitUniqueness = (receipt: S3Receipt): ValidationError[] => {
+    const errors: ValidationError[] = [];
+    const enterpriseSerials = new Set<string>();
+    const supplierSerials = new Set<string>();
+    
+    receipt.lines.forEach(line => {
+        if (!line.units) return;
+        line.units.forEach(unit => {
+            // Enterprise Serial Uniqueness
+            if (enterpriseSerials.has(unit.enterpriseSerial)) {
+                errors.push({
+                    level: 'LINE',
+                    refId: line.id,
+                    code: 'DUPLICATE_ENT_SERIAL',
+                    message: `Duplicate Enterprise Serial found: ${unit.enterpriseSerial}`
+                });
+            } else {
+                enterpriseSerials.add(unit.enterpriseSerial);
+            }
+
+            // Supplier Serial Uniqueness (if present)
+            if (unit.supplierSerialRef) {
+                if (supplierSerials.has(unit.supplierSerialRef)) {
+                    errors.push({
+                        level: 'LINE',
+                        refId: line.id,
+                        code: 'DUPLICATE_SUP_SERIAL',
+                        message: `Duplicate Supplier Serial found: ${unit.supplierSerialRef}`
+                    });
+                } else {
+                    supplierSerials.add(unit.supplierSerialRef);
+                }
+            }
+        });
+    });
+    
+    return errors;
+};
+
 export const validateReceipt = (receipt: S3Receipt, userRole: string): ValidationResult => {
   const errors: ValidationError[] = [];
 
@@ -88,6 +127,10 @@ export const validateReceipt = (receipt: S3Receipt, userRole: string): Validatio
         });
     }
   });
+
+  // 3. Uniqueness Checks
+  const uniqueErrors = validateUnitUniqueness(receipt);
+  errors.push(...uniqueErrors);
 
   return {
     ok: errors.length === 0,
