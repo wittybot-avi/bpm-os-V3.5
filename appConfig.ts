@@ -5,4 +5,4 @@
 export const APP_NAME = 'BPM-OS';
 export const APP_VERSION = 'V3.5';
 export const BRANCH_ID = 'V3.5';
-export const PATCH_ID = 'V35-S2-PP-10';
+export const PATCH_ID = 'V35-S2-HOTFIX-PP-11A';

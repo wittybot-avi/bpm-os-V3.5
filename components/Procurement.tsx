@@ -1,4 +1,3 @@
-
 import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { UserContext, UserRole, NavView } from '../types';
 import { 
@@ -36,7 +35,10 @@ import {
   Globe,
   Phone,
   Mail,
-  Award
+  Award,
+  Server,
+  UserCog,
+  User
 } from 'lucide-react';
 import { StageStateBanner } from './StageStateBanner';
 import { PreconditionsPanel } from './PreconditionsPanel';
@@ -60,6 +62,7 @@ interface Supplier {
   contactPerson: string;
   lastAudit: string;
   performanceScore: number;
+  source: 'ERP_MANAGED' | 'MANUAL'; // Governance Flag
 }
 
 interface CommercialTerm {
@@ -83,7 +86,8 @@ const SUPPLIERS: Supplier[] = [
     certificates: ['ISO 9001:2015', 'IATF 16949', 'ISO 14001'],
     contactPerson: 'Wei Zhang',
     lastAudit: '2025-11-15',
-    performanceScore: 98
+    performanceScore: 98,
+    source: 'ERP_MANAGED'
   },
   { 
     id: 'sup-002', 
@@ -96,7 +100,8 @@ const SUPPLIERS: Supplier[] = [
     certificates: ['ISO 9001', 'ISO 27001 (Cybersec)'],
     contactPerson: 'Sarah Connor',
     lastAudit: '2025-10-01',
-    performanceScore: 95
+    performanceScore: 95,
+    source: 'ERP_MANAGED'
   },
   { 
     id: 'sup-003', 
@@ -109,7 +114,8 @@ const SUPPLIERS: Supplier[] = [
     certificates: ['ISO 9001'],
     contactPerson: 'Jean Reno',
     lastAudit: '2025-08-20',
-    performanceScore: 82
+    performanceScore: 82,
+    source: 'MANUAL'
   },
   { 
     id: 'sup-004', 
@@ -122,7 +128,8 @@ const SUPPLIERS: Supplier[] = [
     certificates: ['Pending Review'],
     contactPerson: 'Lee Min',
     lastAudit: 'Pending',
-    performanceScore: 0
+    performanceScore: 0,
+    source: 'MANUAL'
   },
 ];
 
@@ -586,6 +593,15 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                   <div>
                       <div className="flex items-center gap-2 mb-1">
                           <h2 className="text-xl font-bold text-slate-800">{viewingSupplier.name}</h2>
+                          {viewingSupplier.source === 'ERP_MANAGED' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-indigo-50 text-indigo-700 border border-indigo-200 flex items-center gap-1">
+                                  <Server size={10} /> ERP
+                              </span>
+                          ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-200 flex items-center gap-1">
+                                  <UserCog size={10} /> Manual
+                              </span>
+                          )}
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                               viewingSupplier.status === 'Approved' ? 'bg-green-100 text-green-700' :
                               viewingSupplier.status === 'Conditional' ? 'bg-amber-100 text-amber-700' :
@@ -606,6 +622,16 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
 
               <div className="flex-1 overflow-y-auto p-6 space-y-6">
                   
+                  {/* Governance Warning for ERP Suppliers */}
+                  {viewingSupplier.source === 'ERP_MANAGED' && (
+                    <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-md flex items-start gap-2">
+                        <Lock size={14} className="text-indigo-600 mt-0.5 shrink-0" />
+                        <div className="text-xs text-indigo-800">
+                            <strong>System of Record:</strong> This supplier is managed by the central ERP. Modifications must be performed in the source system (SAP/Oracle).
+                        </div>
+                    </div>
+                  )}
+
                   {/* Scorecard Grid */}
                   <div className="grid grid-cols-3 gap-4">
                       <div className="p-3 bg-white border border-slate-200 rounded-lg text-center flex flex-col items-center gap-1">
@@ -1135,7 +1161,15 @@ export const Procurement: React.FC<ProcurementProps> = ({ onNavigate }) => {
                         ${isLocked ? 'cursor-not-allowed opacity-75' : 'cursor-pointer hover:bg-slate-50'}
                     `}
                   >
-                    <td className="px-4 py-3 font-medium text-slate-800">{sup.name}</td>
+                    <td className="px-4 py-3 font-medium text-slate-800 flex items-center gap-2">
+                        {sup.name}
+                        {sup.source === 'ERP_MANAGED' && (
+                            <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded border border-indigo-200" title="Managed by ERP System">ERP</span>
+                        )}
+                        {sup.source === 'MANUAL' && (
+                            <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200" title="Manually Created">MANUAL</span>
+                        )}
+                    </td>
                     <td className="px-4 py-3 text-slate-600">{sup.type}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${

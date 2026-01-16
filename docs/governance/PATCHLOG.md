@@ -5,6 +5,7 @@
 
 | Patch ID | Patch Type | Intent | Status | Notes | Date |
 |:---|:---|:---|:---|:---|:---|
+| **V35-S2-PP-11** | Governance | Supplier Origin Flag | **STABLE** | Introduced `supplierSource` (ERP_MANAGED vs MANUAL) in S2 Procurement. Added visual badges to the Supplier Master table and Drill-Down drawer to differentiate system-of-record entries from manual overrides. | 2026-02-01 18:30 (IST) |
 | **V35-S2-PP-10** | Feature | Supplier Drill-Down | **STABLE** | Added detailed supplier inspection drawer in S2 Procurement. Includes Scorecard (Risk, Performance), Certificates, and extended metadata. Read-only overlay for informed decision making. | 2026-02-01 17:30 (IST) |
 | **V35-S2-PP-09** | Governance | Supplier Eligibility Rules | **STABLE** | Implemented validation logic in S2 Procurement to block PO issuance if the selected supplier is incompatible with item categories (e.g., cannot buy BMS from a Mechanical supplier). Added error banner and button blocking. | 2026-02-01 16:45 (IST) |
 | **V35-S2-PP-08** | Governance | Enforce S3 Eligibility Rules | **STABLE** | Implemented `fulfillmentType` (SERIALIZABLE vs NON_SERIALIZABLE) in S2 Procurement. Added visual badges and updated next-step guidance logic to clarify S3 eligibility for mixed orders. | 2026-02-01 16:00 (IST) |
