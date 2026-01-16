@@ -26,6 +26,12 @@ export enum UnitState {
   REJECTED = 'REJECTED'
 }
 
+export enum LabelStatus {
+  NOT_PRINTED = 'NOT_PRINTED',
+  PRINTED = 'PRINTED',
+  VOIDED = 'VOIDED'
+}
+
 export enum ItemTrackability {
   TRACKABLE = 'TRACKABLE',
   NON_TRACKABLE = 'NON_TRACKABLE'
@@ -52,7 +58,12 @@ export interface S3SerializedUnit {
   supplierSerialRef?: string; // Vendor's barcode if scanned
   lineId: EntityId; // Reference to parent line
   state: UnitState;
+  
+  // Printing & Labeling
   printedCount: number;
+  lastPrintedAt?: IsoDateTime;
+  labelStatus: LabelStatus;
+
   verifiedAt?: IsoDateTime;
   qcDecision?: 'ACCEPT' | 'HOLD' | 'REJECT';
   qcReason?: string;

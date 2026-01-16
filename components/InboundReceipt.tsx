@@ -1,8 +1,8 @@
 
 import React, { useEffect, useState, useContext, useMemo } from 'react';
-import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon } from 'lucide-react';
+import { Truck, Package, Activity, ArrowRight, LayoutList, Plus, FileInput, CheckCircle2, ShieldAlert, FileWarning, RefreshCcw, Paperclip, FileText, Calendar, Tag, Save, X, AlertTriangle, PlayCircle, ShieldCheck, ScanBarcode, Settings2, Barcode, Database, Copy, AlertCircle, FileDigit, QrCode, ArrowRightCircle, Link, Search, FileSearch, AlertOctagon, Printer, Ban, RotateCcw } from 'lucide-react';
 import { NavView, UserContext, UserRole } from '../types';
-import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit, UnitState } from '../stages/s3/contracts';
+import { S3Receipt, ReceiptState, getReceiptNextActions, S3ReceiptLine, ItemTrackability, makeReceiptCode, canS3, S3Attachment, AttachmentType, validateReceipt, ValidationResult, transitionReceipt, allowedReceiptTransitions, generateS3Units, S3SerializedUnit, UnitState, LabelStatus } from '../stages/s3/contracts';
 import { getNextUnitState, canTransitionUnit, transitionUnit } from '../stages/s3/contracts/s3StateMachine';
 import { s3ListReceipts, s3GetActiveReceipt, s3SetActiveReceipt, s3UpsertReceipt } from '../sim/api/s3/s3Inbound.handlers';
 import { s3ListOpenOrdersFromS2, S3MockOrder, s3ListSuppliers, S3Supplier } from '../sim/api/s3/s3S2Adapter';
@@ -383,6 +383,58 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
       setRefreshKey(k => k + 1);
   };
 
+  // Label Printing Handlers
+  const handlePrintAllPending = (lineId: string) => {
+      if (!activeReceipt) return;
+      const line = activeReceipt.lines.find(l => l.id === lineId);
+      if (!line || !line.units) return;
+      
+      const now = new Date().toISOString();
+      let printedCount = 0;
+
+      const updatedUnits = line.units.map(u => {
+          if (u.labelStatus === LabelStatus.NOT_PRINTED) {
+              printedCount++;
+              return {
+                  ...u,
+                  labelStatus: LabelStatus.PRINTED,
+                  lastPrintedAt: now,
+                  printedCount: u.printedCount + 1,
+                  state: u.state === UnitState.CREATED ? UnitState.LABELED : u.state
+              };
+          }
+          return u;
+      });
+
+      if (printedCount === 0) return;
+
+      const updatedLines = activeReceipt.lines.map(l => {
+          if (l.id === lineId) return { ...l, units: updatedUnits };
+          return l;
+      });
+
+      const updatedReceipt = {
+          ...activeReceipt,
+          lines: updatedLines,
+          audit: [
+              {
+                  id: `aud-${Date.now()}`,
+                  ts: now,
+                  actorRole: role,
+                  actorLabel: 'User',
+                  eventType: 'LABELS_PRINTED_BATCH',
+                  refType: 'LINE',
+                  refId: lineId,
+                  message: `Printed ${printedCount} labels for Line ${line.itemName}`
+              },
+              ...activeReceipt.audit
+          ]
+      } as S3Receipt;
+
+      s3UpsertReceipt(updatedReceipt);
+      setRefreshKey(k => k + 1);
+  };
+
   // Supplier Serial Entry Handlers
   const handleOpenSerialEntry = (lineId: string) => {
     const line = activeReceipt?.lines.find(l => l.id === lineId);
@@ -485,6 +537,96 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
          return next;
      });
   };
+
+  // Immediate Modal Actions (Reprint/Void) - Commits directly to store
+  const handleImmediateUnitAction = (index: number, action: 'REPRINT' | 'VOID') => {
+    if (!activeReceipt || !serialEntryLineId) return;
+    const unit = serialBuffer[index];
+    if (!unit) return;
+
+    if (action === 'VOID') {
+        const reason = window.prompt("Enter reason for voiding label:");
+        if (!reason) return;
+        
+        // Update store directly
+        const line = activeReceipt.lines.find(l => l.id === serialEntryLineId);
+        if(!line || !line.units) return;
+
+        const updatedUnits = line.units.map(u => {
+            if(u.id === unit.id) {
+                return { ...u, labelStatus: LabelStatus.VOIDED };
+            }
+            return u;
+        });
+
+        const updatedReceipt = {
+            ...activeReceipt,
+            lines: activeReceipt.lines.map(l => l.id === serialEntryLineId ? { ...l, units: updatedUnits } : l),
+            audit: [
+                {
+                    id: `aud-${Date.now()}`,
+                    ts: new Date().toISOString(),
+                    actorRole: role,
+                    actorLabel: 'User',
+                    eventType: 'LABEL_VOIDED',
+                    refType: 'UNIT',
+                    refId: unit.id,
+                    message: `Label voided: ${reason}`
+                },
+                ...activeReceipt.audit
+            ]
+        } as S3Receipt;
+
+        s3UpsertReceipt(updatedReceipt);
+    } else if (action === 'REPRINT') {
+        // Update store directly
+        const line = activeReceipt.lines.find(l => l.id === serialEntryLineId);
+        if(!line || !line.units) return;
+
+        const updatedUnits = line.units.map(u => {
+            if(u.id === unit.id) {
+                return { 
+                    ...u, 
+                    labelStatus: LabelStatus.PRINTED, 
+                    printedCount: u.printedCount + 1,
+                    lastPrintedAt: new Date().toISOString()
+                };
+            }
+            return u;
+        });
+
+        const updatedReceipt = {
+            ...activeReceipt,
+            lines: activeReceipt.lines.map(l => l.id === serialEntryLineId ? { ...l, units: updatedUnits } : l),
+            audit: [
+                {
+                    id: `aud-${Date.now()}`,
+                    ts: new Date().toISOString(),
+                    actorRole: role,
+                    actorLabel: 'User',
+                    eventType: 'LABEL_REPRINTED',
+                    refType: 'UNIT',
+                    refId: unit.id,
+                    message: `Label reprinted (Count: ${unit.printedCount + 1})`
+                },
+                ...activeReceipt.audit
+            ]
+        } as S3Receipt;
+
+        s3UpsertReceipt(updatedReceipt);
+    }
+
+    // Refresh modal buffer from updated store
+    const refreshedReceipt = s3GetActiveReceipt();
+    if (refreshedReceipt) {
+        const refreshedLine = refreshedReceipt.lines.find(l => l.id === serialEntryLineId);
+        if (refreshedLine && refreshedLine.units) {
+             setSerialBuffer(JSON.parse(JSON.stringify(refreshedLine.units)));
+        }
+        setActiveReceipt(refreshedReceipt); // Trigger re-render of main
+    }
+  };
+
 
   const handleValidate = () => {
       if (!activeReceipt) return;
@@ -644,6 +786,11 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
     const unitsGenerated = line.units?.length || 0;
     const isGenOpen = genPanel?.lineId === line.id;
     
+    // Print stats
+    const printedCount = line.units?.filter(u => u.labelStatus === LabelStatus.PRINTED).length || 0;
+    const notPrintedCount = line.units?.filter(u => u.labelStatus === LabelStatus.NOT_PRINTED).length || 0;
+    const voidedCount = line.units?.filter(u => u.labelStatus === LabelStatus.VOIDED).length || 0;
+
     return (
         <div key={line.id} className={`p-3 border rounded-lg bg-white shadow-sm ${hasError ? 'border-red-300 ring-1 ring-red-100' : 'border-slate-200'}`}>
             <div className="flex justify-between items-start mb-2">
@@ -746,6 +893,25 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                             )}
                           </div>
                       </div>
+
+                      {/* Label Print Summary */}
+                      {unitsGenerated > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-200 flex justify-between items-center">
+                             <div className="flex items-center gap-3 text-[10px] font-mono">
+                                 <div className="flex items-center gap-1 text-slate-400" title="Not Printed"><Printer size={10} /> {notPrintedCount}</div>
+                                 <div className="flex items-center gap-1 text-green-600 font-bold" title="Printed"><CheckCircle2 size={10} /> {printedCount}</div>
+                                 {voidedCount > 0 && <div className="flex items-center gap-1 text-red-600 font-bold" title="Voided"><Ban size={10} /> {voidedCount}</div>}
+                             </div>
+                             {notPrintedCount > 0 && canEdit && (
+                                 <button 
+                                    onClick={() => handlePrintAllPending(line.id)}
+                                    className="text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded hover:bg-blue-100 flex items-center gap-1"
+                                 >
+                                    <Printer size={10} /> Print All Pending
+                                 </button>
+                             )}
+                          </div>
+                      )}
                       
                       {isGenOpen && (
                           <div className="mt-2 pt-2 border-t border-slate-200 animate-in fade-in slide-in-from-top-1">
@@ -1431,6 +1597,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                          <th className="px-3 py-2">Enterprise Serial</th>
                                          <th className="px-3 py-2">Supplier Serial (Input)</th>
                                          <th className="px-3 py-2 text-center">State</th>
+                                         <th className="px-3 py-2 text-center">Label</th>
                                          <th className="px-3 py-2 text-center">Actions</th>
                                      </tr>
                                  </thead>
@@ -1439,11 +1606,17 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                         const nextState = getNextUnitState(unit.state);
                                         // Permission Check (Simplified)
                                         const canAdvance = role === UserRole.SYSTEM_ADMIN || role === UserRole.STORES || (unit.state === UnitState.SCANNED && role === UserRole.QA_ENGINEER);
+                                        const canPrint = role === UserRole.SYSTEM_ADMIN || role === UserRole.STORES;
+                                        
+                                        const isVoided = unit.labelStatus === LabelStatus.VOIDED;
 
                                         return (
-                                         <tr key={unit.id} className="hover:bg-slate-50">
+                                         <tr key={unit.id} className={`hover:bg-slate-50 ${isVoided ? 'bg-red-50/50' : ''}`}>
                                              <td className="px-3 py-2 text-center text-slate-400">{idx + 1}</td>
-                                             <td className="px-3 py-2 font-mono text-slate-600">{unit.enterpriseSerial}</td>
+                                             <td className="px-3 py-2 font-mono text-slate-600">
+                                                {unit.enterpriseSerial}
+                                                {isVoided && <span className="ml-2 text-[8px] bg-red-100 text-red-700 px-1 rounded font-bold">VOID</span>}
+                                             </td>
                                              <td className="px-3 py-2">
                                                  <input 
                                                     className="w-full border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-blue-500 font-mono text-slate-800"
@@ -1454,6 +1627,7 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                         setSerialBuffer(prev => prev.map((u, i) => i === idx ? { ...u, supplierSerialRef: newVal } : u));
                                                         setSerialErrors([]); // Clear errors on edit
                                                     }}
+                                                    disabled={isVoided}
                                                  />
                                              </td>
                                              <td className="px-3 py-2 text-center">
@@ -1462,16 +1636,42 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
                                                  </span>
                                              </td>
                                              <td className="px-3 py-2 text-center">
-                                                 {nextState && (
+                                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                                                    unit.labelStatus === LabelStatus.PRINTED ? 'bg-green-50 text-green-700 border-green-200' :
+                                                    unit.labelStatus === LabelStatus.VOIDED ? 'bg-red-50 text-red-700 border-red-200' :
+                                                    'bg-slate-50 text-slate-400 border-slate-200'
+                                                }`}>
+                                                    {unit.labelStatus === LabelStatus.NOT_PRINTED ? '-' : unit.labelStatus}
+                                                </span>
+                                             </td>
+                                             <td className="px-3 py-2 text-center flex items-center justify-center gap-2">
+                                                 {nextState && !isVoided && (
                                                      <button 
                                                         onClick={() => handleUnitTransitionInModal(idx, nextState)}
                                                         disabled={!canAdvance}
-                                                        className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] font-bold text-slate-600 hover:bg-white hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 mx-auto"
+                                                        className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-[10px] font-bold text-slate-600 hover:bg-white hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
                                                         title={`Advance to ${nextState}`}
                                                      >
                                                         {nextState === UnitState.VERIFIED ? <ShieldCheck size={10} /> : <ArrowRightCircle size={10} />}
-                                                        <span>{nextState === UnitState.VERIFIED ? 'Verify' : 'Next'}</span>
                                                      </button>
+                                                 )}
+                                                 {canPrint && !isVoided && (
+                                                     <>
+                                                        <button 
+                                                            onClick={() => handleImmediateUnitAction(idx, 'REPRINT')}
+                                                            className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                            title="Reprint Label"
+                                                        >
+                                                            <RotateCcw size={12} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleImmediateUnitAction(idx, 'VOID')}
+                                                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                            title="Void Label"
+                                                        >
+                                                            <Ban size={12} />
+                                                        </button>
+                                                     </>
                                                  )}
                                              </td>
                                          </tr>

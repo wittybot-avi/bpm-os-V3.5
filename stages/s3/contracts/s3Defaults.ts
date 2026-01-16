@@ -7,7 +7,8 @@ import {
   ItemTrackability, 
   ItemCategory,
   S3SerializedUnit,
-  UnitState 
+  UnitState,
+  LabelStatus
 } from './s3Types';
 
 // --- Generators ---
@@ -45,7 +46,8 @@ export const generateS3Units = (
       enterpriseSerial: serial,
       lineId,
       state: UnitState.CREATED,
-      printedCount: 0
+      printedCount: 0,
+      labelStatus: LabelStatus.NOT_PRINTED
     });
   }
   return units;
