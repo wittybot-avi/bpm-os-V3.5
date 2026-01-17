@@ -107,7 +107,28 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
   useEffect(() => {
     setReceipts(s3ListReceipts());
     setActiveReceipt(s3GetActiveReceipt());
-    setOpenOrders(s3ListOpenOrdersFromS2());
+    
+    // HOTFIX: Ensure orders are populated even if adapter is empty (Demo Fallback)
+    const fetchedOrders = s3ListOpenOrdersFromS2();
+    if (fetchedOrders.length === 0) {
+        setOpenOrders([{
+             poId: 'PO-DEMO-999',
+             poCode: 'PO-DEMO-999',
+             supplierId: 'sup-001',
+             supplierName: 'CellGlobal Dynamics (Fallback)',
+             plantId: 'FAC-WB-01',
+             items: [{
+                 itemId: 'line-demo-1',
+                 skuId: 'SKU-CELL-01',
+                 itemName: 'LFP Cell 21700 (Demo)',
+                 category: 'CELL',
+                 qtyOrdered: 1000
+             }]
+        }]);
+    } else {
+        setOpenOrders(fetchedOrders);
+    }
+
     setSuppliers(s3ListSuppliers());
     setValidationResult(null); // Reset validation on load
   }, [refreshKey]);
@@ -1475,18 +1496,28 @@ export const InboundReceipt: React.FC<InboundReceiptProps> = ({ onNavigate }) =>
 
                     {intakeMode === 'PO' ? (
                         <div className="flex items-center gap-4">
-                            <select 
-                                className="flex-1 text-sm border border-slate-300 rounded p-2 bg-white"
-                                value={selectedPoId}
-                                onChange={(e) => setSelectedPoId(e.target.value)}
-                            >
-                                <option value="">-- Select Open Order --</option>
-                                {openOrders.map(po => (
-                                    <option key={po.poId} value={po.poId}>
-                                        {po.poCode} — {po.supplierName} ({po.items.length} Lines)
+                            <div className="flex-1 relative">
+                                <select 
+                                    className="w-full text-sm border border-slate-300 rounded p-2 bg-white disabled:bg-slate-50 disabled:text-slate-400"
+                                    value={selectedPoId}
+                                    onChange={(e) => setSelectedPoId(e.target.value)}
+                                    disabled={openOrders.length === 0}
+                                >
+                                    <option value="">
+                                        {openOrders.length === 0 ? "No open POs available (demo)" : "-- Select Open Order --"}
                                     </option>
-                                ))}
-                            </select>
+                                    {openOrders.map(po => (
+                                        <option key={po.poId} value={po.poId}>
+                                            {po.poCode} — {po.supplierName} ({po.items.length} Lines)
+                                        </option>
+                                    ))}
+                                </select>
+                                {openOrders.length === 0 && (
+                                    <div className="absolute right-8 top-2.5 pointer-events-none text-xs text-amber-500 font-bold">
+                                        !
+                                    </div>
+                                )}
+                            </div>
                             <button 
                                 onClick={handleLoadPo}
                                 disabled={!selectedPoId}
